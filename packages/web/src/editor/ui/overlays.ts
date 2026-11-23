@@ -1,4 +1,4 @@
-import { button, card, element, field, replaceChildren, scrim, select, setHidden } from '@/ui/dom';
+import { button, card, element, endsLine, field, replaceChildren, scrim, select, setHidden } from '@/ui/dom';
 import type { SectorSettings } from '../document';
 import { GRID_SNAP_PRESETS } from '../preferences';
 import type { GridSnap } from '../preferences';
@@ -172,7 +172,7 @@ export class EditorOverlays {
       callbacks.onSaveAs(name);
     };
     saveAsField.addEventListener('keydown', (event) => {
-      if (event.key !== 'Enter') return;
+      if (!endsLine(event)) return;
       event.preventDefault();
       saveAsCommit();
     });

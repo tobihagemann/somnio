@@ -9,6 +9,7 @@ import { hashString, seededSequence } from '../src/hash.ts';
 import { BASE_ITEMS } from '../src/items.ts';
 import { FIRST_TEACHING, TEACHINGS, TEACHING_IDS, TRIAL_QUESTS, isTeachingId, teaching } from '../src/lucidity.ts';
 import { BOSS_MOVES, ELITE_TRAITS, ELITE_TRAIT_IDS, MONSTER_KINDS, MONSTER_KIND_IDS, bossMoves, isEliteTraitId, monsterKind } from '../src/monsterKinds.ts';
+import { LISTENER_ROLES, QUEST_STANDINGS } from '../src/npcDialog.ts';
 import { PEOPLES } from '../src/people.ts';
 import { QUESTS } from '../src/quests.ts';
 import { SPEECH, SPEECH_PACE } from '../src/speech.ts';
@@ -301,6 +302,11 @@ describe('literal sets', () => {
     expect(SPEECH_PACE).toEqual({ burst: 8, perSecond: 1 });
   });
 
+  it('pins whom a dialog step can be for', () => {
+    expect(LISTENER_ROLES).toEqual(['none', 'own', 'other']);
+    expect(QUEST_STANDINGS).toEqual(['offered', 'held', 'done']);
+  });
+
   it('gives every gait a speed', () => {
     expect(GAITS.map(gaitMetresPerSecond)).toEqual([1, 2, 3]);
   });
@@ -324,11 +330,17 @@ describe('constants', () => {
       maxSectorNPCs: 4096,
       maxSectorMonsterSpawns: 4096,
       maxSpawnAlive: 16,
-      npcDialogCooldownSeconds: 3,
+      npcDialogLineGraphemes: 100,
+      npcDialogNameGraphemes: 12,
+      maxNPCDialogSteps: 32,
+      npcDialogSkipFloorSeconds: 1,
       npcGreetingPauseSeconds: 30,
       minOutdoorSectorExtent: 16,
       speechBubbleWidthPixels: 150,
       speechBubbleFontSize: 10,
+      speechReadBaseSeconds: 1,
+      speechReadGraphemesPerSecond: 15,
+      speechReadMinSeconds: 3,
       maxSectorFileBytes: 16_777_216,
     });
   });

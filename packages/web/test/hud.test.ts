@@ -1940,6 +1940,20 @@ describe("a mouse's chat", () => {
     expect(hud.chatOpen).toBe(false);
   });
 
+  it('leaves an Enter an input method takes to it, sending nothing and keeping the chat open', () => {
+    const { hud, named } = makeHUD();
+    hud.openChat();
+    hud.chatInput.value = 'こんにちは';
+    // While composing, and WebKit's confirming Enter after the composition ended.
+    for (const init of [{ isComposing: true }, { keyCode: 229 }]) {
+      const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true, ...init });
+      hud.chatInput.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(false);
+    }
+    expect(named('onSubmitChat')).toEqual([]);
+    expect([hud.chatOpen, hud.chatInput.value, document.activeElement === hud.chatInput]).toEqual([true, 'こんにちは', true]);
+  });
+
   it('swallows Shift-Enter rather than inserting a line break, keeping the field and its draft', () => {
     const { hud, named } = makeHUD();
     hud.openChat();

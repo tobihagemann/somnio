@@ -17,8 +17,14 @@ export const SOMNIO_CONSTANTS = {
   maxSectorMonsterSpawns: 4096,
   /** Cap on one monster spawn's `maxAlive`. */
   maxSpawnAlive: 16,
-  /** Wall-clock gap between two lines an NPC says when asked, and between two greetings. The first line asked for after a greeting is not held back. */
-  npcDialogCooldownSeconds: 3.0,
+  /** The graphemes an NPC line, greeting or step, is written to, in every language, so its bubble keeps to about four lines. */
+  npcDialogLineGraphemes: 100,
+  /** What each `$name` in an NPC line counts toward `npcDialogLineGraphemes`. */
+  npcDialogNameGraphemes: 12,
+  /** Cap on the steps one NPC says when asked. */
+  maxNPCDialogSteps: 32,
+  /** How soon after its last line an NPC says the next step to the dreamer it spoke to, when they ask before that line has been read. */
+  npcDialogSkipFloorSeconds: 1,
   /** How long after greeting a dreamer an NPC does not greet them again, however often they come back while they stay in its space. */
   npcGreetingPauseSeconds: 30,
   /** An outdoor sector narrower than this would let the camera see past its neighbour. */
@@ -26,6 +32,10 @@ export const SOMNIO_CONSTANTS = {
 
   speechBubbleWidthPixels: 150,
   speechBubbleFontSize: 10,
+  /** A line's reading time, which its bubble lasts and an NPC waits out: the base plus a second per `speechReadGraphemesPerSecond` graphemes, at least the minimum. */
+  speechReadBaseSeconds: 1,
+  speechReadGraphemesPerSecond: 15,
+  speechReadMinSeconds: 3,
 
   /**
    * Byte cap on a `.somnio-sector` file, checked before parsing — the count caps only fire

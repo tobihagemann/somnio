@@ -6,6 +6,7 @@ import { down as dreamersDown, up as dreamersUp } from './migrations/0001_dreame
 import { down as itemsDown, up as itemsUp } from './migrations/0002_items.ts';
 import { down as questsDown, up as questsUp } from './migrations/0003_quests.ts';
 import { down as newcomerErrandDown, up as newcomerErrandUp } from './migrations/0004_newcomer_errand.ts';
+import { down as dropNPCDialogStatesDown, up as dropNPCDialogStatesUp } from './migrations/0005_drop_npc_dialog_states.ts';
 
 /** The migration list, in order. In memory rather than a filesystem walk: nothing compiles the tree. */
 const MIGRATIONS: Record<string, Migration> = {
@@ -13,6 +14,7 @@ const MIGRATIONS: Record<string, Migration> = {
   '0002_items': { up: itemsUp, down: itemsDown },
   '0003_quests': { up: questsUp, down: questsDown },
   '0004_newcomer_errand': { up: newcomerErrandUp, down: newcomerErrandDown },
+  '0005_drop_npc_dialog_states': { up: dropNPCDialogStatesUp, down: dropNPCDialogStatesDown },
 };
 
 const provider: MigrationProvider = {

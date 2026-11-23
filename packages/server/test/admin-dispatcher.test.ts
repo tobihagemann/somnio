@@ -13,19 +13,19 @@ afterEach(() => {
   for (const cleanup of cleanups.splice(0)) cleanup();
 });
 
-async function dependencies(options: Parameters<typeof makeAdminDependencies>[0] = {}) {
+function dependencies(options: Parameters<typeof makeAdminDependencies>[0] = {}) {
   const logging = options.logging ?? tempLogging();
   cleanups.push(() => logging.cleanup());
   return makeAdminDependencies({ ...options, logging });
 }
 
 describe('log / weblog', () => {
-  it('log returns logEmpty when the file does not exist', async () => {
-    expect(dispatchAdminRequest({ tag: 'log' }, await dependencies())).toEqual({ tag: 'logEmpty' });
+  it('log returns logEmpty when the file does not exist', () => {
+    expect(dispatchAdminRequest({ tag: 'log' }, dependencies())).toEqual({ tag: 'logEmpty' });
   });
 
-  it('log returns logContents with the file body', async () => {
-    const deps = await dependencies();
+  it('log returns logContents with the file body', () => {
+    const deps = dependencies();
     writeFileSync(join(deps.logging.directory, GAMEPLAY_LOG_FILE_NAME), 'hello\nworld');
     expect(dispatchAdminRequest({ tag: 'log' }, deps)).toEqual({
       tag: 'logContents',
@@ -33,8 +33,8 @@ describe('log / weblog', () => {
     });
   });
 
-  it('log oversized payload is cut on a character boundary and encodes through the wire', async () => {
-    const deps = await dependencies();
+  it('log oversized payload is cut on a character boundary and encodes through the wire', () => {
+    const deps = dependencies();
     const body = 'ü'.repeat(35_000);
     expect(Buffer.byteLength(body, 'utf8')).toBe(70_000);
     writeFileSync(join(deps.logging.directory, GAMEPLAY_LOG_FILE_NAME), body);
@@ -48,8 +48,8 @@ describe('log / weblog', () => {
     }
   });
 
-  it('log truncation keeps the trailing window, not the leading prefix', async () => {
-    const deps = await dependencies();
+  it('log truncation keeps the trailing window, not the leading prefix', () => {
+    const deps = dependencies();
     const head = 'HEAD-SENTINEL ';
     const tail = 'TAIL-SENTINEL';
     writeFileSync(join(deps.logging.directory, GAMEPLAY_LOG_FILE_NAME), head + 'x'.repeat(80_000) + tail);
@@ -60,14 +60,14 @@ describe('log / weblog', () => {
     expect(response.payload.includes(head)).toBe(false);
   });
 
-  it('log non-UTF-8 contents fall back to logEmpty', async () => {
-    const deps = await dependencies();
+  it('log non-UTF-8 contents fall back to logEmpty', () => {
+    const deps = dependencies();
     writeFileSync(join(deps.logging.directory, GAMEPLAY_LOG_FILE_NAME), Buffer.from([0xff, 0xfe, 0xff]));
     expect(dispatchAdminRequest({ tag: 'log' }, deps)).toEqual({ tag: 'logEmpty' });
   });
 
-  it('logRemove deletes the file and returns logRemoved; a later write reopens it', async () => {
-    const deps = await dependencies();
+  it('logRemove deletes the file and returns logRemoved; a later write reopens it', () => {
+    const deps = dependencies();
     const file = join(deps.logging.directory, GAMEPLAY_LOG_FILE_NAME);
     deps.logging.gameplayFile.write('primed\n');
     expect(existsSync(file)).toBe(true);
@@ -77,8 +77,8 @@ describe('log / weblog', () => {
     expect(readFileSync(file, 'utf8')).toBe('after-rm\n');
   });
 
-  it('weblog returns weblogEmpty when missing and weblogContents when populated', async () => {
-    const deps = await dependencies();
+  it('weblog returns weblogEmpty when missing and weblogContents when populated', () => {
+    const deps = dependencies();
     expect(dispatchAdminRequest({ tag: 'weblog' }, deps)).toEqual({ tag: 'weblogEmpty' });
     writeFileSync(join(deps.logging.directory, ADMIN_LOG_FILE_NAME), 'admin-line');
     expect(dispatchAdminRequest({ tag: 'weblog' }, deps)).toEqual({
@@ -87,8 +87,8 @@ describe('log / weblog', () => {
     });
   });
 
-  it('weblogRemove deletes the admin file and returns weblogRemoved', async () => {
-    const deps = await dependencies();
+  it('weblogRemove deletes the admin file and returns weblogRemoved', () => {
+    const deps = dependencies();
     deps.logging.adminFile.write('primed\n');
     expect(dispatchAdminRequest({ tag: 'weblogRemove' }, deps)).toEqual({ tag: 'weblogRemoved' });
     expect(existsSync(join(deps.logging.directory, ADMIN_LOG_FILE_NAME))).toBe(false);
@@ -96,17 +96,17 @@ describe('log / weblog', () => {
 });
 
 describe('players / time', () => {
-  it('players returns playerCount text', async () => {
+  it('players returns playerCount text', () => {
     const router = new StubAdminWorldRouter();
     router.playerCount = 7;
-    expect(dispatchAdminRequest({ tag: 'players' }, await dependencies({ worldRouter: router }))).toEqual({
+    expect(dispatchAdminRequest({ tag: 'players' }, dependencies({ worldRouter: router }))).toEqual({
       tag: 'playerCount',
       payload: '7',
     });
   });
 
-  it('time formats the wire payload as Y;M;D;HH;MM;SS', async () => {
-    const deps = await dependencies({
+  it('time formats the wire payload as Y;M;D;HH;MM;SS', () => {
+    const deps = dependencies({
       // Year 1, the first day of the first month, 00:05:07.
       initialWorldSeconds: 336 * 24 * 60 * 60 + 5 * 60 + 7,
     });
@@ -118,53 +118,53 @@ describe('players / time', () => {
 });
 
 describe('say', () => {
-  it('broadcasts and returns sayBroadcast', async () => {
+  it('broadcasts and returns sayBroadcast', () => {
     const router = new StubAdminWorldRouter();
-    const response = dispatchAdminRequest({ tag: 'say', payload: 'hello' }, await dependencies({ worldRouter: router }));
+    const response = dispatchAdminRequest({ tag: 'say', payload: 'hello' }, dependencies({ worldRouter: router }));
     expect(response).toEqual({ tag: 'sayBroadcast', payload: 'hello' });
     expect(router.broadcasts).toEqual([{ tag: 'adminSay', payload: { text: 'hello' } }]);
   });
 
-  it('empty text returns undefined and records no broadcast', async () => {
+  it('empty text returns undefined and records no broadcast', () => {
     const router = new StubAdminWorldRouter();
-    expect(dispatchAdminRequest({ tag: 'say', payload: '' }, await dependencies({ worldRouter: router }))).toBeUndefined();
+    expect(dispatchAdminRequest({ tag: 'say', payload: '' }, dependencies({ worldRouter: router }))).toBeUndefined();
     expect(router.broadcasts).toEqual([]);
   });
 
-  it('text over the wire cap returns undefined and records no broadcast', async () => {
+  it('text over the wire cap returns undefined and records no broadcast', () => {
     const router = new StubAdminWorldRouter();
     const oversized = 'x'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxSayUTF8Bytes + 1);
-    expect(dispatchAdminRequest({ tag: 'say', payload: oversized }, await dependencies({ worldRouter: router }))).toBeUndefined();
+    expect(dispatchAdminRequest({ tag: 'say', payload: oversized }, dependencies({ worldRouter: router }))).toBeUndefined();
     expect(router.broadcasts).toEqual([]);
   });
 });
 
 describe('kick / version', () => {
-  it('kick of a match returns kickedPlayer', async () => {
+  it('kick of a match returns kickedPlayer', () => {
     const router = new StubAdminWorldRouter();
     router.kickOutcome = true;
-    expect(dispatchAdminRequest({ tag: 'kick', payload: 'Saibot' }, await dependencies({ worldRouter: router }))).toEqual({
+    expect(dispatchAdminRequest({ tag: 'kick', payload: 'Saibot' }, dependencies({ worldRouter: router }))).toEqual({
       tag: 'kickedPlayer',
       payload: 'Saibot',
     });
   });
 
-  it('kick of a miss returns kickedPlayerNotFound', async () => {
-    expect(dispatchAdminRequest({ tag: 'kick', payload: 'Saibot' }, await dependencies())).toEqual({
+  it('kick of a miss returns kickedPlayerNotFound', () => {
+    expect(dispatchAdminRequest({ tag: 'kick', payload: 'Saibot' }, dependencies())).toEqual({
       tag: 'kickedPlayerNotFound',
       payload: 'Saibot',
     });
   });
 
-  it('kick of an empty name returns kickedPlayerNotFound with empty text', async () => {
-    expect(dispatchAdminRequest({ tag: 'kick', payload: '' }, await dependencies())).toEqual({
+  it('kick of an empty name returns kickedPlayerNotFound with empty text', () => {
+    expect(dispatchAdminRequest({ tag: 'kick', payload: '' }, dependencies())).toEqual({
       tag: 'kickedPlayerNotFound',
       payload: '',
     });
   });
 
-  it("version returns the bag's serverVersion", async () => {
-    expect(dispatchAdminRequest({ tag: 'version' }, await dependencies({ serverVersion: '9.9.9' }))).toEqual({
+  it("version returns the bag's serverVersion", () => {
+    expect(dispatchAdminRequest({ tag: 'version' }, dependencies({ serverVersion: '9.9.9' }))).toEqual({
       tag: 'versionString',
       payload: '9.9.9',
     });

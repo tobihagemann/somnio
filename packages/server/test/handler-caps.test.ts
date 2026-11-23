@@ -11,7 +11,7 @@ import { StubSessionRepository } from './support/stubRepositories.ts';
 /** The server-side UTF-8 caps on the gameplay handlers: every over-cap frame is answered or dropped, never closed on. */
 describe('handler caps', () => {
   it('handleSay drops an over-cap chat line but says a within-cap one', async () => {
-    const dependencies = await makeStubConnectionDependencies({ sectors: [makeSector('A')] });
+    const dependencies = makeStubConnectionDependencies({ sectors: [makeSector('A')] });
     const space = dependencies.worldRouter.space(OUTDOOR_SPACE_ID)!;
     const speaker = attachPlayer(space, { x: 1, z: 1 });
     const peer = attachPlayer(space, { x: 2, z: 2 }, 'peer');
@@ -24,7 +24,7 @@ describe('handler caps', () => {
   });
 
   it('an over-cap clientSay through dispatch keeps the connection open and broadcasts nothing', async () => {
-    const dependencies = await makeStubConnectionDependencies({ sectors: [makeSector('A')] });
+    const dependencies = makeStubConnectionDependencies({ sectors: [makeSector('A')] });
     const space = dependencies.worldRouter.space(OUTDOOR_SPACE_ID)!;
     const connection = new ConnectionActor(dependencies);
     const speaker = attachPlayer(space, { x: 1, z: 1 }, 'speaker', { outbox: connection.outbox });
@@ -43,7 +43,7 @@ describe('handler caps', () => {
 
   it('an over-cap redeemSession answers badCredentials with no repository call', async () => {
     const sessions = new StubSessionRepository();
-    const connection = new ConnectionActor(await makeStubConnectionDependencies({ sessions }));
+    const connection = new ConnectionActor(makeStubConnectionDependencies({ sessions }));
     const token = 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxSessionTokenUTF8Bytes + 1);
     await connection.dispatch({ tag: 'redeemSession', payload: { token } });
     expect(await collectMessages(connection.outbox)).toEqual([{ tag: 'loginResult', payload: { result: 'badCredentials' } }]);
@@ -52,7 +52,7 @@ describe('handler caps', () => {
 
   it('an over-cap revokeSession answers sessionRevoked(false) with no repository call', async () => {
     const sessions = new StubSessionRepository();
-    const connection = new ConnectionActor(await makeStubConnectionDependencies({ sessions }));
+    const connection = new ConnectionActor(makeStubConnectionDependencies({ sessions }));
     connection.markAttached('player', OUTDOOR_SPACE_ID, crypto.randomUUID());
     const token = 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxSessionTokenUTF8Bytes + 1);
     await connection.dispatch({ tag: 'revokeSession', payload: { token } });

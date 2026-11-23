@@ -1,5 +1,6 @@
 import { SOMNIO_PROTOCOL_CONSTANTS, utf8ByteLength } from '@somnio/protocol';
 import type { SpeechKind } from '@somnio/protocol';
+import { SOMNIO_CONSTANTS } from './constants.ts';
 
 /**
  * How far speech carries. Each kind is heard whole within its clear radius, crumbles across the
@@ -39,12 +40,26 @@ export class SpeechPace {
 /** What stands in for each run of words a listener missed. */
 const MISSED = '...';
 
+const GRAPHEME_SEGMENTER = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+
 /** 1 within the clear radius, falling to 0 across the band, and `undefined` from the reach on: nothing is heard. */
 export function speechClarity(kind: SpeechKind, metres: number): number | undefined {
   const { clearMetres, reachMetres } = SPEECH[kind];
   if (metres >= reachMetres) return undefined;
   if (metres <= clearMetres) return 1;
   return (reachMetres - metres) / (reachMetres - clearMetres);
+}
+
+/** How long a line takes to read, which is how long its bubble lasts, for every speaker. */
+export function speechReadSeconds(text: string): number {
+  return Math.max(
+    SOMNIO_CONSTANTS.speechReadMinSeconds,
+    SOMNIO_CONSTANTS.speechReadBaseSeconds + graphemeCount(text) / SOMNIO_CONSTANTS.speechReadGraphemesPerSecond,
+  );
+}
+
+export function graphemeCount(text: string): number {
+  return Array.from(GRAPHEME_SEGMENTER.segment(text)).length;
 }
 
 /**

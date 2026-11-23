@@ -99,9 +99,9 @@ const TOWN = [
 const WAND_LEFT: Inventory = { coins: 0, equipped: {}, bag: [{ place: 1, item: WAND }] };
 
 /** A dreamer at Town's door, carrying a cudgel and a wand, over a repository whose writes the test settles. */
-async function dreamerAtTheDoor(logger: Logger = testLogger()) {
+function dreamerAtTheDoor(logger: Logger = testLogger()) {
   const characters = new DeferredCharacterRepository();
-  const dependencies = await makeStubConnectionDependencies({ sectors: TOWN, characters, logger });
+  const dependencies = makeStubConnectionDependencies({ sectors: TOWN, characters, logger });
   const connection = new ConnectionActor(dependencies);
   const accountId = crypto.randomUUID();
   const town = dependencies.worldRouter.space(OUTDOOR_SPACE_ID)!;
@@ -113,7 +113,7 @@ async function dreamerAtTheDoor(logger: Logger = testLogger()) {
 
 describe('the saves of throws to the ground', () => {
   it('share one lane per dreamer across the spaces a door takes them through', async () => {
-    const d = await dreamerAtTheDoor();
+    const d = dreamerAtTheDoor();
     d.town.handleDropItem(CUDGEL.id, 0, d.entityId);
     expect(handleUseDoor({ sector: 'Town', doorId: 'inside' }, d.entityId, OUTDOOR_SPACE_ID, d.connection, d.dependencies)).toEqual({ spaceId: 'Hall' });
     d.dependencies.worldRouter.space('Hall')!.handleDropItem(WAND.id, 0, d.entityId);
@@ -128,7 +128,7 @@ describe('the saves of throws to the ground', () => {
   });
 
   it('on a disconnect, drop the pending save and wait for the one in flight before writing the newer snapshot and letting the account go', async () => {
-    const d = await dreamerAtTheDoor();
+    const d = dreamerAtTheDoor();
     await d.connection.dispatch({ tag: 'dropItem', payload: { itemId: CUDGEL.id, heading: 0 } });
     await d.connection.dispatch({ tag: 'dropItem', payload: { itemId: WAND.id, heading: 0 } });
     // A step after the second throw, so the disconnect's snapshot differs from the one pending.
@@ -157,7 +157,7 @@ describe('the saves of throws to the ground', () => {
   /** A write the pool timed out rejects, as these do by hand. */
   it('let the account go once the drop save in flight and the disconnect write have both failed, logging each', async () => {
     const { logger, records } = recordingLogger();
-    const d = await dreamerAtTheDoor(logger);
+    const d = dreamerAtTheDoor(logger);
     await d.connection.dispatch({ tag: 'dropItem', payload: { itemId: CUDGEL.id, heading: 0 } });
     const drained = d.connection.drainForShutdown();
     await settle();

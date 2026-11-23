@@ -617,7 +617,7 @@ describe('bodies', () => {
   });
 
   it('of NPCs stand where their sector puts them in the space', () => {
-    const guide = { id: 'guide', name: 'Guide', characterModelId: 'hero', x: 3, z: 4, facing: 0, dialogScript: '' };
+    const guide = { id: 'guide', name: 'Guide', characterModelId: 'hero', x: 3, z: 4, facing: 0, dialog: [] };
     const sectors = [outdoorSector('West', { x: 0, z: 0 }), outdoorSector('East', { x: 20, z: -5 }, { npcs: [guide] })];
     expect(npcBodies({ id: 'outdoors', sectors })).toEqual([{ x: 23, z: -1, radius: SOMNIO_CONSTANTS.npcRadius }]);
   });

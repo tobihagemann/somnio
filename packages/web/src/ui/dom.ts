@@ -150,14 +150,28 @@ export function checkbox(labelText: string, checked: boolean): { row: HTMLElemen
 
 export function select(labelText: string, options: readonly { value: string; label: string }[]): { row: HTMLElement; input: HTMLSelectElement } {
   const input = element('select', { className: 'fantasy-field' });
-  for (const option of options) {
-    input.append(element('option', { text: option.label, attributes: { value: option.value } }));
-  }
+  setOptions(input, options);
   const label = element('label', { text: labelText });
   const identifier = controlIdentifier('select', labelText);
   input.id = identifier;
   label.setAttribute('for', identifier);
   return { row: element('div', { className: 'form-row', children: [label, input] }), input };
+}
+
+/**
+ * Whether a keydown in a text field is the Enter that ends the line, not one an input method takes
+ * to confirm what is being composed. WebKit can send that Enter after `compositionend`, with
+ * `isComposing` false, and only its key code of 229 tells it apart.
+ */
+export function endsLine(event: KeyboardEvent): boolean {
+  return event.key === 'Enter' && !event.isComposing && event.keyCode !== 229;
+}
+
+export function setOptions(input: HTMLSelectElement, options: readonly { value: string; label: string }[]): void {
+  replaceChildren(
+    input,
+    options.map((option) => element('option', { text: option.label, attributes: { value: option.value } })),
+  );
 }
 
 /**

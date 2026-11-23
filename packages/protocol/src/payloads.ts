@@ -194,7 +194,7 @@ export interface PickUpMessage {
 }
 
 /**
- * Acts on a carrier, by its id: asks an NPC to go on past its greeting, or uses a fixture.
+ * Acts on a carrier, by its id: asks an NPC to go on with its dialog, or uses a fixture.
  * The client opens what the carrier offers with it.
  */
 export interface InteractMessage {

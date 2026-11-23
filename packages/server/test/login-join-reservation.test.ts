@@ -28,9 +28,9 @@ class ScriptedCharacterRepository extends StubCharacterRepository {
   }
 }
 
-async function joining(answer: () => Promise<Character[]>) {
+function joining(answer: () => Promise<Character[]>) {
   const characters = new ScriptedCharacterRepository(answer);
-  const dependencies = await makeStubConnectionDependencies({ sectors: [makeSector('A')], characters });
+  const dependencies = makeStubConnectionDependencies({ sectors: [makeSector('A')], characters });
   const accountId = crypto.randomUUID();
   const join = () => {
     const connection = new ConnectionActor(dependencies);
@@ -50,7 +50,7 @@ describe("the authentication's reservation of its account", () => {
     const pending = new Promise<Character[]>((resolve) => {
       release = resolve;
     });
-    const world = await joining(() => pending);
+    const world = joining(() => pending);
     const first = world.join();
     const second = world.join();
     await second.done;
@@ -65,7 +65,7 @@ describe("the authentication's reservation of its account", () => {
   });
 
   it('is released by an authentication that fails to read the characters', async () => {
-    const world = await joining(() => Promise.reject(new RepositoryFailure()));
+    const world = joining(() => Promise.reject(new RepositoryFailure()));
     const { connection, done } = world.join();
     await done;
     expect(loginResults(await collectMessages(connection.outbox))).toEqual(['badCredentials']);

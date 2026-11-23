@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SOMNIO_PROTOCOL_CONSTANTS, utf8ByteLength } from '@somnio/protocol';
-import { SPEECH_PACE, SpeechPace, crumble, speechClarity } from '../src/speech.ts';
+import { SPEECH_PACE, SpeechPace, crumble, speechClarity, speechReadSeconds } from '../src/speech.ts';
 
 const TEN_WORDS = 'one two three four five six seven eight nine ten';
 
@@ -28,6 +28,14 @@ describe('speechClarity', () => {
     expect(speechClarity(kind, clear)).toBe(1);
     expect(speechClarity(kind, half)).toBeCloseTo(0.5, 12);
     expect(speechClarity(kind, reach)).toBeUndefined();
+  });
+});
+
+describe('speechReadSeconds', () => {
+  it('gives a line a second plus a second per 15 graphemes, at least 3 s', () => {
+    expect(speechReadSeconds('a'.repeat(20))).toBe(3);
+    expect(speechReadSeconds('a'.repeat(99))).toBeCloseTo(7.6);
+    expect(speechReadSeconds('')).toBe(3);
   });
 });
 

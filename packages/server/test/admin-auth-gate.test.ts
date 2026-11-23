@@ -54,7 +54,7 @@ describe('/admin upgrade', () => {
   it('succeeds with the configured bearer token and runs the dispatcher', async () => {
     const router = new StubAdminWorldRouter();
     router.playerCount = 3;
-    const adminDependencies = await makeAdminDependencies({ worldRouter: router });
+    const adminDependencies = makeAdminDependencies({ worldRouter: router });
     try {
       await withLiveServer({ adminDependencies }, async (server) => {
         const client = await TestClient.open(adminURL(server), bearer(TEST_ADMIN_TOKEN));
@@ -70,7 +70,7 @@ describe('/admin upgrade', () => {
 
 describe('the /admin budget of failed bearers', () => {
   async function withLimitedServer(body: (server: RunningServer) => Promise<void>): Promise<void> {
-    await withLiveServer({ trustProxy: true, dependencies: await makeStubConnectionDependencies({ attemptLimiter: enabledAttemptLimiter() }) }, body);
+    await withLiveServer({ trustProxy: true, dependencies: makeStubConnectionDependencies({ attemptLimiter: enabledAttemptLimiter() }) }, body);
   }
 
   function upgradeFrom(server: RunningServer, address: string, token: string): Promise<'opened' | number> {

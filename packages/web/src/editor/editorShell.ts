@@ -179,7 +179,10 @@ export class EditorShell implements EditorCommandTarget {
 
     this.document.onChanged = (rename) => {
       // Before the reconcile, which drops a selection whose id the document no longer holds.
-      if (rename !== undefined) this.selection = followRename(this.selection, rename);
+      if (rename !== undefined) {
+        this.selection = followRename(this.selection, rename);
+        this.inspector.followRename(rename);
+      }
       this.reconcile();
     };
     this.installHostHandlers();
@@ -218,9 +221,7 @@ export class EditorShell implements EditorCommandTarget {
           this.overlays.showError(result.message);
           return;
         }
-        this.selection = [];
-        this.present(undefined);
-        void this.loadOthers().catch(showError);
+        void this.adoptDocument().catch(showError);
       },
       onCancelNewMap: () => {
         this.present(this.document.isUninitialized ? 'sectorPicker' : 'gameMenu');
@@ -234,12 +235,7 @@ export class EditorShell implements EditorCommandTarget {
         if (!this.confirmDiscardIfDirty()) return;
         void this.document
           .load(name)
-          .then(() => {
-            this.selection = [];
-            this.discardGroundPolygon();
-            this.present(undefined);
-            return this.loadOthers();
-          })
+          .then(() => this.adoptDocument())
           .catch(showError);
       },
       documentState: () => ({
@@ -331,6 +327,21 @@ export class EditorShell implements EditorCommandTarget {
       return;
     (this.groundPolygon ??= []).push(gridPoint(this.dragContext(), at));
     this.lastVertexTap = { atMs: nowMs, at };
+  }
+
+  /**
+   * Takes up a document that replaced the open one, a sector opened or a new map. Nothing of the
+   * old one stays selected, and no NPC's unadded step is kept. The panels are drawn for the new one
+   * before the picker gives way, since the load drew them under the old selection. Then it fetches
+   * the other sectors.
+   */
+  private adoptDocument(): Promise<void> {
+    this.selection = [];
+    this.inspector.forgetUnaddedSteps();
+    this.discardGroundPolygon();
+    this.selectionChanged();
+    this.present(undefined);
+    return this.loadOthers();
   }
 
   private discardGroundPolygon(): void {

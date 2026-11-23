@@ -107,7 +107,7 @@ describe('speech carries by distance', () => {
 
   it('lets an NPC talk like a dreamer: whole to the one it greets, crumbled to a bystander, and unheard further off', async () => {
     const guard: Point = { x: 10, z: 10 };
-    const { space } = speechSpace(makeSectorLine({ west: { npcs: [makeNPC('guard', guard, 'Hello, $name, and welcome to the town.')] } }));
+    const { space } = speechSpace(makeSectorLine({ west: { npcs: [makeNPC('guard', guard, { greeting: 'Hello, $name, and welcome to the town.' })] } }));
     const greeted = attachPlayer(space, { x: 10, z: 11.5 }, 'alice');
     const bystander = attachPlayer(space, { x: 19, z: 10 });
     const far = attachPlayer(space, { x: 23, z: 10 });
@@ -124,13 +124,13 @@ describe('speech carries by distance', () => {
     expect(await heard(far.outbox)).toEqual([]);
   });
 
-  /** A step the dialog catalog translates, so a German listener hears its German. */
-  const STEP = 'Whoever would learn from me first drives off a Ghost. You will find some in the Arena. Then we talk.';
-  const GERMAN = 'Wer bei mir lernen will, vertreibt erst ein Gespenst. In der Arena findest du welche. Danach reden wir.';
+  /** A line the dialog catalog translates, so a German listener hears its German. */
+  const STEP = 'Whoever would learn from me first drives off a nightmare. The Ghosts in the Arena will do.';
+  const GERMAN = 'Wer bei mir lernen will, vertreibt erst einen Albtraum. Die Gespenster in der Arena taugen dafür.';
 
   it('says an NPC line to each listener in their own language, crumbling it as for one listener of that language', async () => {
     const guard: Point = { x: 10, z: 10 };
-    const { space } = speechSpace(makeSectorLine({ west: { npcs: [makeNPC('guard', guard, STEP)] } }));
+    const { space } = speechSpace(makeSectorLine({ west: { npcs: [makeNPC('guard', guard, { greeting: STEP })] } }));
     const greeted = attachPlayer(space, { x: 10, z: 11.5 }, 'alice', { locale: 'de' });
     const english = attachPlayer(space, { x: 13, z: 10 });
     const nearer = attachPlayer(space, { x: 17, z: 10 }, 'nearer', { locale: 'de' });

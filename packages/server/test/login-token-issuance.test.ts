@@ -18,7 +18,7 @@ import { StubSessionRepository, failingSessionRepository } from './support/stubR
 describe('session token issuance', () => {
   it('a login requesting a session token receives one', async () => {
     const sessions = new StubSessionRepository();
-    const world = await makeOneSectorWorld({ sessions });
+    const world = makeOneSectorWorld({ sessions });
     const connection = new ConnectionActor(world.dependencies);
     await completeAuthentication(world.accountId, connection, world.dependencies, true, 'en');
     const messages = await collectMessages(connection.outbox);
@@ -32,7 +32,7 @@ describe('session token issuance', () => {
   });
 
   it('a login that did not ask receives no session token', async () => {
-    const world = await makeOneSectorWorld({ sessions: new StubSessionRepository() });
+    const world = makeOneSectorWorld({ sessions: new StubSessionRepository() });
     const connection = new ConnectionActor(world.dependencies);
     await completeAuthentication(world.accountId, connection, world.dependencies, false, 'en');
     const tags = (await collectMessages(connection.outbox)).map((message) => message.tag);
@@ -41,7 +41,7 @@ describe('session token issuance', () => {
   });
 
   it('a failed token issuance still completes the authentication', async () => {
-    const world = await makeOneSectorWorld({ sessions: failingSessionRepository });
+    const world = makeOneSectorWorld({ sessions: failingSessionRepository });
     const connection = new ConnectionActor(world.dependencies);
     await completeAuthentication(world.accountId, connection, world.dependencies, true, 'en');
     const tags = (await collectMessages(connection.outbox)).map((message) => message.tag);
@@ -55,7 +55,7 @@ describe('session token issuance', () => {
     const sessions = new StubSessionRepository();
     // One placement carrying more than `maxFrameLength` of `modelId` makes the `sector` frame's encode throw.
     const oversized: Placement = { id: 'oversized', modelId: 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxFrameLength + 1), x: 1, z: 1, yaw: 0, elevation: 0 };
-    const world = await makeOneSectorWorld({ sessions, placements: [oversized] });
+    const world = makeOneSectorWorld({ sessions, placements: [oversized] });
     const issued = await sessions.issue(world.accountId, 3600);
     const connection = new ConnectionActor(world.dependencies);
     await handleRedeem({ token: issued.token }, connection, world.dependencies);
@@ -68,7 +68,7 @@ describe('session token issuance', () => {
   /** The sector directory is operator-supplied, so a persisted space can be absent from the world. */
   it('a character whose saved space the world no longer has joins at the starter spawn', async () => {
     const sessions = new StubSessionRepository();
-    const world = await makeOneSectorWorld({ sessions, characterSpace: 'Gone' });
+    const world = makeOneSectorWorld({ sessions, characterSpace: 'Gone' });
     const issued = await sessions.issue(world.accountId, 3600);
     const connection = new ConnectionActor(world.dependencies);
     await handleRedeem({ token: issued.token }, connection, world.dependencies);
@@ -80,7 +80,7 @@ describe('session token issuance', () => {
 
   it('redeeming a live token joins the character played last', async () => {
     const sessions = new StubSessionRepository();
-    const world = await makeOneSectorWorld({ sessions });
+    const world = makeOneSectorWorld({ sessions });
     const issued = await sessions.issue(world.accountId, 3600);
     const connection = new ConnectionActor(world.dependencies);
     await handleRedeem({ token: issued.token }, connection, world.dependencies);
@@ -110,7 +110,7 @@ describe('session token issuance', () => {
     [{ locale: 'de' as const }, 'de', 'Willkommen, tester!'],
     [{}, 'en', 'Welcome, tester!'],
   ] as const;
-  const GREETER = makeNPC('greeter', { x: 5, z: 6.5 }, 'Welcome, $name!');
+  const GREETER = makeNPC('greeter', { x: 5, z: 6.5 }, { greeting: 'Welcome, $name!' });
 
   async function greetingHeard(dependencies: ConnectionDependencies, connection: ConnectionActor): Promise<string[]> {
     dependencies.worldRouter.space(OUTDOOR_SPACE_ID)!.step(0.05);
@@ -119,7 +119,7 @@ describe('session token issuance', () => {
 
   it.each(NAMED_LOCALES)('a resume naming %j keeps %s and hears %j', async (named, locale, line) => {
     const sessions = new StubSessionRepository();
-    const world = await makeOneSectorWorld({ sessions, npcs: [GREETER] });
+    const world = makeOneSectorWorld({ sessions, npcs: [GREETER] });
     const issued = await sessions.issue(world.accountId, 3600);
     const connection = new ConnectionActor(world.dependencies);
     await handleRedeem({ token: issued.token, ...named }, connection, world.dependencies);
@@ -138,14 +138,14 @@ describe('session token issuance', () => {
   });
 
   it('a redeem that throws answers badCredentials rather than nothing', async () => {
-    const world = await makeOneSectorWorld({ sessions: failingSessionRepository });
+    const world = makeOneSectorWorld({ sessions: failingSessionRepository });
     const connection = new ConnectionActor(world.dependencies);
     await handleRedeem({ token: 'any' }, connection, world.dependencies);
     expect(loginResults(await collectMessages(connection.outbox))).toEqual(['badCredentials']);
   });
 
   it('a revoke that throws answers rather than going silent', async () => {
-    const world = await makeOneSectorWorld({ sessions: failingSessionRepository });
+    const world = makeOneSectorWorld({ sessions: failingSessionRepository });
     const connection = new ConnectionActor(world.dependencies);
     connection.markAttached('player', OUTDOOR_SPACE_ID, world.accountId);
     await handleRevoke({ token: 'any' }, world.accountId, connection, world.dependencies);
@@ -155,7 +155,7 @@ describe('session token issuance', () => {
   /** Counted after issuance, so the row this browser is about to hold is not one of the others. */
   it("a remembered login counts the account's other live sessions, not its own or an expired one", async () => {
     const sessions = new StubSessionRepository();
-    const world = await makeOneSectorWorld({ sessions });
+    const world = makeOneSectorWorld({ sessions });
     sessions.plant('elsewhere', world.accountId, new Date(Date.now() + 60_000));
     sessions.plant('aged', world.accountId, new Date(Date.now() - 60_000));
     const connection = new ConnectionActor(world.dependencies);
@@ -165,7 +165,7 @@ describe('session token issuance', () => {
 
   it('a resume does not count the session it redeemed', async () => {
     const sessions = new StubSessionRepository();
-    const world = await makeOneSectorWorld({ sessions });
+    const world = makeOneSectorWorld({ sessions });
     for (const token of ['redeemed', 'elsewhere']) sessions.plant(token, world.accountId, new Date(Date.now() + 60_000));
     const connection = new ConnectionActor(world.dependencies);
     await handleRedeem({ token: 'redeemed' }, connection, world.dependencies);
@@ -174,7 +174,7 @@ describe('session token issuance', () => {
 
   it('a count that throws still completes the authentication, without the frame', async () => {
     const { logger, records } = recordingLogger();
-    const world = await makeOneSectorWorld({ sessions: failingSessionRepository, logger });
+    const world = makeOneSectorWorld({ sessions: failingSessionRepository, logger });
     const connection = new ConnectionActor(world.dependencies);
     await completeAuthentication(world.accountId, connection, world.dependencies, false, 'en');
     const tags = (await collectMessages(connection.outbox)).map((message) => message.tag);
@@ -186,7 +186,7 @@ describe('session token issuance', () => {
   /** The token is issued after the account is reserved, and must still reach the connection for its row to be spared. */
   it('revoking the other sessions after a remembered login keeps the token it was issued', async () => {
     const sessions = new StubSessionRepository();
-    const world = await makeOneSectorWorld({ sessions });
+    const world = makeOneSectorWorld({ sessions });
     sessions.plant('elsewhere', world.accountId, new Date(Date.now() + 60_000));
     const connection = new ConnectionActor(world.dependencies);
     await completeAuthentication(world.accountId, connection, world.dependencies, true, 'en');
@@ -200,7 +200,7 @@ describe('session token issuance', () => {
 
   it('revoking the other sessions after a resume keeps the token redeemed', async () => {
     const sessions = new StubSessionRepository();
-    const world = await makeOneSectorWorld({ sessions });
+    const world = makeOneSectorWorld({ sessions });
     for (const token of ['redeemed', 'elsewhere', 'abandoned']) sessions.plant(token, world.accountId, new Date(Date.now() + 60_000));
     const connection = new ConnectionActor(world.dependencies);
     await handleRedeem({ token: 'redeemed' }, connection, world.dependencies);
@@ -212,7 +212,7 @@ describe('session token issuance', () => {
 
   it('revoking the other sessions after a login that asked for no token ends them all', async () => {
     const sessions = new StubSessionRepository();
-    const world = await makeOneSectorWorld({ sessions });
+    const world = makeOneSectorWorld({ sessions });
     sessions.plant('elsewhere', world.accountId, new Date(Date.now() + 60_000));
     const connection = new ConnectionActor(world.dependencies);
     await completeAuthentication(world.accountId, connection, world.dependencies, false, 'en');
@@ -262,7 +262,7 @@ describe('session token issuance', () => {
   });
 
   it('a second authentication for the same account answers alreadyLoggedIn', async () => {
-    const world = await makeOneSectorWorld({ sessions: new StubSessionRepository() });
+    const world = makeOneSectorWorld({ sessions: new StubSessionRepository() });
     const first = new ConnectionActor(world.dependencies);
     await completeAuthentication(world.accountId, first, world.dependencies, false, 'en');
     const second = new ConnectionActor(world.dependencies);

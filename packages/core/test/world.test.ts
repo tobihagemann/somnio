@@ -20,7 +20,7 @@ function room(overrides: Partial<Sector> = {}): Sector {
 }
 
 function guide(x: number, z: number): SectorNPC {
-  return { id: 'guide', name: 'Guide', characterModelId: 'hero', x, z, facing: 0, dialogScript: '' };
+  return { id: 'guide', name: 'Guide', characterModelId: 'hero', x, z, facing: 0, dialog: [] };
 }
 
 function doorsOf(sectors: Sector[], name: string): string[] {

@@ -7,7 +7,6 @@ import {
   PostgresAccountRepository,
   PostgresCharacterRepository,
   PostgresItemRepository,
-  PostgresNPCDialogStateRepository,
   PostgresQuestRepository,
   PostgresSessionRepository,
   PostgresWorldClockRepository,
@@ -87,15 +86,13 @@ export async function bootTestServer(
 export async function makeDatabaseDependencies(db: SomnioDatabase): Promise<ConnectionDependencies> {
   const logger = testLogger();
   const characters = new PostgresCharacterRepository(db);
-  const npcDialogStates = new PostgresNPCDialogStateRepository(db);
   const worldClocks = new PostgresWorldClockRepository(db);
-  const worldRouter = await WorldRouter.create(fixtureWorld(), characters, npcDialogStates, logger);
+  const worldRouter = WorldRouter.create(fixtureWorld(), characters, logger);
   return {
     accounts: new PostgresAccountRepository(db),
     characters,
     items: new PostgresItemRepository(db),
     quests: new PostgresQuestRepository(db),
-    npcDialogStates,
     sessions: new PostgresSessionRepository(db),
     worldRouter,
     worldClock: new WorldClockService(worldClocks, await worldClocks.load(), logger),

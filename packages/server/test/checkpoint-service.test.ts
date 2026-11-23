@@ -20,7 +20,7 @@ class SweepRecorder extends StubSessionRepository {
 }
 
 async function runPasses(sessions: SweepRecorder, passes: number) {
-  const dependencies = await makeStubConnectionDependencies({ sessions });
+  const dependencies = makeStubConnectionDependencies({ sessions });
   const checkpointAll = vi.spyOn(dependencies.worldRouter, 'checkpointAll');
   const controller = new AbortController();
   const service = new CheckpointService(dependencies.worldRouter, sessions, 5, dependencies.logger);

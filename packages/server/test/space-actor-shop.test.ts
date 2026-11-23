@@ -31,10 +31,7 @@ const FULL_BAG: ItemInstance[] = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.
 }));
 
 const SHOP_FLOOR: Partial<Sector> = {
-  npcs: [
-    { ...makeNPC('mercus', { x: 4, z: 4 }, ''), service: 'shopkeeper' },
-    { ...makeNPC('pugnax', { x: 16, z: 4 }, ''), service: 'fighterMaster' },
-  ],
+  npcs: [makeNPC('mercus', { x: 4, z: 4 }, {}, 'shopkeeper'), makeNPC('pugnax', { x: 16, z: 4 }, {}, 'fighterMaster')],
 };
 
 function shop(at: Point = AT_MERCUS, options: { inventory?: Inventory; character?: Partial<Character> } = {}) {
@@ -202,7 +199,7 @@ describe('buying back from the shopkeeper', () => {
   });
 
   it('changes nothing and sends nothing at a master', async () => {
-    const world = arena({ npcs: [...SHOP_FLOOR.npcs!.slice(0, 1), { ...makeNPC('pugnax', { x: 5, z: 4 }, ''), service: 'fighterMaster' }] }, { ghost: false });
+    const world = arena({ npcs: [...SHOP_FLOOR.npcs!.slice(0, 1), makeNPC('pugnax', { x: 5, z: 4 }, {}, 'fighterMaster')] }, { ghost: false });
     const dreamer = attachPlayer(world.space, AT_MERCUS, 'dreamer', { inventory: carrying({ coins: COINS, bag: [RARE_AMULET] }) });
     world.space.handleSell(MERCUS, RARE_AMULET.id, dreamer.entityId);
     const s: Shop = {

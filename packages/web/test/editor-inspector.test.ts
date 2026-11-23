@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { SOMNIO_CONSTANTS } from '@somnio/core';
 import type { Sector } from '@somnio/core';
-import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import { EditorDocument } from '@/editor/document';
 import { followRename, renameRecord } from '@/editor/selection';
 import type { EditorSelection } from '@/editor/selection';
@@ -36,7 +36,7 @@ function body(): Sector {
         { id: 'fence', x: 8, z: 2, width: 3, depth: 1 },
       ],
       doors: [{ id: 'to-shop', placement: 'door-1', anchor: 'main', target: { sector: 'Shop', door: 'exit' } }],
-      npcs: [{ id: 'libus', name: 'Libus', characterModelId: 'hero', x: 2, z: 12, facing: 90, dialogScript: 'Hallo' }],
+      npcs: [{ id: 'libus', name: 'Libus', characterModelId: 'hero', x: 2, z: 12, facing: 90, greeting: 'Hallo', dialog: [{ text: 'Servus' }] }],
       monsterSpawns: [{ id: 'spawn-1', kind: 'ghost', x: 12, z: 12, width: 4, depth: 4, maxAlive: 3, eliteChance: 0 }],
       ground: {
         backgroundMaterialId: 'grass-meadow',
@@ -130,7 +130,10 @@ function harness(): Harness {
     },
   };
   document.onChanged = (rename) => {
-    if (rename !== undefined) h.selection = followRename(h.selection, rename);
+    if (rename !== undefined) {
+      h.selection = followRename(h.selection, rename);
+      h.panel.followRename(rename);
+    }
     h.panel.render(document.sector, h.selection, false);
   };
   globalThis.document.body.append(h.panel.root);
@@ -255,55 +258,6 @@ describe('field commit', () => {
     h.type('Elite chance', '0.333');
     expect(h.document.sector.monsterSpawns[0]!.eliteChance).toBe(0.33);
   });
-
-  it('commits a dialog script on Return and keeps the newline of Shift-Return', () => {
-    const h = harness();
-    h.select([{ kind: 'npc', id: 'libus' }]);
-    const script = h.input('Script') as unknown as HTMLTextAreaElement;
-    const depth = h.document.undoDepth;
-    script.focus();
-    script.value = 'Hallo\n---\nServus';
-    const shifted = new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, cancelable: true });
-    script.dispatchEvent(shifted);
-    expect(shifted.defaultPrevented).toBe(false);
-    expect(h.document.sector.npcs[0]?.dialogScript).toBe('Hallo');
-    script.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }));
-    expect(h.document.sector.npcs[0]?.dialogScript).toBe('Hallo\n---\nServus');
-    // Return leaves the field, and the blur that follows commits nothing again.
-    expect(globalThis.document.activeElement).not.toBe(script);
-    expect(h.document.undoDepth).toBe(depth + 1);
-  });
-
-  it('commits a dialog script on blur as exactly one undo step', () => {
-    const h = harness();
-    h.select([{ kind: 'npc', id: 'libus' }]);
-    const script = h.input('Script') as unknown as HTMLTextAreaElement;
-    const depth = h.document.undoDepth;
-    script.focus();
-    script.value = 'Hallo\n---\nServus';
-    script.blur();
-    expect(h.document.sector.npcs[0]?.dialogScript).toBe('Hallo\n---\nServus');
-    expect(h.document.undoDepth).toBe(depth + 1);
-    script.focus();
-    script.blur();
-    expect(h.document.undoDepth).toBe(depth + 1);
-  });
-
-  it('reverts a dialog script the document refuses', () => {
-    const h = harness();
-    h.select([{ kind: 'npc', id: 'libus' }]);
-    const script = h.input('Script') as unknown as HTMLTextAreaElement;
-    const depth = h.document.undoDepth;
-    // One step longer than a say may be. Typed a second time, it is refused a second time.
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      script.focus();
-      script.value = 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxSayUTF8Bytes + 1);
-      script.blur();
-      expect(script.value).toBe('Hallo');
-    }
-    expect(h.document.sector.npcs[0]?.dialogScript).toBe('Hallo');
-    expect(h.document.undoDepth).toBe(depth);
-  });
 });
 
 describe('reseed lifecycle', () => {
@@ -392,6 +346,295 @@ describe("an NPC's service", () => {
     expect(h.picker('Service').value).toBe('healerMaster');
     h.document.undo();
     expect(h.picker('Service').value).toBe('');
+  });
+});
+
+describe("an NPC's lines", () => {
+  const libus = (h: Harness): Sector['npcs'][number] => h.document.sector.npcs[0]!;
+  const textarea = (h: Harness, label: string): HTMLTextAreaElement => h.input(label) as unknown as HTMLTextAreaElement;
+  const buttonNamed = (h: Harness, name: string): HTMLButtonElement[] =>
+    [...h.panel.root.querySelectorAll<HTMLButtonElement>('button')].filter((candidate) => candidate.textContent === name);
+  const stepLabels = (h: Harness): string[] =>
+    [...h.panel.root.querySelectorAll('.editor-dialog-step label')].map((label) => label.textContent ?? '').filter((label) => label.startsWith('Step'));
+  const optionLabels = (picker: HTMLSelectElement): string[] => [...picker.options].map((option) => option.textContent ?? '');
+  /** Types into the New step box, as a keystroke does. */
+  const compose = (h: Harness, text: string): void => {
+    const box = textarea(h, 'New step');
+    box.focus();
+    box.value = text;
+    box.dispatchEvent(new Event('input'));
+  };
+
+  function withSteps(h: Harness, dialog: Sector['npcs'][number]['dialog'], service?: Sector['npcs'][number]['service']): void {
+    h.document.mutate('Seed lines', (sector) => {
+      sector.npcs[0]!.dialog = dialog;
+      if (service !== undefined) sector.npcs[0]!.service = service;
+    });
+    h.select([{ kind: 'npc', id: 'libus' }]);
+  }
+
+  it('writes the greeting on Return as one undo step, and removes the key once it is cleared', () => {
+    const h = harness();
+    h.select([{ kind: 'npc', id: 'libus' }]);
+    const depth = h.document.undoDepth;
+    h.type('Greeting', 'Greetings, $name!');
+    expect(libus(h).greeting).toBe('Greetings, $name!');
+    expect(globalThis.document.activeElement).not.toBe(textarea(h, 'Greeting'));
+    expect(h.document.undoDepth).toBe(depth + 1);
+    h.type('Greeting', '   ', 'blur');
+    expect('greeting' in libus(h)).toBe(false);
+    expect(textarea(h, 'Greeting').value).toBe('');
+  });
+
+  it("writes a step's text and whom it is for, each as one undo step", () => {
+    const h = harness();
+    h.select([{ kind: 'npc', id: 'libus' }]);
+    const depth = h.document.undoDepth;
+    h.type('Step 1', 'New here?', 'blur');
+    expect(libus(h).dialog).toEqual([{ text: 'New here?' }]);
+    choose(h.picker('For step 1'), 'quest:fighter-trial:offered');
+    expect(h.picker('For step 1').selectedOptions[0]?.textContent).toBe('fighter-trial offered');
+    expect(libus(h).dialog).toEqual([{ text: 'New here?', when: { quest: 'fighter-trial', state: 'offered' } }]);
+    choose(h.picker('For step 1'), '');
+    expect(libus(h).dialog).toEqual([{ text: 'New here?' }]);
+    expect(h.document.undoDepth).toBe(depth + 3);
+  });
+
+  it('adds the new step for whom its For names as one undo step, and empties the box for the next', () => {
+    const h = harness();
+    h.select([{ kind: 'npc', id: 'libus' }]);
+    const depth = h.document.undoDepth;
+    compose(h, 'Ready for your trial?');
+    choose(h.picker('For new step'), 'quest:fighter-trial:offered');
+    const add = buttonNamed(h, 'Add step')[0]!;
+    add.focus();
+    expect(globalThis.document.activeElement).toBe(add);
+    add.click();
+    expect(libus(h).dialog).toEqual([{ text: 'Servus' }, { text: 'Ready for your trial?', when: { quest: 'fighter-trial', state: 'offered' } }]);
+    expect(h.document.undoDepth).toBe(depth + 1);
+    expect(stepLabels(h)).toEqual(['Step 1', 'Step 2']);
+    expect(textarea(h, 'New step').value).toBe('');
+    expect(h.picker('For new step').value).toBe('');
+    expect(globalThis.document.activeElement).toBe(textarea(h, 'New step'));
+    // What the box kept goes with the line it added, so coming back finds it empty.
+    h.select([]);
+    h.select([{ kind: 'npc', id: 'libus' }]);
+    expect(textarea(h, 'New step').value).toBe('');
+    expect(h.picker('For new step').value).toBe('');
+  });
+
+  it('adds the new step on Enter, but not on an Enter an input method takes', () => {
+    const h = harness();
+    h.select([{ kind: 'npc', id: 'libus' }]);
+    compose(h, 'Nihao');
+    const press = (init: KeyboardEventInit): KeyboardEvent => {
+      const event = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true, ...init });
+      textarea(h, 'New step').dispatchEvent(event);
+      return event;
+    };
+    // While composing, and WebKit's confirming Enter after the composition ended.
+    expect(press({ isComposing: true }).defaultPrevented).toBe(false);
+    expect(press({ keyCode: 229 }).defaultPrevented).toBe(false);
+    expect(libus(h).dialog).toEqual([{ text: 'Servus' }]);
+    expect(press({}).defaultPrevented).toBe(true);
+    expect(libus(h).dialog).toEqual([{ text: 'Servus' }, { text: 'Nihao' }]);
+  });
+
+  it('commits a name, a greeting, or a step on Return, but not on an Enter an input method takes', () => {
+    const h = harness();
+    h.select([{ kind: 'npc', id: 'libus' }]);
+    for (const [label, committed] of [
+      ['Name', 'Libus'],
+      ['Greeting', 'Hallo'],
+      ['Step 1', 'Servus'],
+    ] as const) {
+      const area = textarea(h, label);
+      area.focus();
+      area.value = 'Nihao';
+      for (const init of [{ isComposing: true }, { keyCode: 229 }]) {
+        const event = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true, ...init });
+        area.dispatchEvent(event);
+        expect(event.defaultPrevented).toBe(false);
+        expect(globalThis.document.activeElement).toBe(area);
+      }
+      expect(libus(h)).toMatchObject({ name: 'Libus', greeting: 'Hallo', dialog: [{ text: 'Servus' }] });
+      // Back to what it was, so leaving the field commits nothing.
+      area.value = committed;
+    }
+  });
+
+  it('adds nothing for a new step that says nothing', () => {
+    const h = harness();
+    h.select([{ kind: 'npc', id: 'libus' }]);
+    const depth = h.document.undoDepth;
+    compose(h, '   ');
+    buttonNamed(h, 'Add step')[0]!.click();
+    expect(libus(h).dialog).toEqual([{ text: 'Servus' }]);
+    expect(h.document.undoDepth).toBe(depth);
+  });
+
+  it('keeps a new step the document refuses in the box, writing nothing', () => {
+    const h = harness();
+    h.select([{ kind: 'npc', id: 'libus' }]);
+    const depth = h.document.undoDepth;
+    const tooLong = 'a'.repeat(SOMNIO_CONSTANTS.npcDialogLineGraphemes + 1);
+    choose(h.picker('For new step'), 'role:none');
+    compose(h, tooLong);
+    buttonNamed(h, 'Add step')[0]!.click();
+    expect(libus(h).dialog).toEqual([{ text: 'Servus' }]);
+    expect(h.document.undoDepth).toBe(depth);
+    expect(textarea(h, 'New step').value).toBe(tooLong);
+    expect(h.picker('For new step').value).toBe('role:none');
+  });
+
+  it('writes nothing of the new step as focus leaves the box', () => {
+    const h = harness();
+    h.select([{ kind: 'npc', id: 'libus' }]);
+    const depth = h.document.undoDepth;
+    compose(h, 'And running is forbidden in here!');
+    h.picker('For new step').focus();
+    choose(h.picker('For new step'), 'role:none');
+    buttonNamed(h, 'Add step')[0]!.focus();
+    textarea(h, 'Step 1').focus();
+    h.panel.flushDraft();
+    expect(libus(h).dialog).toEqual([{ text: 'Servus' }]);
+    expect(h.document.undoDepth).toBe(depth);
+    expect(textarea(h, 'New step').value).toBe('And running is forbidden in here!');
+  });
+
+  it('keeps the new step in the box as the steps change, by a Remove or an undo', () => {
+    const h = harness();
+    h.select([{ kind: 'npc', id: 'libus' }]);
+    const box = textarea(h, 'New step');
+    compose(h, 'And running is forbidden in here!');
+    buttonNamed(h, 'Remove')[0]!.click();
+    expect(libus(h).dialog).toEqual([]);
+    h.document.undo();
+    expect(libus(h).dialog).toEqual([{ text: 'Servus' }]);
+    expect(textarea(h, 'New step')).toBe(box);
+    expect(box.value).toBe('And running is forbidden in here!');
+  });
+
+  it('keeps the new step of an NPC through selecting another and coming back', () => {
+    const h = harness();
+    h.document.mutate('Seed NPC', (sector) => {
+      sector.npcs.push({ id: 'quieta', name: 'Quieta', characterModelId: 'hero', x: 6, z: 6, facing: 0, dialog: [] });
+    });
+    h.select([{ kind: 'npc', id: 'libus' }]);
+    compose(h, 'And running is forbidden in here!');
+    choose(h.picker('For new step'), 'role:none');
+    h.select([{ kind: 'npc', id: 'quieta' }]);
+    expect(textarea(h, 'New step').value).toBe('');
+    expect(h.picker('For new step').value).toBe('');
+    h.select([{ kind: 'npc', id: 'libus' }]);
+    expect(textarea(h, 'New step').value).toBe('And running is forbidden in here!');
+    expect(h.picker('For new step').value).toBe('role:none');
+  });
+
+  it('keeps the new step with its NPC through a rename, back through undo and forward through redo', () => {
+    const h = harness();
+    h.select([{ kind: 'npc', id: 'libus' }]);
+    compose(h, 'And running is forbidden in here!');
+    choose(h.picker('For new step'), 'role:none');
+    h.type('Id', 'libus-elder');
+    expect(h.selection).toEqual([{ kind: 'npc', id: 'libus-elder' }]);
+    const shown = (): string[] => [textarea(h, 'New step').value, h.picker('For new step').value];
+    expect(shown()).toEqual(['And running is forbidden in here!', 'role:none']);
+    h.document.undo();
+    expect(h.selection).toEqual([{ kind: 'npc', id: 'libus' }]);
+    expect(shown()).toEqual(['And running is forbidden in here!', 'role:none']);
+    h.document.redo();
+    expect(shown()).toEqual(['And running is forbidden in here!', 'role:none']);
+  });
+
+  it('keeps the new step of an NPC through a rename of another kind of record that shares its id', () => {
+    const h = harness();
+    h.document.mutate('Seed blocker', (sector) => {
+      sector.blockers[0]!.id = 'libus';
+    });
+    h.select([{ kind: 'npc', id: 'libus' }]);
+    compose(h, 'And running is forbidden in here!');
+    h.select([{ kind: 'blocker', id: 'libus' }]);
+    h.type('Id', 'wall-two');
+    expect(h.document.sector.blockers[0]!.id).toBe('wall-two');
+    h.select([{ kind: 'npc', id: 'libus' }]);
+    expect(textarea(h, 'New step').value).toBe('And running is forbidden in here!');
+  });
+
+  it('drops the new step with its NPC, so another NPC given its id starts empty', () => {
+    const h = harness();
+    h.select([{ kind: 'npc', id: 'libus' }]);
+    compose(h, 'And running is forbidden in here!');
+    const npc = structuredClone(libus(h));
+    h.select([]);
+    h.document.mutate('Delete NPC', (sector) => sector.npcs.splice(0, 1));
+    h.document.mutate('Place NPC', (sector) => sector.npcs.push({ ...npc, name: 'Quieta' }));
+    h.select([{ kind: 'npc', id: 'libus' }]);
+    expect(textarea(h, 'New step').value).toBe('');
+  });
+
+  it("puts the new step's For back at Everyone once the service no longer offers it, keeping its text", () => {
+    const h = harness();
+    withSteps(h, [], 'fighterMaster');
+    choose(h.picker('For new step'), 'role:own');
+    compose(h, 'Meet a blow with your guard.');
+    choose(h.picker('Service'), 'shopkeeper');
+    expect(h.picker('For new step').value).toBe('');
+    expect(textarea(h, 'New step').value).toBe('Meet a blow with your guard.');
+    // The For stays at Everyone when the service comes back, so Add writes what it shows.
+    h.document.undo();
+    expect(h.picker('For new step').value).toBe('');
+    buttonNamed(h, 'Add step')[0]!.click();
+    expect(libus(h).dialog).toEqual([{ text: 'Meet a blow with your guard.' }]);
+  });
+
+  it('removes a step, and an undo brings back one row per step, each editing its own', () => {
+    const h = harness();
+    withSteps(h, [{ text: 'First.' }, { text: 'Second.' }, { text: 'Third.' }]);
+    buttonNamed(h, 'Remove')[1]!.click();
+    expect(libus(h).dialog).toEqual([{ text: 'First.' }, { text: 'Third.' }]);
+    expect(stepLabels(h)).toEqual(['Step 1', 'Step 2']);
+    h.document.undo();
+    expect(stepLabels(h)).toEqual(['Step 1', 'Step 2', 'Step 3']);
+    expect(textarea(h, 'Step 2').value).toBe('Second.');
+    h.type('Step 2', 'Second, again.');
+    expect(libus(h).dialog).toEqual([{ text: 'First.' }, { text: 'Second, again.' }, { text: 'Third.' }]);
+  });
+
+  it('offers own role and another role only on a master, following the Service picker', () => {
+    const h = harness();
+    h.select([{ kind: 'npc', id: 'libus' }]);
+    const roles = (): string[] => optionLabels(h.picker('For step 1')).slice(0, 4);
+    expect(roles()).toEqual(['Everyone', 'No role', 'fighter-trial offered', 'fighter-trial held']);
+    choose(h.picker('Service'), 'fighterMaster');
+    expect(roles()).toEqual(['Everyone', 'No role', 'Own role', 'Another role']);
+    choose(h.picker('Service'), 'shopkeeper');
+    expect(roles()).toEqual(['Everyone', 'No role', 'fighter-trial offered', 'fighter-trial held']);
+  });
+
+  it("refuses a service that is no master's for an NPC with an own-role step", () => {
+    const h = harness();
+    withSteps(h, [{ text: 'Meet a blow with your guard.', when: { role: 'own' } }], 'fighterMaster');
+    const depth = h.document.undoDepth;
+    choose(h.picker('Service'), 'shopkeeper');
+    expect(libus(h).service).toBe('fighterMaster');
+    expect(libus(h).dialog).toEqual([{ text: 'Meet a blow with your guard.', when: { role: 'own' } }]);
+    expect(h.document.undoDepth).toBe(depth);
+    expect(h.picker('Service').value).toBe('fighterMaster');
+    expect(h.picker('For step 1').value).toBe('role:own');
+  });
+
+  it.each([
+    ['runs past the line budget', 'a'.repeat(SOMNIO_CONSTANTS.npcDialogLineGraphemes + 1)],
+    ['says nothing', '   '],
+  ])('reverts a step that %s', (_name, typed) => {
+    const h = harness();
+    h.select([{ kind: 'npc', id: 'libus' }]);
+    const depth = h.document.undoDepth;
+    h.type('Step 1', typed, 'blur');
+    expect(textarea(h, 'Step 1').value).toBe('Servus');
+    expect(libus(h).dialog).toEqual([{ text: 'Servus' }]);
+    expect(h.document.undoDepth).toBe(depth);
   });
 });
 

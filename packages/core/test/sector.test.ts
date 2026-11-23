@@ -11,7 +11,7 @@ describe('sectorView', () => {
         placements: [{ id: 'box-1', modelId: 'box', x: 1, z: 2, yaw: 90, elevation: 0 }],
         fixtures: [{ id: 'fixture-1', placement: 'box-1', service: 'bountyBoard' }],
         spawn: { x: 1, z: 1, facing: 0 },
-        npcs: [{ id: 'libus', name: 'Libus', characterModelId: 'libus', x: 3, z: 3, facing: 0, dialogScript: 'Hello.' }],
+        npcs: [{ id: 'libus', name: 'Libus', characterModelId: 'libus', x: 3, z: 3, facing: 0, greeting: 'Hello.', dialog: [] }],
         monsterSpawns: [{ id: 'spawn-1', kind: 'ghost', x: 0, z: 0, width: 4, depth: 4, maxAlive: 3, eliteChance: 0 }],
       },
     );

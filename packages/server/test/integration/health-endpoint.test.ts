@@ -38,7 +38,7 @@ describe('GET /health', () => {
         false,
       ),
     );
-    const adminDependencies = await makeAdminDependencies();
+    const adminDependencies = makeAdminDependencies();
     try {
       const app: Hono = createApp({ db, healthLogger: testLogger() });
       await withLiveServer({ app, adminDependencies }, async (running) => {

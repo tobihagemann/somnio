@@ -26,7 +26,7 @@ const valid: CreateCharacterMessage = { name: 'Ida', people: 'umbrae' };
 
 async function createResult(message: CreateCharacterMessage) {
   const characters = new RecordingCharacterRepository();
-  const dependencies = await makeStubConnectionDependencies({ characters });
+  const dependencies = makeStubConnectionDependencies({ characters });
   const connection = new ConnectionActor(dependencies);
   await handleCreateCharacter(message, crypto.randomUUID(), connection, dependencies);
   return { results: characterResults(await collectMessages(connection.outbox)), creates: characters.creates };
@@ -73,7 +73,7 @@ describe('a character created', () => {
     const played = makeCharacter({ x: 5, z: 5 }, 'Saibot');
     const unplayed = newCharacter(crypto.randomUUID(), 'ida', 'sopors');
     const characters = new OneReadCharacterRepository(new Map([[accountId, [played, unplayed]]]));
-    const dependencies = await makeStubConnectionDependencies({ characters });
+    const dependencies = makeStubConnectionDependencies({ characters });
     const connection = new ConnectionActor(dependencies);
 
     await handleCreateCharacter({ ...valid, name: 'Zed' }, accountId, connection, dependencies);
@@ -88,31 +88,31 @@ describe('a character created', () => {
 const STARTER_SPAWN = { space: STARTER_SECTOR, position: { x: 3, z: 4 }, facing: headingFromCardinal('east') };
 
 /** A world of one outdoor sector and a starter sector whose spawn is at (3, 4), facing east. */
-async function router(field: Partial<Sector> = {}) {
+function router(field: Partial<Sector> = {}) {
   const starter = interiorSector(STARTER_SECTOR, { spawn: { x: 3, z: 4, facing: headingFromCardinal('east') } });
-  return (await makeStubConnectionDependencies({ sectors: [makeSector('Field', field), starter] })).worldRouter;
+  return makeStubConnectionDependencies({ sectors: [makeSector('Field', field), starter] }).worldRouter;
 }
 
 describe('resolvedSpawn', () => {
-  it('keeps a saved position a player can stand on', async () => {
+  it('keeps a saved position a player can stand on', () => {
     const character = makeCharacter({ x: 5, z: 5 });
-    expect(resolvedSpawn(character, await router())).toBe(character);
+    expect(resolvedSpawn(character, router())).toBe(character);
   });
 
-  it('puts a fresh character, stored at the origin sentinel, on the starter spawn', async () => {
-    expect(resolvedSpawn(newCharacter(crypto.randomUUID(), 'fresh', 'vigils'), await router())).toEqual(STARTER_SPAWN);
+  it('puts a fresh character, stored at the origin sentinel, on the starter spawn', () => {
+    expect(resolvedSpawn(newCharacter(crypto.randomUUID(), 'fresh', 'vigils'), router())).toEqual(STARTER_SPAWN);
   });
 
   it.each<[string, Partial<Sector>]>([
     ['inside a collider', { placements: [{ id: 'box-1', modelId: 'box', x: 5, z: 5, yaw: 0, elevation: 0 }] }],
     ['inside a blocker', { blockers: [{ id: 'slab', x: 4, z: 4, width: 2, depth: 2 }] }],
-    ['on an NPC', { npcs: [makeNPC('guard', { x: 5.2, z: 5 }, '')] }],
-  ])('falls back to the starter spawn from a saved position %s', async (_label, field) => {
-    expect(resolvedSpawn(makeCharacter({ x: 5, z: 5 }), await router(field))).toEqual(STARTER_SPAWN);
+    ['on an NPC', { npcs: [makeNPC('guard', { x: 5.2, z: 5 }, {})] }],
+  ])('falls back to the starter spawn from a saved position %s', (_label, field) => {
+    expect(resolvedSpawn(makeCharacter({ x: 5, z: 5 }), router(field))).toEqual(STARTER_SPAWN);
   });
 
-  it('falls back to the starter spawn from a space the world no longer has', async () => {
-    expect(resolvedSpawn(makeCharacter({ x: 5, z: 5 }, 'tester', 'Gone'), await router())).toEqual(STARTER_SPAWN);
+  it('falls back to the starter spawn from a space the world no longer has', () => {
+    expect(resolvedSpawn(makeCharacter({ x: 5, z: 5 }, 'tester', 'Gone'), router())).toEqual(STARTER_SPAWN);
   });
 });
 
@@ -129,7 +129,7 @@ describe('a join', () => {
     vi.useFakeTimers({ toFake: ['Date'], now: NOW });
     const characters = new StubCharacterRepository();
     const snapshot = vi.spyOn(characters, 'snapshot');
-    const dependencies = await makeStubConnectionDependencies({ characters });
+    const dependencies = makeStubConnectionDependencies({ characters });
     const character = { ...makeCharacter({ x: 5, z: 5 }), lastSeen: new Date(stored) };
 
     expect(await joinCharacter(character, crypto.randomUUID(), new ConnectionActor(dependencies), dependencies)).toBe(true);
@@ -144,7 +144,7 @@ describe('a dreamer who comes back', () => {
     const clock = { ms: 0 };
     const characters = new StubCharacterRepository();
     const saved = vi.spyOn(characters, 'persistCheckpoint');
-    const dependencies = await makeStubConnectionDependencies({ sectors: [makeSector('Field')], characters, now: () => clock.ms });
+    const dependencies = makeStubConnectionDependencies({ sectors: [makeSector('Field')], characters, now: () => clock.ms });
     const worldRouter = dependencies.worldRouter;
     const accountId = crypto.randomUUID();
     const join = async (joining: Character): Promise<ConnectionActor> => {

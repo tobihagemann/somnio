@@ -192,7 +192,7 @@ const cases: { label: string; message: SomnioMessage; state: ConnectionState['ki
  */
 describe('ConnectionActor.dispatch', () => {
   it.each(cases)('closes with protocolError for $label', async ({ message, state }) => {
-    const connection = new ConnectionActor(await makeStubConnectionDependencies());
+    const connection = new ConnectionActor(makeStubConnectionDependencies());
     if (state === 'authenticated') connection.markAuthenticated(crypto.randomUUID());
     if (state === 'attached') connection.markAttached('player', 'EdariaLibrary', crypto.randomUUID());
     const decision = await connection.dispatch(message);
@@ -217,13 +217,10 @@ describe('an attached connection', () => {
   afterEach(() => vi.restoreAllMocks());
 
   /** A dreamer beside Pugnax and Mercus, with a hurt dreamer holding Libus's errand in a Moonstone's reach. */
-  async function attached(character: Partial<Character>, inventory: Inventory, overrides: Partial<Sector> = {}) {
-    const npcs = [
-      { ...makeNPC('pugnax', { x: 10, z: 8 }, ''), service: 'fighterMaster' as const },
-      { ...makeNPC('mercus', { x: 8.6, z: 9.5 }, ''), service: 'shopkeeper' as const },
-    ];
+  function attached(character: Partial<Character>, inventory: Inventory, overrides: Partial<Sector> = {}) {
+    const npcs = [makeNPC('pugnax', { x: 10, z: 8 }, {}, 'fighterMaster'), makeNPC('mercus', { x: 8.6, z: 9.5 }, {}, 'shopkeeper')];
     const sectors = [makeSector('EdariaFighterHall', { npcs, ...overrides })];
-    const dependencies = await makeStubConnectionDependencies({ sectors });
+    const dependencies = makeStubConnectionDependencies({ sectors });
     const space = dependencies.worldRouter.space(OUTDOOR_SPACE_ID)!;
     const connection = new ConnectionActor(dependencies);
     const { entityId } = attachPlayer(space, { x: 10, z: 9.5 }, 'dreamer', { outbox: connection.outbox, character, inventory });
@@ -354,7 +351,7 @@ describe('an attached connection', () => {
       carrying({ coins: COINS + 40, bag: [CUDGEL] }),
     ],
   ])('takes %s to the space', async (_label, character, inventory, message, read, expected) => {
-    const a = await attached(character, inventory);
+    const a = attached(character, inventory);
     expect(read(a)).not.toEqual(expected);
     expect(await a.connection.dispatch(message(a))).toEqual({ kind: 'keepOpen' });
     a.space.step(0.05);
@@ -362,14 +359,14 @@ describe('an attached connection', () => {
   });
 
   it("saves the dropper's checkpoint without the item through the router the moment it is thrown", async () => {
-    const a = await attached({}, carrying({ worn: [CUDGEL] }));
+    const a = attached({}, carrying({ worn: [CUDGEL] }));
     const persistCheckpoint = vi.spyOn(a.dependencies.characters, 'persistCheckpoint');
     expect(await a.connection.dispatch({ tag: 'dropItem', payload: { itemId: CUDGEL.id, heading: 0 } })).toEqual({ kind: 'keepOpen' });
     expect(persistCheckpoint.mock.calls).toEqual([[expect.objectContaining({ id: a.own().character.id }), carrying()]]);
   });
 
   it('takes a pick-up to the space, which puts the item back in the bag under a new id', async () => {
-    const a = await attached({}, carrying({ bag: [CUDGEL] }));
+    const a = attached({}, carrying({ bag: [CUDGEL] }));
     a.space.handleDropItem(CUDGEL.id, 0, a.own().character.id);
     expect(a.own().inventory.bag).toEqual([]);
     expect(await a.connection.dispatch({ tag: 'pickUp', payload: { lootId: 'loot-1' } })).toEqual({ kind: 'keepOpen' });
@@ -377,13 +374,13 @@ describe('an attached connection', () => {
   });
 
   it('takes a target to the space, which sends its health back', async () => {
-    const a = await attached({}, carrying());
+    const a = attached({}, carrying());
     expect(await a.connection.dispatch({ tag: 'target', payload: { targetId: a.hurtId } })).toEqual({ kind: 'keepOpen' });
     expect(payloads(await collectMessages(a.connection.outbox), 'vitals')).toEqual([{ entityId: a.hurtId, health: 0.5 }]);
   });
 
   it('takes Mend to the space, which mends the target', async () => {
-    const a = await attached(HEALER, wearing(MOONSTONE));
+    const a = attached(HEALER, wearing(MOONSTONE));
     expect(await a.connection.dispatch({ tag: 'target', payload: { targetId: a.hurtId } })).toEqual({ kind: 'keepOpen' });
     expect(await a.connection.dispatch({ tag: 'engage', payload: { on: true } })).toEqual({ kind: 'keepOpen' });
     a.space.step(0.05);
@@ -393,7 +390,7 @@ describe('an attached connection', () => {
   /** The space runs on the machine's clock here, and a nightmare takes its respawn time to appear. */
   it('takes Attack to the space, which swings at the target in front', async () => {
     const now = vi.spyOn(performance, 'now').mockReturnValue(0);
-    const a = await attached({}, carrying(), { monsterSpawns: [makeMonsterSpawn({ x: 10, z: 10.2 })] });
+    const a = attached({}, carrying(), { monsterSpawns: [makeMonsterSpawn({ x: 10, z: 10.2 })] });
     now.mockReturnValue(RESPAWN_MS);
     a.space.step(0);
 
@@ -411,10 +408,10 @@ describe('an attached connection', () => {
  * space's, which the test advances. Past the budget a frame is dropped, and nobody else hears of it.
  */
 describe('the frame budgets of an attached account', () => {
-  async function budgeted(sectors: Sector[]) {
+  function budgeted(sectors: Sector[]) {
     const clock = { ms: 0 };
     const frameLimiter = new AttemptLimiter({ enabled: true, logger: testLogger(), budgets: FRAME_BUDGETS, now: () => clock.ms });
-    const dependencies = await makeStubConnectionDependencies({ sectors, frameLimiter, now: () => clock.ms });
+    const dependencies = makeStubConnectionDependencies({ sectors, frameLimiter, now: () => clock.ms });
     const worldRouter = dependencies.worldRouter;
     const space = worldRouter.space(OUTDOOR_SPACE_ID)!;
     /** A connection attached as a dreamer at `at`, for `accountId` or a fresh account. */
@@ -435,7 +432,7 @@ describe('the frame budgets of an attached account', () => {
   const say = (text: string): SomnioMessage => ({ tag: 'clientSay', payload: { text, kind: 'say' } });
 
   it('delivers a listener at most a burst of lines from a thousand sent at once, and never overflows their outbox', async () => {
-    const b = await budgeted([makeSector('Field')]);
+    const b = budgeted([makeSector('Field')]);
     const speaker = b.connect({ x: 5, z: 5 });
     const listenerOutbox = new ConnectionOutbox(b.dependencies.outboxHighWatermark);
     attachPlayer(b.space, { x: 6, z: 5 }, 'listener', { outbox: listenerOutbox });
@@ -452,7 +449,7 @@ describe('the frame budgets of an attached account', () => {
       makeSector('Town', makeDoor('inside', { x: 10, z: 10 }, { sector: 'Hall', door: 'exit' })),
       interiorSector('Hall', makeDoor('exit', { x: 5, z: 9 }, { sector: 'Town', door: 'inside' })),
     ];
-    const b = await budgeted(town);
+    const b = budgeted(town);
     const walker = b.connect({ x: 10, z: 9.7 });
     const nowhere = { sector: 'Town', doorId: 'cellar' };
     await dispatchAll(
@@ -465,7 +462,7 @@ describe('the frame budgets of an attached account', () => {
   });
 
   it('shows a viewer no change of hands past the items budget', async () => {
-    const b = await budgeted([makeSector('Field')]);
+    const b = budgeted([makeSector('Field')]);
     const dreamer = b.connect({ x: 5, z: 5 }, carrying({ bag: [CUDGEL] }));
     const viewer = recordingOutbox();
     attachPlayer(b.space, { x: 6, z: 5 }, 'viewer', { outbox: viewer.outbox });
@@ -481,7 +478,7 @@ describe('the frame budgets of an attached account', () => {
   });
 
   it('spends one budget across the bag and the ground, so past it no throw or pick-up reaches a viewer', async () => {
-    const b = await budgeted([makeSector('Field')]);
+    const b = budgeted([makeSector('Field')]);
     const dreamer = b.connect({ x: 5, z: 5 }, carrying({ bag: [CUDGEL, WAND] }));
     const viewer = recordingOutbox();
     attachPlayer(b.space, { x: 6, z: 5 }, 'viewer', { outbox: viewer.outbox });
@@ -498,7 +495,7 @@ describe('the frame budgets of an attached account', () => {
   });
 
   it('drops a move past the budget without a correction, leaving the dreamer where the last accepted one put them', async () => {
-    const b = await budgeted([makeSector('Field')]);
+    const b = budgeted([makeSector('Field')]);
     const dreamer = b.connect({ x: 5, z: 5 });
     await dispatchAll(
       dreamer.connection,
@@ -517,7 +514,7 @@ describe('the frame budgets of an attached account', () => {
    * because the allowance's own comparison has no tolerance.
    */
   it("admits a walker's reports a stall bunched, up to what the allowance and the pace credit accept", async () => {
-    const b = await budgeted([makeSector('Field')]);
+    const b = budgeted([makeSector('Field')]);
     const dreamer = b.connect({ x: 2, z: 10 });
     b.clock.ms += 7400;
     const reports: SomnioMessage[] = [];
@@ -535,7 +532,7 @@ describe('the frame budgets of an attached account', () => {
 
   /** A viewer in West sees Middle but not East, so each crossing of the Middle-East border shows them an entity or a leave. */
   it('bounds what stepping back and forth across a sector border shows a viewer to the move budget', async () => {
-    const b = await budgeted(makeSectorLine());
+    const b = budgeted(makeSectorLine());
     const dreamer = b.connect({ x: 39.99, z: 10 });
     const viewer = recordingOutbox();
     attachPlayer(b.space, { x: 1, z: 10 }, 'viewer', { outbox: viewer.outbox });
@@ -554,7 +551,7 @@ describe('the frame budgets of an attached account', () => {
   });
 
   it('keeps the budget a connection spent for the account, through other accounts coming and going, on its next connection', async () => {
-    const b = await budgeted([makeSector('Field')]);
+    const b = budgeted([makeSector('Field')]);
     const listenerOutbox = recordingOutbox();
     attachPlayer(b.space, { x: 6, z: 5 }, 'listener', { outbox: listenerOutbox.outbox });
     const first = b.connect({ x: 5, z: 5 });

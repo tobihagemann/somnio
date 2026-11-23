@@ -62,6 +62,7 @@ import {
   questComplete,
   reachDistance,
   questsOf,
+  speechReadSeconds,
   turnInGrant,
   windedAfter,
   windedOnJoin,
@@ -86,7 +87,7 @@ import type {
   QuestMarker,
   QuestOrBountyId,
 } from '@somnio/core';
-import { bubbleLifetimeMs, canvasWidthMeasurer, wrapSpeech } from '@/scene/speechBubbleText';
+import { canvasWidthMeasurer, wrapSpeech } from '@/scene/speechBubbleText';
 import { wheelDeltaToZoomDelta } from '@/scene/cameraRig';
 import { committedNPCNames } from '@/splash/sectors';
 import { parseChatInput } from './chatCommand';
@@ -1385,7 +1386,7 @@ export class GameplaySession {
       entityId: self.id,
       source: self.position,
       lines,
-      lifetimeMs: bubbleLifetimeMs(lines.length),
+      lifetimeMs: speechReadSeconds(text) * 1000,
       kind: input.kind,
       clarity: 1,
     });
@@ -1889,7 +1890,7 @@ export class GameplaySession {
       entityId: say.entityId,
       source: voice,
       lines,
-      lifetimeMs: bubbleLifetimeMs(lines.length),
+      lifetimeMs: speechReadSeconds(say.text) * 1000,
       kind: say.kind,
       clarity: say.clarity,
     });

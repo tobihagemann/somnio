@@ -22,12 +22,12 @@ const INN = 'EdariaInn';
 function world(inn: Partial<Sector> = { spawn: INN_SPAWN }): Sector[] {
   return [
     makeSector('Town', makeDoor('inside', { x: 10, z: 10 }, { sector: INN, door: 'exit' })),
-    interiorSector(INN, { ...makeDoor('exit', { x: 5, z: 9 }, { sector: 'Town', door: 'inside' }), npcs: [makeNPC('quieta', { x: 8, z: 2 }, '')], ...inn }),
+    interiorSector(INN, { ...makeDoor('exit', { x: 5, z: 9 }, { sector: 'Town', door: 'inside' }), npcs: [makeNPC('quieta', { x: 8, z: 2 }, {})], ...inn }),
   ];
 }
 
-async function attached(character: Partial<Character>, sectors = world()) {
-  const dependencies = await makeStubConnectionDependencies({ sectors, initialWorldSeconds: WORLD_SECONDS });
+function attached(character: Partial<Character>, sectors = world()) {
+  const dependencies = makeStubConnectionDependencies({ sectors, initialWorldSeconds: WORLD_SECONDS });
   const connection = new ConnectionActor(dependencies);
   const { entityId } = attachPlayer(dependencies.worldRouter.space(OUTDOOR_SPACE_ID)!, FELL_AT, 'dreamer', {
     outbox: connection.outbox,
@@ -41,7 +41,7 @@ async function attached(character: Partial<Character>, sectors = world()) {
 
 describe('handleWake', () => {
   it('wakes a fallen dreamer at the inn, weakened, with enterSpace first', async () => {
-    const w = await attached(FALLEN);
+    const w = attached(FALLEN);
     expect(handleWake(w.entityId, OUTDOOR_SPACE_ID, w.connection, w.dependencies)).toEqual({ spaceId: INN });
     expect(w.snapshotIn(OUTDOOR_SPACE_ID)).toBeUndefined();
     expect(w.snapshotIn(INN)).toMatchObject({
@@ -69,27 +69,27 @@ describe('handleWake', () => {
   it.each<[string, Sector[]]>([
     ['a world without the inn', [makeSector('Town')]],
     ['a world whose inn has no spawn', world({})],
-  ])('wakes a fallen dreamer in %s at the starter spawn', async (_label, sectors) => {
-    const w = await attached(FALLEN, sectors);
+  ])('wakes a fallen dreamer in %s at the starter spawn', (_label, sectors) => {
+    const w = attached(FALLEN, sectors);
     expect(handleWake(w.entityId, OUTDOOR_SPACE_ID, w.connection, w.dependencies)).toEqual({ spaceId: STARTER_SECTOR });
     expect(w.snapshotIn(STARTER_SECTOR)).toMatchObject({ space: STARTER_SECTOR, position: { x: 5, z: 5 }, energy: { healthCurrent: 25 } });
   });
 
-  it('wakes a dreamer who fell in the space they wake in', async () => {
-    const w = await attached(FALLEN, [makeSector(INN, { spawn: { x: 4, z: 4, facing: 0 } })]);
+  it('wakes a dreamer who fell in the space they wake in', () => {
+    const w = attached(FALLEN, [makeSector(INN, { spawn: { x: 4, z: 4, facing: 0 } })]);
     expect(handleWake(w.entityId, OUTDOOR_SPACE_ID, w.connection, w.dependencies)).toEqual({ spaceId: OUTDOOR_SPACE_ID });
     expect(w.snapshotIn(OUTDOOR_SPACE_ID)).toMatchObject({ position: { x: 4, z: 4 }, energy: { healthCurrent: 25 } });
   });
 
   it('does nothing for a standing dreamer', async () => {
-    const w = await attached({});
+    const w = attached({});
     expect(await w.connection.dispatch({ tag: 'wake', payload: {} })).toEqual({ kind: 'keepOpen' });
     expect(w.snapshotIn(OUTDOOR_SPACE_ID)).toMatchObject({ position: FELL_AT, energy: { healthCurrent: 100 } });
     expect((await collectMessages(w.connection.outbox)).slice(JOIN_FRAMES)).toEqual([]);
   });
 
   it('leaves the connection in the space the dreamer woke in', async () => {
-    const w = await attached(FALLEN);
+    const w = attached(FALLEN);
     expect(await w.connection.dispatch({ tag: 'wake', payload: {} })).toEqual({ kind: 'keepOpen' });
     expect(w.connection.state).toMatchObject({ kind: 'attached', spaceId: INN });
     await w.connection.dispatch({ tag: 'move', payload: { x: 3, z: 4.5, facing: 0, gait: 'walk' } });
@@ -99,7 +99,7 @@ describe('handleWake', () => {
 
 describe('a fallen dreamer at a door', () => {
   it('is answered doorRefused from inside its trigger, and stays where they fell', async () => {
-    const w = await attached(FALLEN);
+    const w = attached(FALLEN);
     expect(handleUseDoor({ sector: 'Town', doorId: 'inside' }, w.entityId, OUTDOOR_SPACE_ID, w.connection, w.dependencies)).toBeUndefined();
     expect((await collectMessages(w.connection.outbox)).slice(JOIN_FRAMES)).toEqual([{ tag: 'doorRefused', payload: { sector: 'Town', doorId: 'inside' } }]);
     expect(w.snapshotIn(OUTDOOR_SPACE_ID)).toMatchObject({ position: FELL_AT });

@@ -1,13 +1,13 @@
-import { MONSTER_KIND_IDS, clamp, heading, objectModel } from '@somnio/core';
-import type { ModelRegistry, Sector } from '@somnio/core';
+import { MONSTER_KIND_IDS, QUEST_IDS, QUEST_STANDINGS, SOMNIO_CONSTANTS, clamp, heading, listenerRolesFor, objectModel } from '@somnio/core';
+import type { DialogCondition, DialogStep, ListenerRole, ModelRegistry, Sector } from '@somnio/core';
 import { SERVICES } from '@somnio/protocol';
 import type { Service } from '@somnio/protocol';
 import { GROUND_MATERIAL_IDS } from '@/scene/groundMaterials';
-import { button, checkbox, element, field, replaceChildren, select } from '@/ui/dom';
+import { button, checkbox, element, endsLine, field, replaceChildren, select, setOptions } from '@/ui/dom';
 import { maxStrokeRadius } from '../groundMarks';
 import { millimetres } from '../preferences';
 import { byId, isValidId, isValidSelection, selectionKey, setFixtureService } from '../selection';
-import type { EditorSelection } from '../selection';
+import type { EditorSelection, RecordRename } from '../selection';
 import { issueMessages } from '../surroundings';
 import type { DocumentIssues } from '../surroundings';
 import { setSelectValue } from './editorDom';
@@ -25,7 +25,8 @@ import { reseeded } from './inspectorDraft';
  * reconcile; an unparseable draft reverts, as does one the document refuses, and an equal value
  * skips the commit. Rows are rebuilt only when the selection identity changes — on a document
  * change with the same selection, each field refreshes through the reseed rule so a focused edit
- * is never lost.
+ * is never lost. An NPC's dialog is the one field whose own rows follow the document, rebuilt as
+ * its step count, or the roles its steps may be for, change.
  */
 
 export interface InspectorCallbacks {
@@ -51,6 +52,20 @@ interface PickerOption {
   label: string;
 }
 
+/** An option of a picker that writes a value of its own, which may be none. */
+interface ChoiceOption<V> extends PickerOption {
+  choice: V;
+}
+
+/** Whom a step is for, as its For picker offers it. */
+type ListenerOption = ChoiceOption<DialogCondition | undefined>;
+
+/** What an NPC's New step box holds that is not added yet: its text, and its For as the option's value. */
+interface UnaddedStep {
+  text: string;
+  listener: string;
+}
+
 /** Finds the record a field edits in whichever body it is handed: the live one to read, a commit's copy to write. */
 type Find<R> = (sector: Sector) => R | undefined;
 
@@ -67,6 +82,12 @@ const SERVICE_LABELS: Record<Service, string> = {
   mysticMaster: 'Mystic master',
   shopkeeper: 'Shopkeeper',
   bountyBoard: 'Bounty board',
+};
+
+const LISTENER_ROLE_LABELS: Record<ListenerRole, string> = {
+  none: 'No role',
+  own: 'Own role',
+  other: 'Another role',
 };
 
 function idOptions(ids: readonly string[]): PickerOption[] {
@@ -90,6 +111,12 @@ export class InspectorPanel {
   private shown!: Sector;
   /** Selection identity of the currently built rows, so a reseed never hits foreign fields. */
   private renderedKey = '';
+  /**
+   * Each NPC's New step box as last left, by the NPC's id, so selecting another loses no line. An
+   * entry follows its NPC's renames (`followRename`) and goes with the NPC and with the document
+   * (`forgetUnaddedSteps`), so no other NPC that later holds the id finds it.
+   */
+  private readonly unaddedSteps = new Map<string, UnaddedStep>();
 
   constructor(callbacks: InspectorCallbacks, registry: ModelRegistry) {
     this.callbacks = callbacks;
@@ -112,8 +139,23 @@ export class InspectorPanel {
     if (focused instanceof HTMLElement && this.body.contains(focused)) focused.blur();
   }
 
+  /** Carries an NPC's unadded step along with a rename of the NPC: a commit's, an undo's, or a redo's. */
+  followRename(rename: RecordRename): void {
+    if (rename.from.kind !== 'npc') return;
+    const kept = this.unaddedSteps.get(rename.from.id);
+    if (kept === undefined) return;
+    this.unaddedSteps.delete(rename.from.id);
+    this.unaddedSteps.set(rename.to.id, kept);
+  }
+
+  /** Drops every NPC's unadded step, for a document that replaces this one. */
+  forgetUnaddedSteps(): void {
+    this.unaddedSteps.clear();
+  }
+
   render(sector: Sector, selection: readonly EditorSelection[], isUninitialized: boolean): void {
     this.shown = sector;
+    for (const id of this.unaddedSteps.keys()) if (!sector.npcs.some((npc) => npc.id === id)) this.unaddedSteps.delete(id);
     const key = selection.length === 0 ? 'sector' : selection.map(selectionKey).sort().join(',');
     if (key !== this.renderedKey || selection.length === 0) this.rebuild(sector, selection, isUninitialized, key);
     // Rows just built are seeded here too: nothing in them is focused, so the reseed rule fills
@@ -259,7 +301,8 @@ export class InspectorPanel {
           else record.service = service;
         },
       ),
-      this.scriptField(selection.id, npc, actionName),
+      this.greetingField(selection.id, npc, actionName),
+      this.dialogField(selection.id, npc, actionName),
     ]);
   }
 
@@ -340,10 +383,7 @@ export class InspectorPanel {
         const list = options(sector);
         const value = find(sector)?.[key] ?? '';
         if (JSON.stringify(list) !== listed) {
-          replaceChildren(
-            picker.input,
-            list.map((option) => element('option', { text: option.label, attributes: { value: option.value } })),
-          );
+          setOptions(picker.input, list);
           listed = JSON.stringify(list);
           current = undefined;
         }
@@ -363,18 +403,39 @@ export class InspectorPanel {
     actionName: string,
     apply: (draft: Sector, service: Service | undefined) => void,
   ): DraftField {
-    const picker = select('Service', [{ value: '', label: 'None' }, ...SERVICES.map((service) => ({ value: service, label: SERVICE_LABELS[service] }))]);
+    return this.choicePicker(
+      'Service',
+      [{ value: '', label: 'None', choice: undefined }, ...SERVICES.map((service) => ({ value: service, label: SERVICE_LABELS[service], choice: service }))],
+      (sector) => current(sector) ?? '',
+      actionName,
+      apply,
+    );
+  }
+
+  /**
+   * A picker whose options each write a value of their own, committed directly like `picker`.
+   * `current` names the option the document holds, and a change the document refuses puts the
+   * select back on it.
+   */
+  private choicePicker<V>(
+    label: string,
+    options: readonly ChoiceOption<V>[],
+    current: (sector: Sector) => string,
+    actionName: string,
+    apply: (draft: Sector, choice: V) => void,
+  ): DraftField {
+    const picker = select(label, options);
     let shown = '';
     picker.input.addEventListener('change', () => {
-      const service = SERVICES.find((candidate) => candidate === picker.input.value);
-      if ((service ?? '') === shown) return;
-      const { accepted } = this.callbacks.mutate(actionName, (draft) => apply(draft, service));
+      const option = options.find((candidate) => candidate.value === picker.input.value);
+      if (option === undefined || option.value === shown) return;
+      const { accepted } = this.callbacks.mutate(actionName, (draft) => apply(draft, option.choice));
       if (!accepted) setSelectValue(picker.input, shown);
     });
     return {
       row: picker.row,
       refresh: (sector) => {
-        shown = current(sector) ?? '';
+        shown = current(sector);
         setSelectValue(picker.input, shown);
       },
     };
@@ -496,42 +557,148 @@ export class InspectorPanel {
     };
   }
 
-  /** The multi-line dialog-script variant, same lifecycle minus the parse step. */
-  private scriptField(id: string, find: Find<{ dialogScript: string }>, actionName: string): DraftField {
-    const textarea = element('textarea', { className: 'fantasy-field editor-script-field' });
-    textarea.id = `somnio-editor-script-${id}`;
-    const { commit, refresh } = draft(
-      textarea,
-      (sector) => find(sector)?.dialogScript ?? '',
-      (text) => text,
+  /** What an NPC says to whoever comes near. Cleared to blank, it removes the greeting. */
+  private greetingField(npcId: string, find: Find<Sector['npcs'][number]>, actionName: string): DraftField {
+    return this.lineArea(
+      'Greeting',
+      `somnio-editor-greeting-${npcId}`,
+      (sector) => find(sector)?.greeting ?? '',
+      (text) => (text.trim() === '' ? '' : text),
       (rendered) =>
         this.callbacks.mutate(actionName, (mutable) => {
           const npc = find(mutable);
-          if (npc !== undefined) npc.dialogScript = rendered;
+          if (npc === undefined) return;
+          if (rendered === '') delete npc.greeting;
+          else npc.greeting = rendered;
         }).accepted,
     );
-    // Return submits like any text field; Shift-Return inserts the newline the script needs.
+  }
+
+  /**
+   * The steps an NPC says when asked, a row each, and under them the New step box. Unlike a fixed
+   * control, the rows follow the document. A refresh rebuilds them when the step count, or the
+   * roles the NPC's steps may be for, change, and otherwise reseeds each. The box stands outside
+   * the rows, so a rebuild keeps its text and only offers its For again. It writes nothing until
+   * Add step or Enter adds its line, for whom its For names, as one undo step that empties it. A
+   * line the document refuses stays in the box, and its For goes back to Everyone once the NPC's
+   * service no longer offers it.
+   */
+  private dialogField(npcId: string, find: Find<Sector['npcs'][number]>, actionName: string): DraftField {
+    const list = element('div');
+    let rows: DraftField[] = [];
+    let options: ListenerOption[] = [];
+    let shape: string | undefined;
+    const textarea = lineTextarea(`somnio-editor-step-${npcId}-new`);
+    textarea.value = this.unaddedSteps.get(npcId)?.text ?? '';
+    const listener = select('For new step', []);
+    const keep = (): void => {
+      this.unaddedSteps.set(npcId, { text: textarea.value, listener: listener.input.value });
+    };
+    textarea.addEventListener('input', keep);
+    listener.input.addEventListener('change', keep);
+    const add = (): void => {
+      if (textarea.value.trim() === '') return;
+      const step: DialogStep = { text: textarea.value };
+      setListener(step, options.find((option) => option.value === listener.input.value)?.choice);
+      if (!this.callbacks.mutate(actionName, (mutable) => find(mutable)?.dialog.push(step)).accepted) return;
+      this.unaddedSteps.delete(npcId);
+      textarea.value = '';
+      listener.input.value = '';
+      textarea.focus();
+    };
     textarea.addEventListener('keydown', (event) => {
-      if (event.key !== 'Enter' || event.shiftKey) return;
+      if (!endsLine(event)) return;
+      event.preventDefault();
+      add();
+    });
+    const row = element('div', {
+      children: [
+        element('div', { className: 'editor-summary-label', text: 'Dialog' }),
+        list,
+        element('div', { className: 'editor-dialog-step', children: [lineRow('New step', textarea), listener.row, button('Add step', add)] }),
+        element('p', {
+          className: 'editor-caption',
+          text: `Add step or Enter adds the new step. $name substitutes the dreamer's name and counts as ${SOMNIO_CONSTANTS.npcDialogNameGraphemes} characters. A line runs at most ${SOMNIO_CONSTANTS.npcDialogLineGraphemes} characters.`,
+        }),
+      ],
+    });
+    return {
+      row,
+      refresh: (sector) => {
+        const npc = find(sector);
+        const steps = npc?.dialog ?? [];
+        const next = `${steps.length} ${listenerRolesFor(npc?.service).join(',')}`;
+        if (next === shape) {
+          for (const entry of rows) entry.refresh(sector);
+          return;
+        }
+        shape = next;
+        options = listenerOptions(npc?.service);
+        const chosen = this.unaddedSteps.get(npcId)?.listener ?? '';
+        setOptions(listener.input, options);
+        listener.input.value = options.some((option) => option.value === chosen) ? chosen : '';
+        if (listener.input.value !== chosen) keep();
+        rows = steps.map((_, index) => this.dialogStepRow(npcId, find, index, options, actionName));
+        replaceChildren(
+          list,
+          rows.map((entry) => entry.row),
+        );
+        for (const entry of rows) entry.refresh(sector);
+      },
+    };
+  }
+
+  /** One step of an NPC's dialog: its text, whom it is for, and Remove. */
+  private dialogStepRow(npcId: string, find: Find<Sector['npcs'][number]>, index: number, options: readonly ListenerOption[], actionName: string): DraftField {
+    const step = (sector: Sector) => find(sector)?.dialog[index];
+    const text = this.lineArea(
+      `Step ${index + 1}`,
+      `somnio-editor-step-${npcId}-${index}`,
+      (sector) => step(sector)?.text ?? '',
+      (typed) => typed,
+      (rendered) =>
+        this.callbacks.mutate(actionName, (mutable) => {
+          const record = step(mutable);
+          if (record !== undefined) record.text = rendered;
+        }).accepted,
+    );
+    const listener = this.choicePicker(
+      `For step ${index + 1}`,
+      options,
+      (sector) => listenerValue(step(sector)?.when),
+      actionName,
+      (mutable, when) => {
+        const record = step(mutable);
+        if (record !== undefined) setListener(record, when);
+      },
+    );
+    const remove = button('Remove', () => this.callbacks.mutate(actionName, (mutable) => find(mutable)?.dialog.splice(index, 1)));
+    return {
+      row: element('div', { className: 'editor-dialog-step', children: [text.row, listener.row, remove] }),
+      refresh: (sector) => {
+        text.refresh(sector);
+        listener.refresh(sector);
+      },
+    };
+  }
+
+  /** A line an NPC says, draft-backed like a text field. Return commits it and leaves the field. */
+  private lineArea(
+    label: string,
+    id: string,
+    render: (sector: Sector) => string,
+    parse: (text: string) => string | undefined,
+    commitRendered: (rendered: string) => boolean,
+  ): DraftField {
+    const textarea = lineTextarea(id);
+    const { commit, refresh } = draft(textarea, render, parse, commitRendered);
+    textarea.addEventListener('keydown', (event) => {
+      if (!endsLine(event)) return;
       event.preventDefault();
       commit();
       textarea.blur();
     });
-    const row = element('div', {
-      children: [
-        element('label', {
-          className: 'editor-summary-label',
-          text: 'Script',
-          attributes: { for: textarea.id },
-        }),
-        textarea,
-        element('p', {
-          className: 'editor-caption',
-          text: "Script syntax: --- separates dialog steps; $name substitutes the dreamer's name at runtime.",
-        }),
-      ],
-    });
-    return { row, refresh };
+    return { row: lineRow(label, textarea), refresh };
   }
 
   /** A draft-backed text row, committed on Return and on blur. */
@@ -546,7 +713,7 @@ export class InspectorPanel {
     const { row, input } = field(label);
     const { commit, refresh } = draft(input, render, parse, commitRendered);
     input.addEventListener('keydown', (event) => {
-      if (event.key !== 'Enter') return;
+      if (!endsLine(event)) return;
       event.preventDefault();
       commit();
     });
@@ -590,6 +757,45 @@ function draft(
       lastRendered = to;
     },
   };
+}
+
+function lineTextarea(id: string): HTMLTextAreaElement {
+  const textarea = element('textarea', { className: 'fantasy-field editor-line-field' });
+  textarea.id = id;
+  return textarea;
+}
+
+function lineRow(label: string, textarea: HTMLTextAreaElement): HTMLElement {
+  return element('div', {
+    children: [element('label', { className: 'editor-summary-label', text: label, attributes: { for: textarea.id } }), textarea],
+  });
+}
+
+/** Points a step at whom it is for; Everyone removes the key. */
+function setListener(step: DialogStep, when: DialogCondition | undefined): void {
+  if (when === undefined) delete step.when;
+  else step.when = { ...when };
+}
+
+/** Everyone, each listener role the service allows, and each committed quest at each standing. */
+function listenerOptions(service: Service | undefined): ListenerOption[] {
+  const conditions: DialogCondition[] = [
+    ...listenerRolesFor(service).map((role) => ({ role })),
+    ...QUEST_IDS.flatMap((quest) => QUEST_STANDINGS.map((state) => ({ quest, state }))),
+  ];
+  return [
+    { value: '', label: 'Everyone', choice: undefined },
+    ...conditions.map((when) => ({
+      value: listenerValue(when),
+      label: 'role' in when ? LISTENER_ROLE_LABELS[when.role] : `${when.quest} ${when.state}`,
+      choice: when,
+    })),
+  ];
+}
+
+function listenerValue(when: DialogCondition | undefined): string {
+  if (when === undefined) return '';
+  return 'role' in when ? `role:${when.role}` : `quest:${when.quest}:${when.state}`;
 }
 
 function issueLine(message: string): HTMLElement {

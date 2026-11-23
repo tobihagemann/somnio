@@ -40,7 +40,7 @@ const TEN_REJECTED = Array<LoginResult>(10).fill('badCredentials');
 describe('the pre-login limit on logins', () => {
   it('answers the eleventh failed login throttled without looking the account up', async () => {
     const accounts = new StubAccountRepository();
-    const dependencies = await makeStubConnectionDependencies({ accounts, attemptLimiter: enabledAttemptLimiter() });
+    const dependencies = makeStubConnectionDependencies({ accounts, attemptLimiter: enabledAttemptLimiter() });
     expect(await failedLogins(dependencies, 11)).toEqual([...TEN_REJECTED, 'throttled']);
     expect(accounts.findByEmailCallCount).toBe(10);
   });
@@ -78,7 +78,7 @@ describe('the pre-login limit on logins', () => {
         return Promise.reject(new RepositoryFailure());
       }
     }
-    const dependencies = await makeStubConnectionDependencies({ accounts: new FailingAccountRepository(), attemptLimiter: enabledAttemptLimiter() });
+    const dependencies = makeStubConnectionDependencies({ accounts: new FailingAccountRepository(), attemptLimiter: enabledAttemptLimiter() });
     expect(await failedLogins(dependencies, 11)).toEqual([...TEN_REJECTED, 'throttled']);
   });
 });
@@ -95,28 +95,28 @@ async function spreadFailures(dependencies: ConnectionDependencies, emails: read
 const FRESH_ADDRESS = '192.0.2.1';
 
 describe('the account budget on logins', () => {
-  async function accountLimited(accounts = new StubAccountRepository()) {
-    return { accounts, dependencies: await makeStubConnectionDependencies({ accounts, accountLimiter: enabledAttemptLimiter() }) };
+  function accountLimited(accounts = new StubAccountRepository()) {
+    return { accounts, dependencies: makeStubConnectionDependencies({ accounts, accountLimiter: enabledAttemptLimiter() }) };
   }
 
   it('answers the eleventh failed login at a known account throttled from any address, without looking it up', async () => {
     const email = 'alice@example.invalid';
     const accounts = new StubAccountRepository(new Map([[email, makeAccount({ email })]]));
-    const { dependencies } = await accountLimited(accounts);
+    const { dependencies } = accountLimited(accounts);
     expect(await spreadFailures(dependencies, [email])).toEqual(TEN_REJECTED);
     expect(await login(dependencies, email, 'wrong-password', FRESH_ADDRESS)).toEqual(['throttled']);
     expect(accounts.findByEmailCallCount).toBe(10);
   });
 
   it('throttles an email no account holds the same way', async () => {
-    const { accounts, dependencies } = await accountLimited();
+    const { accounts, dependencies } = accountLimited();
     expect(await spreadFailures(dependencies, ['nobody@example.invalid'])).toEqual(TEN_REJECTED);
     expect(await login(dependencies, 'nobody@example.invalid', 'wrong-password', FRESH_ADDRESS)).toEqual(['throttled']);
     expect(accounts.findByEmailCallCount).toBe(10);
   });
 
   it('counts the spellings of one email against one budget', async () => {
-    const { accounts, dependencies } = await accountLimited();
+    const { accounts, dependencies } = accountLimited();
     expect(await spreadFailures(dependencies, ['alice@example.invalid', 'ALICE@EXAMPLE.INVALID', 'ＡＬＩＣＥ@example.invalid'])).toEqual(TEN_REJECTED);
     expect(await login(dependencies, 'Alice@Example.invalid', 'wrong-password', FRESH_ADDRESS)).toEqual(['throttled']);
     expect(accounts.findByEmailCallCount).toBe(10);
@@ -127,7 +127,7 @@ describe('the account budget on logins', () => {
     ['tobias@example.invalid', 'TOBİAS@example.invalid'],
     ['ΟΔΥΣΣΕΥΣ@example.invalid', 'οδυσσευσ@example.invalid'],
   ])('folds %s and %s into one budget as the database does', async (spent, throttled) => {
-    const { dependencies } = await accountLimited();
+    const { dependencies } = accountLimited();
     expect(await spreadFailures(dependencies, [spent])).toEqual(TEN_REJECTED);
     expect(await login(dependencies, throttled, 'wrong-password', FRESH_ADDRESS)).toEqual(['throttled']);
   });
@@ -147,7 +147,7 @@ describe('the account budget on logins', () => {
   });
 
   it('spends no account budget on a login its address budget refused', async () => {
-    const dependencies = await makeStubConnectionDependencies({ attemptLimiter: enabledAttemptLimiter(), accountLimiter: enabledAttemptLimiter() });
+    const dependencies = makeStubConnectionDependencies({ attemptLimiter: enabledAttemptLimiter(), accountLimiter: enabledAttemptLimiter() });
     for (let attempt = 0; attempt < 10; attempt += 1) await login(dependencies, `nobody-${attempt}@example.invalid`, 'wrong-password');
     for (let attempt = 0; attempt < 10; attempt += 1) expect(await login(dependencies, 'alice@example.invalid', 'wrong-password')).toEqual(['throttled']);
     expect(await login(dependencies, 'alice@example.invalid', 'wrong-password', FRESH_ADDRESS)).toEqual(['badCredentials']);
@@ -159,7 +159,7 @@ describe('the account budget on logins', () => {
     ['a lone surrogate', 'no\uD800body@example.invalid'],
   ])('refuses an email with %s before either budget or the lookup', async (_, email) => {
     const accounts = new StubAccountRepository();
-    const dependencies = await makeStubConnectionDependencies({ accounts, attemptLimiter: enabledAttemptLimiter(), accountLimiter: enabledAttemptLimiter() });
+    const dependencies = makeStubConnectionDependencies({ accounts, attemptLimiter: enabledAttemptLimiter(), accountLimiter: enabledAttemptLimiter() });
     for (let attempt = 0; attempt < 11; attempt += 1) expect(await login(dependencies, email, 'wrong-password')).toEqual(['badCredentials']);
     expect(accounts.findByEmailCallCount).toBe(0);
     expect(await login(dependencies, 'nobody@example.invalid', 'wrong-password')).toEqual(['badCredentials']);
@@ -167,7 +167,7 @@ describe('the account budget on logins', () => {
 
   it('answers a resume on its token while the account is throttled', async () => {
     const sessions = new StubSessionRepository();
-    const world = await makeOneSectorWorld({ sessions, accountLimiter: enabledAttemptLimiter() });
+    const world = makeOneSectorWorld({ sessions, accountLimiter: enabledAttemptLimiter() });
     const issued = await sessions.issue(world.accountId, 3600);
     expect(await spreadFailures(world.dependencies, ['tester@example.invalid'])).toEqual(TEN_REJECTED);
     expect(await login(world.dependencies, 'tester@example.invalid', 'wrong-password', FRESH_ADDRESS)).toEqual(['throttled']);
@@ -178,7 +178,7 @@ describe('the account budget on logins', () => {
 describe('the pre-login limit leaves session resumes alone', () => {
   it('answers a resume on its token while the address is throttled', async () => {
     const sessions = new StubSessionRepository();
-    const world = await makeOneSectorWorld({ sessions, attemptLimiter: enabledAttemptLimiter() });
+    const world = makeOneSectorWorld({ sessions, attemptLimiter: enabledAttemptLimiter() });
     const issued = await sessions.issue(world.accountId, 3600);
     expect(await failedLogins(world.dependencies, 11)).toEqual([...TEN_REJECTED, 'throttled']);
 
@@ -187,7 +187,7 @@ describe('the pre-login limit leaves session resumes alone', () => {
   });
 
   it('spends nothing on a failed resume', async () => {
-    const dependencies = await makeStubConnectionDependencies({ attemptLimiter: enabledAttemptLimiter() });
+    const dependencies = makeStubConnectionDependencies({ attemptLimiter: enabledAttemptLimiter() });
     for (let attempt = 0; attempt < 11; attempt += 1) expect(await redeem(dependencies, 'no-such-token')).toBe('badCredentials');
     expect(await failedLogins(dependencies, 11)).toEqual([...TEN_REJECTED, 'throttled']);
   });
@@ -220,25 +220,25 @@ async function registrations(dependencies: ConnectionDependencies, message: Regi
   return results;
 }
 
-async function registrationDependencies(outcome: RegisterResult): Promise<ConnectionDependencies> {
+function registrationDependencies(outcome: RegisterResult): ConnectionDependencies {
   return makeStubConnectionDependencies({ accounts: new ScriptedAccountRepository(outcome), attemptLimiter: enabledAttemptLimiter() });
 }
 
 describe('the pre-login limit on registrations', () => {
   it.each(['ok', 'emailExists', 'failure'] as const)('counts ten registrations answered %s and throttles the eleventh', async (outcome) => {
-    const dependencies = await registrationDependencies(outcome);
+    const dependencies = registrationDependencies(outcome);
     expect(await registrations(dependencies, valid, 11)).toEqual([...Array<RegisterResult>(10).fill(outcome), 'throttled']);
   });
 
   it('counts no attempt that fails validation before the hash', async () => {
-    const dependencies = await registrationDependencies('ok');
+    const dependencies = registrationDependencies('ok');
     expect(await registrations(dependencies, { ...valid, passwordRepeat: 'other-password' }, 11)).toEqual(Array<RegisterResult>(11).fill('failure'));
     expect(await registrations(dependencies, { ...valid, email: 'info' }, 11)).toEqual(Array<RegisterResult>(11).fill('failure'));
     expect(await registrations(dependencies, valid, 1)).toEqual(['ok']);
   });
 
   it('draws on a budget of its own', async () => {
-    const dependencies = await registrationDependencies('ok');
+    const dependencies = registrationDependencies('ok');
     expect(await failedLogins(dependencies, 11)).toEqual([...TEN_REJECTED, 'throttled']);
     expect(await registrations(dependencies, valid, 1)).toEqual(['ok']);
   });

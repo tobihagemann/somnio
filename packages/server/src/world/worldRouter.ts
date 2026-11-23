@@ -1,17 +1,16 @@
 import type { ClientSayMessage, SomnioMessage } from '@somnio/protocol';
-import type { Character, NPCDialogState } from '@somnio/core';
+import type { Character } from '@somnio/core';
 import { postgresNormalizedKey } from '@somnio/data';
-import type { CharacterRepository, NPCDialogStateRepository } from '@somnio/data';
+import type { CharacterRepository } from '@somnio/data';
 import type { ConnectionActor } from '../connection/connectionActor.ts';
 import { encodeOrWarn } from '../connection/encodeFrame.ts';
 import type { Logger } from '../logging.ts';
 import type { LoadedWorld } from '../sectors/sectorCache.ts';
 import { DropSaves, persistPlayerCheckpoint } from './checkpointWriter.ts';
 import { Departures } from './departures.ts';
-import { DialogWrites } from './dialogWrites.ts';
 import { PersonalDrops } from './personalDrops.ts';
 import { SpaceActor, offerIds } from './spaceActor.ts';
-import type { DoorVoice, PlayerCheckpoint, PlayerTransient, TickDigest } from './spaceActor.ts';
+import type { DoorVoice, PlayerCheckpoint, PlayerTransient } from './spaceActor.ts';
 
 /** The surface of the router the admin dispatcher consumes, so its tests can substitute a stub. */
 export interface AdminWorldRouter {
@@ -37,7 +36,6 @@ export class WorldRouter implements AdminWorldRouter {
   private readonly personalDrops: PersonalDrops;
   private readonly dropSaves: DropSaves;
   private readonly departures: Departures;
-  private readonly dialogWrites: DialogWrites;
   private readonly characters: CharacterRepository;
   private readonly logger: Logger;
 
@@ -47,7 +45,6 @@ export class WorldRouter implements AdminWorldRouter {
     personalDrops: PersonalDrops,
     dropSaves: DropSaves,
     departures: Departures,
-    dialogWrites: DialogWrites,
     characters: CharacterRepository,
     logger: Logger,
   ) {
@@ -56,38 +53,33 @@ export class WorldRouter implements AdminWorldRouter {
     this.personalDrops = personalDrops;
     this.dropSaves = dropSaves;
     this.departures = departures;
-    this.dialogWrites = dialogWrites;
     this.characters = characters;
     this.logger = logger;
   }
 
   /**
-   * Seeds each space's dialog cursors from the repository, sector by sector, before any connection
-   * arrives. `now`, monotonic milliseconds, is every space's clock and the departures'. `wallNow`,
-   * epoch milliseconds, is the clock every space reads the bounty board's day from. Every space hands
-   * out quest offer ids from one counter, so an answer sent before a door never settles an offer made
+   * `now`, monotonic milliseconds, is every space's clock and the departures'. `wallNow`, epoch
+   * milliseconds, is the clock every space reads the bounty board's day from. Every space hands out
+   * quest offer ids from one counter, so an answer sent before a door never settles an offer made
    * after it.
    */
-  static async create(
+  static create(
     world: LoadedWorld,
     characters: CharacterRepository,
-    npcDialogStates: NPCDialogStateRepository,
     logger: Logger,
     spaceLogger: Logger = logger,
     now: () => number = () => performance.now(),
     wallNow: () => number = () => Date.now(),
-  ): Promise<WorldRouter> {
+  ): WorldRouter {
     const actors = new Map<string, SpaceActor>();
     const personalDrops = new PersonalDrops();
     const dropSaves = new DropSaves(characters, logger);
     const newOfferId = offerIds();
-    for (const [id, space] of world.spaces) {
-      const initialDialogStates: NPCDialogState[] = [];
-      for (const sector of space.sectors) initialDialogStates.push(...(await npcDialogStates.loadAll(sector.name)));
+    for (const id of world.spaces.keys()) {
       const requestDropSave = (snapshot: PlayerCheckpoint): void => dropSaves.request(snapshot, id);
-      actors.set(id, new SpaceActor(world, id, { logger: spaceLogger, initialDialogStates, personalDrops, requestDropSave, now, wallNow, newOfferId }));
+      actors.set(id, new SpaceActor(world, id, { logger: spaceLogger, personalDrops, requestDropSave, now, wallNow, newOfferId }));
     }
-    return new WorldRouter(world, actors, personalDrops, dropSaves, new Departures(now), new DialogWrites(npcDialogStates, logger), characters, logger);
+    return new WorldRouter(world, actors, personalDrops, dropSaves, new Departures(now), characters, logger);
   }
 
   space(id: string): SpaceActor | undefined {
@@ -170,25 +162,8 @@ export class WorldRouter implements AdminWorldRouter {
     }
   }
 
-  /** One simulation step across every space, returning what it leaves to persist. */
-  runTickAcrossSpaces(elapsedSeconds: number): TickDigest {
-    const digest: TickDigest = { dialogUpserts: [], dialogResets: [] };
-    for (const space of this.spaceActors.values()) {
-      const stepped = space.step(elapsedSeconds);
-      digest.dialogUpserts.push(...stepped.dialogUpserts);
-      digest.dialogResets.push(...stepped.dialogResets);
-    }
-    return digest;
-  }
-
-  /** Queues the digest's dialog writes behind the one in flight, never awaited by a pass. */
-  queueDialogDigest(digest: TickDigest): void {
-    this.dialogWrites.request(digest);
-  }
-
-  /** Resolves once every dialog write queued so far has settled. */
-  settleDialogWrites(): Promise<void> {
-    return this.dialogWrites.settle();
+  runTickAcrossSpaces(elapsedSeconds: number): void {
+    for (const space of this.spaceActors.values()) space.step(elapsedSeconds);
   }
 
   /** A line said in a space, and a yell carried one door further into each space beyond. */

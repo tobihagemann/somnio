@@ -67,9 +67,9 @@ function town() {
       outdoorSector('WestMeadow', { x: -30.72, z: 0 }, { size: { width: 30.72, depth: 30.72 } }),
       outdoorSector('AutumnWood', { x: 0, z: 20 }),
       outdoorSector('NorthMeadow', { x: 0, z: -20 }),
-      outdoorSector('EdariaFighterHall', { x: -20, z: -20 }, { npcs: [{ ...makeNPC('pugnax', { x: 16, z: 4 }, ''), service: 'fighterMaster' }] }),
-      outdoorSector('EdariaHealerHall', { x: 20, z: -20 }, { npcs: [{ ...makeNPC('sana', { x: 4, z: 4 }, ''), service: 'healerMaster' }] }),
-      outdoorSector('EdariaMysticTower', { x: 0, z: -40 }, { npcs: [{ ...makeNPC('tacita', { x: 10, z: 16 }, ''), service: 'mysticMaster' }] }),
+      outdoorSector('EdariaFighterHall', { x: -20, z: -20 }, { npcs: [makeNPC('pugnax', { x: 16, z: 4 }, {}, 'fighterMaster')] }),
+      outdoorSector('EdariaHealerHall', { x: 20, z: -20 }, { npcs: [makeNPC('sana', { x: 4, z: 4 }, {}, 'healerMaster')] }),
+      outdoorSector('EdariaMysticTower', { x: 0, z: -40 }, { npcs: [makeNPC('tacita', { x: 10, z: 16 }, {}, 'mysticMaster')] }),
     ],
   });
 }
@@ -86,13 +86,13 @@ type Town = ReturnType<typeof town>;
  */
 function graveyard(kind: MonsterKindId = 'skeleton-minion', ...more: MonsterSpawn[]): Town {
   return arena(
-    { name: 'Graveyard', npcs: [makeNPC('memor', { x: 16, z: 17 }, '')], monsterSpawns: [{ ...makeMonsterSpawn(GHOST_AT), kind }, ...more] },
+    { name: 'Graveyard', npcs: [makeNPC('memor', { x: 16, z: 17 }, {})], monsterSpawns: [{ ...makeMonsterSpawn(GHOST_AT), kind }, ...more] },
     {
       sectors: [
-        outdoorSector('EdariaLibrary', { x: 20, z: 0 }, { spawn: { x: 10, z: 4, facing: 0 }, npcs: [makeNPC('libus', { x: 4, z: 16 }, '')] }),
-        outdoorSector('EdariaShop', { x: 40, z: 0 }, { npcs: [makeNPC('mercus', { x: 4, z: 16 }, '')] }),
-        outdoorSector('EdariaFighterHall', { x: 20, z: -20 }, { npcs: [{ ...makeNPC('pugnax', { x: 4, z: 4 }, ''), service: 'fighterMaster' }] }),
-        outdoorSector('EdariaHealerHall', { x: 40, z: -20 }, { npcs: [{ ...makeNPC('sana', { x: 4, z: 4 }, ''), service: 'healerMaster' }] }),
+        outdoorSector('EdariaLibrary', { x: 20, z: 0 }, { spawn: { x: 10, z: 4, facing: 0 }, npcs: [makeNPC('libus', { x: 4, z: 16 }, {})] }),
+        outdoorSector('EdariaShop', { x: 40, z: 0 }, { npcs: [makeNPC('mercus', { x: 4, z: 16 }, {})] }),
+        outdoorSector('EdariaFighterHall', { x: 20, z: -20 }, { npcs: [makeNPC('pugnax', { x: 4, z: 4 }, {}, 'fighterMaster')] }),
+        outdoorSector('EdariaHealerHall', { x: 40, z: -20 }, { npcs: [makeNPC('sana', { x: 4, z: 4 }, {}, 'healerMaster')] }),
         outdoorSector(
           'EdariaSquare',
           { x: 60, z: 0 },

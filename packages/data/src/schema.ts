@@ -72,12 +72,6 @@ export interface WorldClockTable {
   world_seconds: number;
 }
 
-export interface NPCDialogStatesTable {
-  sector_name: string;
-  npc_id: string;
-  script_step: number;
-}
-
 export interface SessionsTable {
   token_digest: string;
   account_id: string;
@@ -92,6 +86,5 @@ export interface Database {
   items: ItemsTable;
   character_quests: CharacterQuestsTable;
   world_clock: WorldClockTable;
-  npc_dialog_states: NPCDialogStatesTable;
   sessions: SessionsTable;
 }

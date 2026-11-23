@@ -131,7 +131,7 @@ describe('inbound sequencing', () => {
   it('a handler awaiting a deferred repository call is not interleaved with the next frame', async () => {
     const sessions = new GatedSessionRepository();
     const socket = new RecordingSocket();
-    const connection = new ConnectionActor(await makeStubConnectionDependencies({ sessions }));
+    const connection = new ConnectionActor(makeStubConnectionDependencies({ sessions }));
     const run = connection.runConnection(socket);
     await settle();
 
@@ -157,7 +157,7 @@ describe('inbound sequencing', () => {
   it('frames parsed before the pause are drained in order and the queue is discarded on close', async () => {
     const sessions = new GatedSessionRepository();
     const socket = new RecordingSocket();
-    const connection = new ConnectionActor(await makeStubConnectionDependencies({ sessions }));
+    const connection = new ConnectionActor(makeStubConnectionDependencies({ sessions }));
     const run = connection.runConnection(socket);
     await settle();
 
@@ -182,7 +182,7 @@ describe('inbound sequencing', () => {
   it('a successful redemption completing after the peer closed leaves no player behind', async () => {
     const sessions = new GatedSessionRepository();
     const socket = new RecordingSocket();
-    const world = await makeOneSectorWorld({ sessions });
+    const world = makeOneSectorWorld({ sessions });
     sessions.resolveTo = world.accountId;
     const connection = new ConnectionActor(world.dependencies);
     const run = connection.runConnection(socket);
@@ -220,7 +220,7 @@ describe('inbound sequencing', () => {
     const accountId = crypto.randomUUID();
     sessions.resolveTo = accountId;
     const characters = new GatedCharacterRepository(new Map([[accountId, [makeCharacter({ x: 5, z: 5 }, 'leaver')]]]));
-    const dependencies = await makeStubConnectionDependencies({ sessions, characters, sectors: [makeSector('A')] });
+    const dependencies = makeStubConnectionDependencies({ sessions, characters, sectors: [makeSector('A')] });
     const socket = new RecordingSocket();
     const connection = new ConnectionActor(dependencies);
     const run = connection.runConnection(socket);
@@ -246,7 +246,7 @@ describe('inbound sequencing', () => {
   it('a shutdown drain waits for the exit path to close the socket', async () => {
     const sessions = new GatedSessionRepository();
     const socket = new RecordingSocket();
-    const world = await makeOneSectorWorld({ sessions });
+    const world = makeOneSectorWorld({ sessions });
     sessions.resolveTo = world.accountId;
     const connection = new ConnectionActor(world.dependencies);
     const run = connection.runConnection(socket);
@@ -272,7 +272,7 @@ describe('inbound sequencing', () => {
     const accountId = crypto.randomUUID();
     sessions.resolveTo = accountId;
     const characters = new GatedCharacterRepository(new Map([[accountId, [makeCharacter({ x: 10, z: 9.7 }, 'hopper')]]]));
-    const dependencies = await makeStubConnectionDependencies({
+    const dependencies = makeStubConnectionDependencies({
       sessions,
       characters,
       sectors: [
@@ -305,7 +305,7 @@ describe('inbound sequencing', () => {
     const sessions = new GatedSessionRepository();
     const socket = new RecordingSocket();
     socket.stallSends = true;
-    const connection = new ConnectionActor(await makeStubConnectionDependencies({ sessions }));
+    const connection = new ConnectionActor(makeStubConnectionDependencies({ sessions }));
     void connection.runConnection(socket);
     await settle();
     const started = Date.now();
@@ -315,7 +315,7 @@ describe('inbound sequencing', () => {
 
   it('a close decision mid-drain ends the loop without resuming the socket', async () => {
     const socket = new RecordingSocket();
-    const connection = new ConnectionActor(await makeStubConnectionDependencies());
+    const connection = new ConnectionActor(makeStubConnectionDependencies());
     const run = connection.runConnection(socket);
     await settle();
     socket.deliver('not json');

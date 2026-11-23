@@ -6,7 +6,7 @@ import type { LiveServerOptions } from '../support/liveServer.ts';
 import { enabledAttemptLimiter, makeStubConnectionDependencies } from '../support/stubDependencies.ts';
 
 async function withLimitedServer<T>(options: Pick<LiveServerOptions, 'trustProxy'>, body: (server: RunningServer) => Promise<T>): Promise<T> {
-  return withLiveServer({ ...options, dependencies: await makeStubConnectionDependencies({ attemptLimiter: enabledAttemptLimiter() }) }, body);
+  return withLiveServer({ ...options, dependencies: makeStubConnectionDependencies({ attemptLimiter: enabledAttemptLimiter() }) }, body);
 }
 
 function failedLoginFrom(server: RunningServer, addresses: string) {

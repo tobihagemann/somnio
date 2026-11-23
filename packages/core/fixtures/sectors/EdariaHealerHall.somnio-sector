@@ -18,8 +18,46 @@
   "npcs": [
     {
       "characterModelId": "merchant",
-      "dialogScript": "Be welcome, $name. The Moonstone takes what it gives.---Whoever would heal first walks into the North Wood and comes back without striking a blow.---Only a Healer draws back the fallen. Leave no one lying.",
+      "dialog": [
+        {
+          "text": "Whoever would heal first walks into the North Wood and comes back without striking a blow.",
+          "when": {
+            "quest": "healer-trial",
+            "state": "offered"
+          }
+        },
+        {
+          "text": "Into the North Wood, $name, and back again. Strike nothing, however it tempts you.",
+          "when": {
+            "quest": "healer-trial",
+            "state": "held"
+          }
+        },
+        {
+          "text": "Mend them before they fall. Drawing back costs you far more.",
+          "when": {
+            "role": "own"
+          }
+        },
+        {
+          "text": "You learn elsewhere. Still, when someone falls, call for a Healer.",
+          "when": {
+            "role": "other"
+          }
+        },
+        {
+          "text": "Memor keeps the Graveyard beyond the West Meadow. He has asked for one of mine.",
+          "when": {
+            "quest": "word-for-memor-healer",
+            "state": "offered"
+          }
+        },
+        {
+          "text": "Only a Healer draws back the fallen. Leave no one lying."
+        }
+      ],
       "facing": 0,
+      "greeting": "Be welcome, $name. The Moonstone takes what it gives.",
       "id": "sana",
       "name": "Sana",
       "service": "healerMaster",

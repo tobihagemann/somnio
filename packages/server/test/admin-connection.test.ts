@@ -8,28 +8,28 @@ const logging = tempLogging();
 afterEach(() => logging.cleanup());
 
 describe('processAdminText', () => {
-  it('unrecognized verb yields write unknownCommand and keeps the loop open', async () => {
-    const outcome = processAdminText('{"tag":"bogus"}', await makeAdminDependencies({ logging }));
+  it('unrecognized verb yields write unknownCommand and keeps the loop open', () => {
+    const outcome = processAdminText('{"tag":"bogus"}', makeAdminDependencies({ logging }));
     expect(outcome).toEqual({ kind: 'write', response: { tag: 'unknownCommand' } });
   });
 
-  it('a well-formed players request yields write playerCount', async () => {
-    const outcome = processAdminText(encodeAdminRequest({ tag: 'players' }), await makeAdminDependencies({ logging }));
+  it('a well-formed players request yields write playerCount', () => {
+    const outcome = processAdminText(encodeAdminRequest({ tag: 'players' }), makeAdminDependencies({ logging }));
     expect(outcome).toEqual({ kind: 'write', response: { tag: 'playerCount', payload: '0' } });
   });
 
-  it('malformed JSON closes with protocolError', async () => {
-    const outcome = processAdminText('{ not json', await makeAdminDependencies({ logging }));
+  it('malformed JSON closes with protocolError', () => {
+    const outcome = processAdminText('{ not json', makeAdminDependencies({ logging }));
     expect(outcome).toEqual({ kind: 'closeProtocolError', reason: 'frame validation failed' });
   });
 
-  it('a known verb missing its payload closes with protocolError', async () => {
-    const outcome = processAdminText('{"tag":"say"}', await makeAdminDependencies({ logging }));
+  it('a known verb missing its payload closes with protocolError', () => {
+    const outcome = processAdminText('{"tag":"say"}', makeAdminDependencies({ logging }));
     expect(outcome.kind).toBe('closeProtocolError');
   });
 
-  it('an empty say is ignored without a response', async () => {
-    const outcome = processAdminText(encodeAdminRequest({ tag: 'say', payload: '' }), await makeAdminDependencies({ logging }));
+  it('an empty say is ignored without a response', () => {
+    const outcome = processAdminText(encodeAdminRequest({ tag: 'say', payload: '' }), makeAdminDependencies({ logging }));
     expect(outcome).toEqual({ kind: 'ignore' });
   });
 });

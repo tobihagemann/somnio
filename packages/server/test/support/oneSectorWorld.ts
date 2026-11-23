@@ -24,10 +24,10 @@ export interface OneSectorWorldOptions {
 }
 
 /** A world of one outdoor sector (`A`) holding one character: the minimum a join needs. */
-export async function makeOneSectorWorld(options: OneSectorWorldOptions) {
+export function makeOneSectorWorld(options: OneSectorWorldOptions) {
   const accountId = options.accountId ?? crypto.randomUUID();
   const character = makeCharacter({ x: 5, z: 5 }, options.characterName ?? 'tester', options.characterSpace);
-  const dependencies = await makeStubConnectionDependencies({
+  const dependencies = makeStubConnectionDependencies({
     sessions: options.sessions,
     sectors: [makeSector('A', { placements: options.placements ?? [], npcs: options.npcs ?? [] })],
     characters: new StubCharacterRepository(new Map([[accountId, [character]]])),

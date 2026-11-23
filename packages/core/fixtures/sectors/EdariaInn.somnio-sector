@@ -18,8 +18,16 @@
   "npcs": [
     {
       "characterModelId": "merchant",
-      "dialogScript": "Ah, $name! Sit by the fire.---A bed is free when the dreams wear you out.---Whoever rests here wakes here too. It has always been so.",
+      "dialog": [
+        {
+          "text": "A bed is free when the dreams wear you out."
+        },
+        {
+          "text": "Whoever rests here wakes here too. It has always been so."
+        }
+      ],
       "facing": 90,
+      "greeting": "Ah, $name! Sit by the fire.",
       "id": "quieta",
       "name": "Quieta",
       "x": 1.15,

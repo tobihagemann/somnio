@@ -928,6 +928,16 @@ describe('outbound chat', () => {
     expect(rig.bubbles[0]).toMatchObject({ entityId: 'self', kind, clarity: 1 });
   });
 
+  /** Counted in graphemes, as every speaker's bubble is: 45 of them read in 4 s, though they take 90 bytes. */
+  it("keeps the player's own bubble for the time the line takes to read", () => {
+    const rig = makeRig();
+    attach(rig, [clientEntity()]);
+
+    rig.session.submitChat('ü'.repeat(45));
+
+    expect(rig.bubbles.at(-1)?.lifetimeMs).toBe(4000);
+  });
+
   it.each(['/x hi', '  /x hi'])('sends nothing for a command it does not know, and says so: %j', (input) => {
     const rig = makeRig();
     attach(rig, [clientEntity()]);
@@ -1266,6 +1276,15 @@ describe('inbound gameplay dispatch', () => {
     // The voice comes from the body where it is drawn, not from where the frame says.
     expect(rig.bubbles).toEqual([{ entityId: 'peer', source: { x: 14, z: 10 }, lines: ['Hallo'], lifetimeMs: 3000, kind: 'whisper', clarity: 0.4 }]);
     expect(rig.controller.chatHistory.at(-1)).toEqual({ kind: 'spokenByPeer', senderName: 'Bren', message: 'Hallo', speech: 'whisper' });
+  });
+
+  it('keeps a bubble for the time its line takes to read', () => {
+    const rig = makeRig();
+    attach(rig, [clientEntity(), clientEntity({ id: 'peer', kind: 'peer', name: 'Bren', position: { x: 14, z: 10 } })]);
+
+    rig.controller.dispatch({ tag: 'serverSay', payload: { ...SAY, entityId: 'peer', name: 'Bren', text: `${'Hallo '.repeat(16)}Bye` } });
+
+    expect(rig.bubbles.at(-1)?.lifetimeMs).toBe(7600);
   });
 
   /** A voice through a door, or a speaker this client draws nowhere, still speaks: from where the frame says, for a bubble that follows the speaker once they arrive. */

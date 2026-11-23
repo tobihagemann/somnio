@@ -31,7 +31,7 @@ async function register(dependencies: ConnectionDependencies, address: string): 
  */
 it('refuses a throttled registration before hashing its password', async () => {
   const limiter = enabledAttemptLimiter();
-  const dependencies = await makeStubConnectionDependencies({ attemptLimiter: limiter });
+  const dependencies = makeStubConnectionDependencies({ attemptLimiter: limiter });
 
   await register(dependencies, '203.0.113.8');
   expect(vi.mocked(hashPassword)).toHaveBeenCalledTimes(1);
@@ -43,7 +43,7 @@ it('refuses a throttled registration before hashing its password', async () => {
 
 /** A hash that fails has still been started, which is the cost the budget meters. */
 it('keeps a registration spent when its hash fails', async () => {
-  const dependencies = await makeStubConnectionDependencies({ attemptLimiter: enabledAttemptLimiter() });
+  const dependencies = makeStubConnectionDependencies({ attemptLimiter: enabledAttemptLimiter() });
   for (let attempt = 0; attempt < 10; attempt += 1) {
     vi.mocked(hashPassword).mockRejectedValueOnce(new Error('rigged hash failure'));
     expect(await register(dependencies, ADDRESS)).toEqual(['failure']);

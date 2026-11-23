@@ -131,7 +131,7 @@ export function placeRecord(tool: PlacingTool, bounds: Rect, sector: Sector, def
     }
     case 'npc': {
       const id = nextFreeId(ID_PREFIX.npc, sector.npcs);
-      sector.npcs.push({ id, name: '', characterModelId: defaults.characterModelId, ...at, facing: 0, dialogScript: '' });
+      sector.npcs.push({ id, name: '', characterModelId: defaults.characterModelId, ...at, facing: 0, dialog: [] });
       return { kind: 'npc', id };
     }
     case 'monsterSpawn': {

@@ -9,14 +9,14 @@ import { StubSessionRepository, failingSessionRepository } from './support/stubR
 /** The session verbs' placement in the state machine and their answers; the dispatch suite is the mirror image. */
 describe('session tag placement', () => {
   it('redeemSession is accepted before login', async () => {
-    const connection = new ConnectionActor(await makeStubConnectionDependencies());
+    const connection = new ConnectionActor(makeStubConnectionDependencies());
     expect(await connection.dispatch({ tag: 'redeemSession', payload: { token: 'tok' } })).toEqual({
       kind: 'keepOpen',
     });
   });
 
   it.each(['authenticated', 'attached'] as const)('revokeSession and revokeOtherSessions are accepted once %s', async (state) => {
-    const connection = new ConnectionActor(await makeStubConnectionDependencies());
+    const connection = new ConnectionActor(makeStubConnectionDependencies());
     const accountId = crypto.randomUUID();
     if (state === 'authenticated') connection.markAuthenticated(accountId);
     else connection.markAttached('player', 'EdariaLibrary', accountId);
@@ -26,14 +26,14 @@ describe('session tag placement', () => {
   });
 
   it('an unresolvable token answers badCredentials without closing', async () => {
-    const connection = new ConnectionActor(await makeStubConnectionDependencies());
+    const connection = new ConnectionActor(makeStubConnectionDependencies());
     const decision = await connection.dispatch({ tag: 'redeemSession', payload: { token: 'nope' } });
     expect(decision).toEqual({ kind: 'keepOpen' });
     expect(loginResults(await collectMessages(connection.outbox))).toEqual(['badCredentials']);
   });
 
   it('revocation acknowledges even when nothing was removed', async () => {
-    const connection = new ConnectionActor(await makeStubConnectionDependencies());
+    const connection = new ConnectionActor(makeStubConnectionDependencies());
     connection.markAttached('player', 'EdariaLibrary', crypto.randomUUID());
     await connection.dispatch({ tag: 'revokeSession', payload: { token: 'tok' } });
     expect(await collectTags(connection.outbox)).toContain('sessionRevoked');
@@ -42,7 +42,7 @@ describe('session tag placement', () => {
   it('an over-cap token is refused without reaching the repository', async () => {
     const sessions = new StubSessionRepository();
     const issued = await sessions.issue(crypto.randomUUID(), 60);
-    const connection = new ConnectionActor(await makeStubConnectionDependencies({ sessions }));
+    const connection = new ConnectionActor(makeStubConnectionDependencies({ sessions }));
     const oversized = 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxSessionTokenUTF8Bytes + 1);
     const decision = await connection.dispatch({ tag: 'redeemSession', payload: { token: oversized } });
     expect(decision).toEqual({ kind: 'keepOpen' });
@@ -55,7 +55,7 @@ describe('session tag placement', () => {
     const sessions = new StubSessionRepository();
     const accountId = crypto.randomUUID();
     const issued = await sessions.issue(accountId, 3600);
-    const connection = new ConnectionActor(await makeStubConnectionDependencies({ sessions }));
+    const connection = new ConnectionActor(makeStubConnectionDependencies({ sessions }));
     connection.markAttached('player', 'EdariaLibrary', accountId);
     const oversized = 'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxSessionTokenUTF8Bytes + 1);
     const decision = await connection.dispatch({ tag: 'revokeSession', payload: { token: oversized } });
@@ -68,7 +68,7 @@ describe('session tag placement', () => {
   it('revocation refuses a token belonging to another account', async () => {
     const sessions = new StubSessionRepository();
     const victim = await sessions.issue(crypto.randomUUID(), 3600);
-    const connection = new ConnectionActor(await makeStubConnectionDependencies({ sessions }));
+    const connection = new ConnectionActor(makeStubConnectionDependencies({ sessions }));
     connection.markAttached('player', 'EdariaLibrary', crypto.randomUUID());
     await connection.dispatch({ tag: 'revokeSession', payload: { token: victim.token } });
     const messages = await collectMessages(connection.outbox);
@@ -80,7 +80,7 @@ describe('session tag placement', () => {
     const sessions = new StubSessionRepository();
     const accountId = crypto.randomUUID();
     const issued = await sessions.issue(accountId, 3600);
-    const connection = new ConnectionActor(await makeStubConnectionDependencies({ sessions }));
+    const connection = new ConnectionActor(makeStubConnectionDependencies({ sessions }));
     connection.markAttached('player', 'EdariaLibrary', accountId);
     await connection.dispatch({ tag: 'revokeSession', payload: { token: issued.token } });
     const messages = await collectMessages(connection.outbox);
@@ -92,7 +92,7 @@ describe('session tag placement', () => {
     const sessions = new StubSessionRepository();
     const accountId = crypto.randomUUID();
     await sessions.issue(accountId, 3600);
-    const connection = new ConnectionActor(await makeStubConnectionDependencies({ sessions }));
+    const connection = new ConnectionActor(makeStubConnectionDependencies({ sessions }));
     connection.markAttached('player', 'EdariaLibrary', accountId);
     expect(await connection.dispatch({ tag: 'revokeOtherSessions', payload: {} })).toEqual({ kind: 'keepOpen' });
     expect(await collectMessages(connection.outbox)).toContainEqual({ tag: 'otherSessionsRevoked', payload: { revoked: true, count: 1 } });
@@ -100,7 +100,7 @@ describe('session tag placement', () => {
 
   it('a revokeOtherSessions that throws answers and records an error', async () => {
     const { logger, records } = recordingLogger();
-    const connection = new ConnectionActor(await makeStubConnectionDependencies({ sessions: failingSessionRepository, logger }));
+    const connection = new ConnectionActor(makeStubConnectionDependencies({ sessions: failingSessionRepository, logger }));
     connection.markAttached('player', 'EdariaLibrary', crypto.randomUUID());
     await connection.dispatch({ tag: 'revokeOtherSessions', payload: {} });
     expect(await collectMessages(connection.outbox)).toContainEqual({ tag: 'otherSessionsRevoked', payload: { revoked: false, count: 0 } });
@@ -110,7 +110,7 @@ describe('session tag placement', () => {
   it('an expired token answers badCredentials', async () => {
     const sessions = new StubSessionRepository();
     sessions.plant('aged', crypto.randomUUID(), new Date(Date.now() - 60_000));
-    const connection = new ConnectionActor(await makeStubConnectionDependencies({ sessions }));
+    const connection = new ConnectionActor(makeStubConnectionDependencies({ sessions }));
     await connection.dispatch({ tag: 'redeemSession', payload: { token: 'aged' } });
     expect(loginResults(await collectMessages(connection.outbox))).toEqual(['badCredentials']);
   });

@@ -1,11 +1,10 @@
 import { BOOT_DEFAULT_WORLD_SECONDS, NO_QUESTS } from '@somnio/core';
-import type { Account, Character, Inventory, NPCDialogState, People, QuestLog } from '@somnio/core';
+import type { Account, Character, Inventory, People, QuestLog } from '@somnio/core';
 import type {
   AccountRepository,
   CharacterRepository,
   ItemRepository,
   IssuedSession,
-  NPCDialogStateRepository,
   QuestRepository,
   ResolvedSession,
   SessionRepository,
@@ -85,24 +84,6 @@ export class StubItemRepository implements ItemRepository {
 export class StubQuestRepository implements QuestRepository {
   load(): Promise<QuestLog> {
     return Promise.resolve(NO_QUESTS);
-  }
-}
-
-export class StubNPCDialogStateRepository implements NPCDialogStateRepository {
-  find(_sectorName: string, _npcId: string): Promise<NPCDialogState | undefined> {
-    return Promise.resolve(undefined);
-  }
-
-  loadAll(_sectorName: string): Promise<NPCDialogState[]> {
-    return Promise.resolve([]);
-  }
-
-  upsert(_state: NPCDialogState): Promise<void> {
-    return Promise.resolve();
-  }
-
-  reset(_sectorName: string, _npcId: string): Promise<void> {
-    return Promise.resolve();
   }
 }
 

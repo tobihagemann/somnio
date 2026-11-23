@@ -337,7 +337,7 @@ JS
 
 **Sense the fallen.** A Mystic holding `sense-the-fallen` reads every other fallen dreamer in the space in `sensed()`, however far off, from the moment they log in. For each one lying off screen, a marker sits at the screen's edge toward them (`.hud-sensed__marker`, inside `.hud-sensed`), with their name and an `aria-label` such as "Mira lies fallen to the north-east". A fallen dreamer on screen gets no marker. Stage it with the role recipe: lay a bot's dreamer down fallen and relocate them out of view, such as the North Meadow at `(20, -15)` while the Mystic stands in Edaria Square, then log both in. A raise or a wake of that dreamer empties `sensed()`.
 
-**Trigger NPC dialog.** Dialog arrives as a `serverSay` frame — there is no dialog-specific verb — so it lands in the chat scrollback. Walk within 2 m of the NPC and it greets the player with its first line, unasked: once per approach, and not again within 30 s. A press on it as above brings its remaining lines, a few seconds apart, and opens its panel when it has one (`window.somnio.servicePanel()`).
+**Trigger NPC dialog.** Dialog arrives as a `serverSay` frame — there is no dialog-specific verb — so it lands in the chat scrollback. Walk within 2 m of the NPC and it greets the player with its greeting, unasked: once per approach, and not again within 30 s. A press on it as above opens its panel when it has one (`window.somnio.servicePanel()`). The press also brings the steps of its dialog that fit the player, by role or by where a quest stands for them, each its reading time after the last. The press that walks the player up brings the first step about 1 s after the greeting, which comes first even when the press reaches the NPC before the greeting would have. Pressing it again brings the next step at once, though at least 1 s after the last line. An NPC with no step that fits the player says nothing past its greeting. While it talks to one bot, its greeting to another that walks up waits for that conversation to end.
 
 ```bash
 agent-browser eval 'window.somnio.entities().filter((e) => e.kind === "npc")'
@@ -516,6 +516,33 @@ To read what the scene computed, such as where each bubble was placed and in whi
 
 Relocate with the recipe below. Its `sectorName()` check cannot confirm a move within the starter room, since a lost race and a self-heal land there too, so check `player()` instead.
 
+A bubble is as tall as its lines and cuts none. To measure how NPC lines wrap, no server, Vite, or install is needed, and the result is the browser's real glyph widths, which no unit test's fixed-width measure gives. A line within the budget wraps to about four.
+
+Read each NPC's greeting and steps with `node` from the sector fixtures, with their German from `packages/core/data/dialog.json`, and put a long name (twelve `M`s, what the line budget counts a `$name` as) in place of `$name`. Then open `about:blank` and, in an `eval`, run `wrapSpeech`'s greedy word wrap (`packages/web/src/scene/speechBubbleText.ts`) with a canvas context's `measureText`, in the bubble's font (`10px system-ui, sans-serif`) at `BUBBLE_TEXT_WIDTH` (140 px). The script below writes the `eval` with the lines in it, and the `eval` returns the five that wrap longest:
+
+```bash
+node -e '
+const fs = require("fs"), dir = "packages/core/fixtures/sectors";
+const dialog = JSON.parse(fs.readFileSync("packages/core/data/dialog.json", "utf8"));
+const lines = fs.readdirSync(dir).flatMap((file) => JSON.parse(fs.readFileSync(`${dir}/${file}`, "utf8")).npcs ?? [])
+  .flatMap((npc) => [npc.greeting, ...(npc.dialog ?? []).map((step) => step.text)].filter((text) => text !== undefined))
+  .flatMap((en) => [en, dialog[en]?.de ?? en]).map((line) => line.replaceAll("$name", "M".repeat(12)));
+fs.writeFileSync(process.argv[1], `(() => {
+  const context = document.createElement("canvas").getContext("2d");
+  context.font = "10px system-ui, sans-serif";
+  const wrap = (text) => text.split(" ").reduce((lines, word) => {
+    const candidate = lines.length === 0 ? word : lines.at(-1) + " " + word;
+    if (lines.length > 0 && context.measureText(candidate).width <= 140) lines[lines.length - 1] = candidate; else lines.push(word);
+    return lines;
+  }, []);
+  return ${JSON.stringify(lines)}.map((line) => [wrap(line).length, line]).sort((a, b) => b[0] - a[0]).slice(0, 5);
+})()`);' "$TMPDIR/npc-wrap.js"
+agent-browser open about:blank
+agent-browser eval --stdin < "$TMPDIR/npc-wrap.js"
+```
+
+The wrap breaks only at spaces, which is all an NPC line needs; `wrapSpeech` also breaks a word wider than a line between its graphemes.
+
 **Portraits.** The HUD frames' portraits are drawn on the world canvas, in the circles the frames leave open (`.hud-portrait`, `GameHUD.portraits`), so only a screenshot shows them. To time the pass, wrap `WorldScene.prototype.drawPortraits` as the bubble recipe wraps `placedBubbles`, and repeat the pass inside the wrapper until frames slow. On Apple's ANGLE Metal renderer, `EXT_disjoint_timer_query_webgl2` overstates the pass many times over, so do not time it that way.
 
 **Frame time.** Check a change against the frame budget in `packages/web/AGENTS.md` ("Frame budget"). Check the load first (`uptime`): simulators or a build running beside the browser make every part of the frame about 2.5 times slower, so compare only figures taken in one sitting. Read the script's share with `frameStats()` after standing about five seconds in the scene, since its window starts with the page load's frames. For the GPU, `gl.finish()` returns before the GPU does on ANGLE Metal, and `EXT_disjoint_timer_query_webgl2` overstates. Instead, capture the shell once and time bursts of renders, each closed by a one-pixel `readPixels`, which waits for the GPU:
@@ -632,7 +659,7 @@ docker exec somnio-pg psql -U postgres -d somnio -c "INSERT INTO world_clock (id
 
 **The night door and Tacita.** Tacita, the Mystic master (`npc:EdariaMysticTower/tacita`), stands at `(3.55, 1.45)` in `EdariaMysticTower`. Its door, `to-edariamystictower` on the tower in the north-east corner of Edaria Square's south-west quarter, opens only from 22:00 to 06:00 world time, while the HUD clock shows ☾. It faces south; tap the ground at its doorway, about `(12.6, 31.5)` in the outdoor space. By day the server answers `doorRefused`, the player stays outside, and `chatHistory().at(-1)` reads "This door opens only at night." To get in, set the clock with the recipe above to 23:00, `14515282800`, and start the server again; with 2 h of real time per night, that leaves time for a run. The door out of the tower opens at every hour.
 
-Inside, a press on Tacita opens her panel ("Master of the Mystics") for a dreamer with no role, and her dialog hints at the trial's three hidden places. Each is a 3 m circle round a point, which in the outdoor space are `(-24, 30)` in the West Meadow, `(50, 8)` in the Autumn Wood, and `(12, -14)` in the North Meadow. With the trial taken ("Ask for the trial" in her panel), walking into each one sets that place's count in the `'mystic-trial'` entry of `quests().active` to 1 (`progress` `[1, 0, 0]` after the West Meadow's), and the chat says "You found a hidden place, 1 of 3." for each but the last, which says "Quest done: The Mystics' trial. Return to Tacita." Her panel then offers "Become a Mystic", which makes the role theirs. A dreamer holding another master's trial is told to finish or give that one up first. To skip the walk, relocate the character beside each circle with the relocation recipe, then tap the ground inside it: the space counts a place only on an accepted `move` there.
+Inside, a press on Tacita opens her panel ("Master of the Mystics") for a dreamer with no role. Her dialog follows where the trial stands for the dreamer. While it is offered to them, she asks them to take it and promises to say then where its three hidden places lie. While they hold it, she says where they lie. Each is a 3 m circle round a point, which in the outdoor space are `(-24, 30)` in the West Meadow, `(50, 8)` in the Autumn Wood, and `(12, -14)` in the North Meadow. With the trial taken ("Ask for the trial" in her panel), walking into each one sets that place's count in the `'mystic-trial'` entry of `quests().active` to 1 (`progress` `[1, 0, 0]` after the West Meadow's), and the chat says "You found a hidden place, 1 of 3." for each but the last, which says "Quest done: The Mystics' trial. Return to Tacita." Her panel then offers "Become a Mystic", which makes the role theirs. A dreamer holding another master's trial is told to finish or give that one up first. To skip the walk, relocate the character beside each circle with the relocation recipe, then tap the ground inside it: the space counts a place only on an accepted `move` there.
 
 **The Graveyard and the crypt.** The Graveyard is the outdoor sector at origin `(-71.68, 0)`, west of the West Meadow, which it touches. Relocate a character to `(-36, 20.4)` in the outdoor space, open ground on the road east of its arched gate, and `sectorName()` reads `'Graveyard'`. Inside the iron fence the church stands in the middle, Skeletons (`name: 'Skeleton'`, the `skeleton-minion` kind) rest and wander among the graves south of it, about x -60 to -42 and z 25 to 29, and Skeleton Warriors on its east side, about x -45 to -40 and z 10 to 17. The crypt's door, `to-graveyardcrypt` on the tomb south-west of the church, faces east; tap the ground at its doorway, about `(-56.8, 20.5)`. `spaceId()` then reads `'GraveyardCrypt'`, and the player stands at `(14.56, 5.12)`, inside its door on the east wall and beyond every nightmare's notice. The door to the burial chamber is across the crypt on its west wall: tap about `(0.3, 5.12)`. The crypt's two spawn areas lie in its middle (Skeletons x 7.7 to 9.9, Skeleton Warriors x 5.4 to 7.6, both z 0.6 to 9.6), so the way west is a fight. To skip it, relocate into the chamber itself, `space='GraveyardBurialChamber', position_x=13, position_z=6.4`, inside its only door, which leads back to the crypt.
 

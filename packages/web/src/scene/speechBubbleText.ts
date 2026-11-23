@@ -1,8 +1,8 @@
 import { SOMNIO_CONSTANTS } from '@somnio/core';
 
 /**
- * Speech-bubble line breaking. The measurement is injected so the greedy
- * wrap is testable without font metrics.
+ * Speech-bubble line breaking. The measurement is injected so the greedy wrap is testable without
+ * font metrics.
  */
 
 /** How far a line keeps from each side of the bubble, so no letter touches its outline. */
@@ -13,28 +13,12 @@ const BUBBLE_FONT_SIZE = SOMNIO_CONSTANTS.speechBubbleFontSize;
 /** The font lines are wrapped, sized, and drawn in. */
 export const BUBBLE_FONT = `${BUBBLE_FONT_SIZE}px system-ui, sans-serif`;
 
-/** ASCII, matching the project-wide rule — never the Unicode ellipsis. */
-const TRUNCATION_GLYPH = '...';
-
-const MAX_BUBBLE_LINES = 4;
 const GRAPHEME_SEGMENTER = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
 
 /**
- * Keeps the first `MAX_BUBBLE_LINES` lines, marking truncation at the end of the last. That line
- * gives up graphemes, and any space they leave at its end, until it fits `BUBBLE_TEXT_WIDTH` with
- * the mark, since the painter squeezes a wider line to that width.
- */
-function capLines(lines: string[], widthOf: (line: string) => number): string[] {
-  if (lines.length <= MAX_BUBBLE_LINES) return lines;
-  const graphemes = Array.from(GRAPHEME_SEGMENTER.segment(lines[MAX_BUBBLE_LINES - 1]!), ({ segment }) => segment);
-  const marked = () => graphemes.join('').trimEnd() + TRUNCATION_GLYPH;
-  while (graphemes.length > 0 && widthOf(marked()) > BUBBLE_TEXT_WIDTH) graphemes.pop();
-  return [...lines.slice(0, MAX_BUBBLE_LINES - 1), marked()];
-}
-
-/**
  * Greedy word wrap against `BUBBLE_TEXT_WIDTH`, breaking at spaces. A word wider than a line on its
- * own is broken across lines between its graphemes, so it is not squeezed onto one line.
+ * own is broken across lines between its graphemes, so it is not squeezed onto one line. Every line
+ * is kept, however many the text wraps to.
  */
 export function wrapSpeech(text: string, widthOf: (line: string) => number): string[] {
   const words = text.split(' ').flatMap((word) => breakWord(word, widthOf));
@@ -50,7 +34,7 @@ export function wrapSpeech(text: string, widthOf: (line: string) => number): str
     }
   }
   if (current !== '') lines.push(current);
-  return capLines(lines, widthOf);
+  return lines;
 }
 
 /** A word cut into pieces that each fit a line, between graphemes so no letter or emoji is split. */
@@ -75,9 +59,4 @@ export function canvasWidthMeasurer(): (line: string) => number {
   if (context === null) return (line) => line.length * BUBBLE_FONT_SIZE * 0.5;
   context.font = BUBBLE_FONT;
   return (line) => context.measureText(line).width;
-}
-
-/** Lifetime rule from the legacy client: 2 s plus a second per line. */
-export function bubbleLifetimeMs(lineCount: number): number {
-  return 2000 + lineCount * 1000;
 }

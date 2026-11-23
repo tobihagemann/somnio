@@ -540,10 +540,7 @@ describe('the Mystic master', () => {
   const AT_TACITA: Point = { x: 4, z: 5 };
   const tower = () =>
     arena({
-      npcs: [
-        { ...makeNPC('tacita', { x: 4, z: 4 }, ''), service: 'mysticMaster' },
-        { ...makeNPC('sana', { x: 16, z: 4 }, ''), service: 'healerMaster' },
-      ],
+      npcs: [makeNPC('tacita', { x: 4, z: 4 }, {}, 'mysticMaster'), makeNPC('sana', { x: 16, z: 4 }, {}, 'healerMaster')],
     });
 
   it("teaches a Mystic the Mystic's teachings, and no other role's", () => {

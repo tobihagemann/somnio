@@ -18,8 +18,16 @@
   "npcs": [
     {
       "characterModelId": "merchant",
-      "dialogScript": "Welcome, $name!---Have a look around. There is not much yet.---The next delivery comes with the trader from the Autumn Wood. Until then, only the bare essentials.",
+      "dialog": [
+        {
+          "text": "Have a look around. There is not much yet."
+        },
+        {
+          "text": "The next delivery comes with the trader from the Autumn Wood. Until then, only the bare essentials."
+        }
+      ],
       "facing": 0,
+      "greeting": "Welcome, $name!",
       "id": "mercus",
       "name": "Mercus",
       "service": "shopkeeper",

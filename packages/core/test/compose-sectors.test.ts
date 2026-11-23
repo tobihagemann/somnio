@@ -183,7 +183,7 @@ describe('composing the lands', () => {
   it('routes a door path round an NPC standing on its way', () => {
     const sectors = loadSectorFixtures();
     const square = sectors.find((sector) => sector.name === 'EdariaSquare')!;
-    square.npcs.push({ id: 'loiterer', name: 'Loiterer', characterModelId: 'fighter-master', x: 15.2, z: 8.8, facing: 0, dialogScript: '' });
+    square.npcs.push({ id: 'loiterer', name: 'Loiterer', characterModelId: 'fighter-master', x: 15.2, z: 8.8, facing: 0, dialog: [] });
     expectPathsWalkable(compose(sectors), 'gen-path-', 1, 8, ROADS);
   });
 

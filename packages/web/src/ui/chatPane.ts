@@ -3,7 +3,7 @@ import { chatLineCategory } from '@/client';
 import type { ChatLine } from '@/client';
 import { renderChatLine, t } from '@/i18n';
 import type { CatalogLocale, CatalogTables } from '@/i18n';
-import { element, iconButton, setHidden } from './dom';
+import { element, endsLine, iconButton, setHidden } from './dom';
 import { HUD_ICONS, glyph } from './hudIcons';
 import { setTip } from './hudTooltip';
 import { windowHead } from './hudWindows';
@@ -210,7 +210,7 @@ export class ChatPane {
    * keyboard, so a field that kept it would leave R typed into it.
    */
   private handleKeydown(event: KeyboardEvent): void {
-    if (event.key !== 'Enter') return;
+    if (!endsLine(event)) return;
     // Always consumed, including with Shift held: canvas `fillText` drops `\n`, and `wrapSpeech`
     // tokenizes on spaces only, so a newline the field took would ride inside a word, be measured
     // wrong in the bubble, and be relayed by the server all the same.

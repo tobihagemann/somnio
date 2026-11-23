@@ -10,7 +10,7 @@ import { makeStubConnectionDependencies } from '../support/stubDependencies.ts';
  * outbox before the actor starts and the drain-before-close exit observed on a real socket.
  */
 async function withActorServer(preseed: string[], body: (url: string) => Promise<void>): Promise<void> {
-  const dependencies = await makeStubConnectionDependencies();
+  const dependencies = makeStubConnectionDependencies();
   const wss = new WebSocketServer({ host: '127.0.0.1', port: 0, maxPayload: MAX_WIRE_FRAME_SIZE });
   wss.on('connection', (ws) => {
     ws.on('error', () => {});

@@ -18,8 +18,48 @@
   "npcs": [
     {
       "characterModelId": "libus",
-      "dialogScript": "Greetings, $name!---New here? Then call on Mercus first. His shop is on the square, and the bounty board stands there too.---After that, meet the masters. Pugnax and Sana keep their halls on the square. The Mystics' tower stands there as well, but it opens only at night.---And running is forbidden in here!",
+      "dialog": [
+        {
+          "text": "New here? I have an errand for you that will show you the town.",
+          "when": {
+            "quest": "newcomer-errand",
+            "state": "offered"
+          }
+        },
+        {
+          "text": "Call on Mercus first. His shop is on the square, and the bounty board stands there too.",
+          "when": {
+            "quest": "newcomer-errand",
+            "state": "held"
+          }
+        },
+        {
+          "text": "Then meet the masters. Pugnax and Sana keep their halls on the square.",
+          "when": {
+            "quest": "newcomer-errand",
+            "state": "held"
+          }
+        },
+        {
+          "text": "The Mystics' tower stands there as well, but it opens only at night.",
+          "when": {
+            "quest": "newcomer-errand",
+            "state": "held"
+          }
+        },
+        {
+          "text": "You know your way about now, $name. The masters will teach you the rest.",
+          "when": {
+            "quest": "newcomer-errand",
+            "state": "done"
+          }
+        },
+        {
+          "text": "And running is forbidden in here!"
+        }
+      ],
       "facing": 0,
+      "greeting": "Greetings, $name!",
       "id": "libus",
       "name": "Libus",
       "x": 5.3,

@@ -18,8 +18,74 @@
   "npcs": [
     {
       "characterModelId": "libus",
-      "dialogScript": "Hush, $name. The dream speaks clearest at night.---Whoever would learn from me first finds three places the dream keeps to itself.---Where the sun sets, the West Meadow keeps a ring of open grass, far out and south of the road.---Where it rises, the Autumn Wood hides a glade just past the gate, north of the road.---Toward the north, the North Meadow lies open west of the road. Stand in all three, then come back to me.",
+      "dialog": [
+        {
+          "text": "Whoever would learn from me first finds three places the dream keeps to itself.",
+          "when": {
+            "quest": "mystic-trial",
+            "state": "offered"
+          }
+        },
+        {
+          "text": "Take my trial, and I will tell you where they lie.",
+          "when": {
+            "quest": "mystic-trial",
+            "state": "offered"
+          }
+        },
+        {
+          "text": "Where the sun sets, the West Meadow keeps a ring of open grass, far out and south of the road.",
+          "when": {
+            "quest": "mystic-trial",
+            "state": "held"
+          }
+        },
+        {
+          "text": "Where it rises, the Autumn Wood hides a glade just past the gate, north of the road.",
+          "when": {
+            "quest": "mystic-trial",
+            "state": "held"
+          }
+        },
+        {
+          "text": "Toward the north, the North Meadow lies open west of the road.",
+          "when": {
+            "quest": "mystic-trial",
+            "state": "held"
+          }
+        },
+        {
+          "text": "Stand in all three, then come back to me.",
+          "when": {
+            "quest": "mystic-trial",
+            "state": "held"
+          }
+        },
+        {
+          "text": "Listen at night, $name. The dream says more to those who keep still.",
+          "when": {
+            "role": "own"
+          }
+        },
+        {
+          "text": "You learn elsewhere now. The dream still speaks to anyone who keeps still.",
+          "when": {
+            "role": "other"
+          }
+        },
+        {
+          "text": "Memor keeps the Graveyard beyond the West Meadow. He has asked for one of mine.",
+          "when": {
+            "quest": "word-for-memor-mystic",
+            "state": "offered"
+          }
+        },
+        {
+          "text": "The dream keeps its secrets from those who hurry."
+        }
+      ],
       "facing": 0,
+      "greeting": "Hush, $name. The dream speaks clearest at night.",
       "id": "tacita",
       "name": "Tacita",
       "service": "mysticMaster",

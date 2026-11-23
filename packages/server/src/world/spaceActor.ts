@@ -64,7 +64,7 @@ import {
   conditionOf,
   crumble,
   dayBounties,
-  dialogSteps,
+  dialogStepFits,
   distance,
   drivesOff,
   droppableItem,
@@ -107,6 +107,7 @@ import {
   nextLastSeen,
   npcBodies,
   npcEntityId,
+  npcReadSeconds,
   offeredBounty,
   outdoorDoorIds,
   placedFixtures,
@@ -177,6 +178,7 @@ import type {
   Bounty,
   BountyLand,
   Character,
+  DialogStep,
   EffectId,
   EliteTraitId,
   EngageAction,
@@ -190,7 +192,6 @@ import type {
   MonsterKind,
   MonsterKindId,
   MonsterSpawn,
-  NPCDialogState,
   PlacedFixture,
   Point,
   Quest,
@@ -321,15 +322,17 @@ interface NPCRuntime {
   sector: string;
   definition: SectorNPC;
   position: Point;
-  /** The dreamer who asked it to go on, while it says the lines after its greeting. */
+  /** The dreamer who asked it to go on, while it says the steps of its dialog that fit them. */
   targetingEntity: string | undefined;
-  /** The parsed script, cached so a step does not parse it again: the greeting, then what it says when asked. */
-  dialogSteps: string[];
-  /** No line after the greeting is spoken before this moment. */
+  /** The reading deadline of the last line it said, greeting or step. Only saying a line sets it. */
   readyAt: number;
-  /** No greeting is spoken before this moment. A dreamer who asks right after being greeted is answered at once. */
-  greetReadyAt: number;
-  /** 0-based cursor into `dialogSteps`. Persisted as 1-based; translated at the seam. */
+  /** When it last said a line, greeting or step. */
+  lastSaidAt: number;
+  /** The dreamer it last said a line to. */
+  lastSaidTo: string | undefined;
+  /** Whether the dreamer it talks to asked for the next step early. */
+  skipAsked: boolean;
+  /** 0-based cursor into the dialog's steps. */
   scriptStepIndex: number;
   /** The dreamers within speaking distance it has taken note of, so each is greeted once per approach. */
   near: Set<string>;
@@ -463,7 +466,7 @@ interface Voice {
   entityId: string;
   name: string;
   kind: SpeechKind;
-  /** A dreamer's words as said, or the step of its script an NPC says to a dreamer, which each listener hears in their own language. */
+  /** A dreamer's words as said, or a line an NPC says to a dreamer, greeting or step, which each listener hears in their own language. */
   line: { words: string } | { step: string; targetName: string };
 }
 
@@ -535,13 +538,6 @@ export interface PlayerCheckpoint {
 export interface PlayerHandOver {
   checkpoint: PlayerCheckpoint;
   transient: PlayerTransient;
-}
-
-/** One step's persistence digest; the router applies it outside the actor so a failed write cannot corrupt in-process state. */
-export interface TickDigest {
-  dialogUpserts: NPCDialogState[];
-  /** The NPCs whose dialog row is deleted: a reset persists a deletion, not a full state. */
-  dialogResets: Pick<NPCDialogState, 'sectorName' | 'npcId'>[];
 }
 
 /** What a joining player and every NPC and monster start at; a player's own gait arrives with their first move. */
@@ -652,8 +648,6 @@ const SUM_SLACK_SECONDS = 1e-9;
 
 export interface SpaceActorOptions {
   logger: Logger;
-  /** The persisted 1-based dialog cursors of the space's sectors. */
-  initialDialogStates?: readonly NPCDialogState[];
   random?: RandomSource;
   /** Picks the words a listener misses; separate from `random`, so speech never shifts the rolls of combat and placement. */
   speechRandom?: RandomSource;
@@ -685,7 +679,7 @@ export function offerIds(): () => number {
   return () => (last += 1);
 }
 
-type NPCDialogAction = { kind: 'holdCooldown' } | { kind: 'resetTargeting' } | { kind: 'emit'; targetName: string };
+type NPCDialogAction = { kind: 'wait' } | { kind: 'resetTargeting' } | { kind: 'emit'; target: PlayerSlot };
 
 /** The bases of what the dreamer's hands hold, which everyone who sees them is shown. */
 function heldOf({ equipped: { mainHand, offHand } }: Inventory): Held {
@@ -932,8 +926,6 @@ export class SpaceActor {
       }
       for (const npc of sector.npcs) {
         const id = npcEntityId(sector.name, npc.id);
-        const steps = dialogSteps(npc.dialogScript);
-        const persisted = options.initialDialogStates?.find((state) => state.sectorName === sector.name && state.npcId === npc.id);
         this.npcs.set(id, {
           id,
           sector: sector.name,
@@ -942,10 +934,11 @@ export class SpaceActor {
           targetingEntity: undefined,
           near: new Set(),
           greetedAt: new Map(),
-          greetReadyAt: 0,
-          dialogSteps: steps,
           readyAt: 0,
-          scriptStepIndex: this.resolveSeedStepIndex(persisted?.scriptStep, steps.length, id),
+          lastSaidAt: 0,
+          lastSaidTo: undefined,
+          skipAsked: false,
+          scriptStepIndex: 0,
         });
       }
       for (const fixture of placedFixtures(sector)) this.fixtures.set(fixture.id, fixture);
@@ -953,25 +946,6 @@ export class SpaceActor {
     this.npcBodies = npcBodies(this.space);
     this.doorways = doorwaysOut(world, this.space);
     this.bountyLands = bountyLands([...world.spaces.values()].flatMap((space) => space.sectors));
-  }
-
-  /**
-   * Translates a persisted 1-based `script_step` into the 0-based cursor. Out-of-range values
-   * clamp to 0 with a warning so a shortened script is visible rather than silently rewound.
-   */
-  private resolveSeedStepIndex(persisted: number | undefined, stepCount: number, npcId: string): number {
-    if (persisted === undefined) return 0;
-    if (stepCount === 0) {
-      if (persisted !== 1) {
-        this.logger.warn({ npc: npcId, persisted_step: persisted }, 'npc dialog cursor reset (script empty)');
-      }
-      return 0;
-    }
-    if (persisted < 1 || persisted > stepCount) {
-      this.logger.warn({ npc: npcId, persisted_step: persisted, step_count: stepCount }, 'npc dialog cursor clamped (out of range)');
-      return 0;
-    }
-    return persisted - 1;
   }
 
   /**
@@ -1092,7 +1066,11 @@ export class SpaceActor {
     for (const [target, raise] of [...this.raisesHeldBy(entityId)]) this.advanceRaise(target, raise);
     this.players.delete(entityId);
     this.moved.delete(entityId);
-    for (const npc of this.npcs.values()) npc.greetedAt.delete(entityId);
+    for (const npc of this.npcs.values()) {
+      if (npc.targetingEntity === entityId) this.resetTargeting(npc);
+      npc.near.delete(entityId);
+      npc.greetedAt.delete(entityId);
+    }
     this.broadcast({ tag: 'leave', payload: { entityId, leftGame } }, slot.sector);
     // A Healer who leaves drops out at once, so one back under the same id before the next step holds on only once they take hold again.
     for (const [target, raise] of this.raisesHeldBy(entityId)) this.releaseRaise(target, raise);
@@ -1494,19 +1472,25 @@ export class SpaceActor {
   }
 
   /**
-   * Acting on a carrier counts as a visit to it. An NPC is asked to go on, and says the lines after
-   * its greeting to the dreamer who asked. One with nothing beyond its greeting has nothing to go on
-   * with. Its targeting flips once: a second ask while it is already targeting is a no-op, so it is
-   * not retargeted mid-script. A fixture is only used, and its panel opens on the client. An ask
-   * from outside speaking distance or from a fallen dreamer is dropped, so it cannot force per-call
-   * writes through the step's reset path.
+   * Acting on a carrier counts as a visit to it, whoever an NPC is talking to. An idle NPC is asked
+   * to go on, and says the steps of its dialog that fit the dreamer who asked. One with no step that
+   * fits them stays free for whoever asks next. A press by the dreamer it talks to asks for the next
+   * step early (see `resolveDialogAction`), and a press by anyone else changes nothing in the
+   * conversation.
+   *
+   * A fixture is only used, and its panel opens on the client. An ask from outside speaking distance
+   * or from a fallen dreamer is dropped.
    */
   handleInteract(carrierId: string, entityId: string): void {
     const player = this.carrierNear(carrierId, entityId);
     if (player === undefined) return;
     this.visit(player, carrierId);
     const npc = this.npcs.get(carrierId);
-    if (npc !== undefined && npc.targetingEntity === undefined && npc.dialogSteps.length >= 2) npc.targetingEntity = entityId;
+    if (npc === undefined) return;
+    if (npc.targetingEntity === undefined && npc.definition.dialog.some((step) => dialogStepFits(step.when, player.character, npc.definition.service))) {
+      npc.targetingEntity = entityId;
+    }
+    if (npc.targetingEntity === entityId) npc.skipAsked = true;
   }
 
   /**
@@ -1901,10 +1885,9 @@ export class SpaceActor {
     return withinSpeakingDistance(player.character.position, npc.position);
   }
 
-  step(elapsedSeconds: number): TickDigest {
+  step(elapsedSeconds: number): void {
     this.reachBoardDay(boardDay(this.wallNow()));
-    const digest: TickDigest = { dialogUpserts: [], dialogResets: [] };
-    this.runNPCs(digest);
+    this.runNPCs();
     this.runMonsterSpawns();
     this.settleEffects([...this.players.values(), ...this.monsters.values()]);
     this.renewTraits();
@@ -1914,7 +1897,6 @@ export class SpaceActor {
     this.expireOffers();
     this.dropUnseenTargets();
     for (const slot of this.players.values()) this.sendVitals(slot);
-    return digest;
   }
 
   /** Batched `moves` frames per player for everything that moved in their view since the last flush, as many as the per-frame cap needs. */
@@ -2030,17 +2012,17 @@ export class SpaceActor {
     return this.now() + randomInRange(this.wanderRandom, min, max) * 1000;
   }
 
-  private runNPCs(digest: TickDigest): void {
+  private runNPCs(): void {
     for (const npc of this.npcs.values()) {
       const action = this.resolveDialogAction(npc);
       switch (action.kind) {
-        case 'holdCooldown':
+        case 'wait':
           break;
         case 'resetTargeting':
-          this.resetTargeting(npc, digest);
+          this.resetTargeting(npc);
           break;
         case 'emit':
-          this.emitDialogStep(npc, action.targetName, digest);
+          this.emitDialogStep(npc, action.target);
           break;
       }
       this.greetArrival(npc);
@@ -2048,72 +2030,106 @@ export class SpaceActor {
   }
 
   /**
-   * An NPC greets a dreamer who has come within speaking distance with the first line of its
-   * script: once per approach, and not again within the greeting pause, so one who hovers at the
-   * edge is not greeted over and over. While it is saying something else the arrivals wait, and
-   * it greets one of them per line.
+   * An NPC greets a dreamer who has come within speaking distance with its greeting: once per
+   * approach, and not again within the greeting pause, so one who hovers at the edge is not greeted
+   * over and over. While it talks to someone, or its last line is still being read, the arrivals
+   * wait, and it greets one of them per line.
    */
   private greetArrival(npc: NPCRuntime): void {
-    const greeting = npc.dialogSteps[0];
-    if (greeting === undefined) return;
     for (const id of npc.near) {
       const slot = this.players.get(id);
       if (slot === undefined || !this.inSpeakingDistance(npc, slot)) npc.near.delete(id);
     }
     const now = this.now();
-    if (npc.targetingEntity !== undefined || now < npc.readyAt || now < npc.greetReadyAt) return;
+    if (npc.targetingEntity !== undefined || now < npc.readyAt) return;
     for (const slot of this.players.values()) {
       const id = slot.character.id;
-      if (npc.near.has(id) || !this.inSpeakingDistance(npc, slot)) continue;
-      npc.near.add(id);
+      const greeting = this.owedGreeting(npc, id);
+      if (greeting === undefined || !this.inSpeakingDistance(npc, slot)) continue;
       const last = npc.greetedAt.get(id);
-      if (last !== undefined && now - last < SOMNIO_CONSTANTS.npcGreetingPauseSeconds * 1000) continue;
-      npc.greetedAt.set(id, now);
-      this.speakAs(npc, greeting, slot.character.name);
-      npc.greetReadyAt = now + SOMNIO_CONSTANTS.npcDialogCooldownSeconds * 1000;
+      if (last !== undefined && now - last < SOMNIO_CONSTANTS.npcGreetingPauseSeconds * 1000) {
+        npc.near.add(id);
+        continue;
+      }
+      this.greet(npc, greeting, slot);
       return;
     }
   }
 
+  /**
+   * The NPC says its next line once the last has been read (`readyAt`, which a press never moves). A
+   * step comes sooner to the dreamer it last spoke to who asked for it while still its target, though
+   * no sooner than `npcDialogSkipFloorSeconds` after the last line. A greeting always waits, even to
+   * the dreamer who asked, and so does a first reply to someone it has not just spoken to.
+   */
   private resolveDialogAction(npc: NPCRuntime): NPCDialogAction {
-    if (npc.targetingEntity === undefined) return { kind: 'holdCooldown' };
+    if (npc.targetingEntity === undefined) return { kind: 'wait' };
     const target = this.players.get(npc.targetingEntity);
     if (target === undefined) return { kind: 'resetTargeting' };
     if (!this.inSpeakingDistance(npc, target)) return { kind: 'resetTargeting' };
-    if (this.now() < npc.readyAt) return { kind: 'holdCooldown' };
-    return { kind: 'emit', targetName: target.character.name };
+    const now = this.now();
+    const owesGreeting = this.owedGreeting(npc, npc.targetingEntity) !== undefined;
+    const skipped =
+      npc.skipAsked && !owesGreeting && npc.lastSaidTo === npc.targetingEntity && now >= npc.lastSaidAt + SOMNIO_CONSTANTS.npcDialogSkipFloorSeconds * 1000;
+    if (now < npc.readyAt && !skipped) return { kind: 'wait' };
+    return { kind: 'emit', target };
   }
 
   /**
-   * Emits the current step, restarts the cooldown, and advances the cursor, wrapping (and clearing
-   * targeting) at the last line. The first step is the greeting, so the cursor starts past it.
+   * Greets a target it has not noticed on this approach first, which counts as their ask for the
+   * first step. Otherwise it says the next step from the cursor that fits the target. It ends the
+   * conversation once no later step fits them, or at once, saying nothing, when none does.
    */
-  private emitDialogStep(npc: NPCRuntime, targetName: string, digest: TickDigest): void {
-    const index = Math.max(npc.scriptStepIndex, 1);
-    const step = npc.dialogSteps[index]!;
-    this.speakAs(npc, step, targetName);
-    npc.readyAt = this.now() + SOMNIO_CONSTANTS.npcDialogCooldownSeconds * 1000;
-    const key = { sectorName: npc.sector, npcId: npc.definition.id };
-    const nextIndex = index + 1;
-    if (nextIndex >= npc.dialogSteps.length) {
-      npc.scriptStepIndex = 0;
-      npc.targetingEntity = undefined;
-      digest.dialogResets.push(key);
-    } else {
-      npc.scriptStepIndex = nextIndex;
-      digest.dialogUpserts.push({ ...key, scriptStep: nextIndex + 1 });
+  private emitDialogStep(npc: NPCRuntime, target: PlayerSlot): void {
+    const { dialog, service } = npc.definition;
+    const greeting = this.owedGreeting(npc, target.character.id);
+    if (greeting !== undefined) {
+      this.greet(npc, greeting, target);
+      npc.skipAsked = true;
+      return;
     }
+    const fits = (step: DialogStep) => dialogStepFits(step.when, target.character, service);
+    const index = dialog.findIndex((step, at) => at >= npc.scriptStepIndex && fits(step));
+    if (index === -1) {
+      this.resetTargeting(npc);
+      return;
+    }
+    this.speakAs(npc, dialog[index]!.text, target);
+    npc.scriptStepIndex = index + 1;
+    if (!dialog.slice(index + 1).some(fits)) this.resetTargeting(npc);
   }
 
-  /** An NPC talks like a dreamer: whoever it addresses stands within speaking distance and hears it whole, and bystanders by their distance. */
-  private speakAs(npc: NPCRuntime, step: string, targetName: string): void {
+  /** The greeting `id` is owed before any step: the NPC's greeting, unless it has none or has noticed them on this approach. */
+  private owedGreeting(npc: NPCRuntime, id: string): string | undefined {
+    return npc.near.has(id) ? undefined : npc.definition.greeting;
+  }
+
+  private greet(npc: NPCRuntime, greeting: string, to: PlayerSlot): void {
+    this.speakAs(npc, greeting, to);
+    npc.near.add(to.character.id);
+    npc.greetedAt.set(to.character.id, this.now());
+  }
+
+  /**
+   * An NPC talks like a dreamer: whoever it addresses stands within speaking distance and hears it
+   * whole, and bystanders by their distance, each the line meant for `to`. Saying it holds the NPC's
+   * next line for the reading time of the line's longest translation.
+   */
+  private speakAs(npc: NPCRuntime, step: string, to: PlayerSlot): void {
+    const targetName = to.character.name;
     this.speak({ voice: { entityId: npc.id, name: npc.definition.name, kind: 'say', line: { step, targetName } }, rolls: [] }, npc.position);
+    const now = this.now();
+    npc.lastSaidAt = now;
+    npc.lastSaidTo = to.character.id;
+    npc.readyAt = now + npcReadSeconds(step, targetName) * 1000;
+    npc.skipAsked = false;
   }
 
-  private resetTargeting(npc: NPCRuntime, digest: TickDigest): void {
+  /** Ends the conversation. The last line's reading deadline stands. */
+  private resetTargeting(npc: NPCRuntime): void {
     npc.targetingEntity = undefined;
     npc.scriptStepIndex = 0;
-    digest.dialogResets.push({ sectorName: npc.sector, npcId: npc.definition.id });
+    npc.skipAsked = false;
   }
 
   /**

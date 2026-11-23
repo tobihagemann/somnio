@@ -206,8 +206,86 @@
   "npcs": [
     {
       "characterModelId": "libus",
-      "dialogScript": "Walk softly, $name. The dead here do not rest.---I am Memor. I keep the names of all who lie here, so the dream does not forget them.---This is a thin place. The dream wears through here, and what was buried climbs back out. See what stirs among the graves.---The warriors among them carry skulls cracked by something older than this church. Bring me some, and I will learn what wakes them.---Below the tomb lies the crypt, and past it the chamber where the Necromancer keeps the dead from rest. Do not go down alone.",
+      "dialog": [
+        {
+          "text": "I am Memor. I keep the names of all who lie here, so the dream does not forget them."
+        },
+        {
+          "text": "This is a thin place. The dream wears through here, and what was buried climbs back out."
+        },
+        {
+          "text": "Your master sent word ahead. I am glad you came.",
+          "when": {
+            "quest": "word-for-memor-fighter",
+            "state": "held"
+          }
+        },
+        {
+          "text": "Your master sent word ahead. I am glad you came.",
+          "when": {
+            "quest": "word-for-memor-healer",
+            "state": "held"
+          }
+        },
+        {
+          "text": "Your master sent word ahead. I am glad you came.",
+          "when": {
+            "quest": "word-for-memor-mystic",
+            "state": "held"
+          }
+        },
+        {
+          "text": "See what stirs among the graves.",
+          "when": {
+            "quest": "restless-graves",
+            "state": "offered"
+          }
+        },
+        {
+          "text": "The graves south of the church are restless. Drive back what climbs out.",
+          "when": {
+            "quest": "restless-graves",
+            "state": "held"
+          }
+        },
+        {
+          "text": "The warriors among them carry skulls cracked by something older than this church.",
+          "when": {
+            "quest": "cracked-skulls",
+            "state": "offered"
+          }
+        },
+        {
+          "text": "Bring me some, and I will learn what wakes them.",
+          "when": {
+            "quest": "cracked-skulls",
+            "state": "offered"
+          }
+        },
+        {
+          "text": "Below the tomb lies the crypt, and past it the chamber of the Necromancer.",
+          "when": {
+            "quest": "into-the-crypt",
+            "state": "offered"
+          }
+        },
+        {
+          "text": "He keeps the dead from rest. Do not go down alone.",
+          "when": {
+            "quest": "into-the-crypt",
+            "state": "offered"
+          }
+        },
+        {
+          "text": "The Necromancer is gone, for now. The names here sleep easier, $name.",
+          "when": {
+            "quest": "into-the-crypt",
+            "state": "done"
+          }
+        }
+      ],
       "facing": 0,
+      "greeting": "Walk softly, $name. The dead here do not rest.",
       "id": "memor",
       "name": "Memor",
       "x": 19.8,

@@ -26,7 +26,7 @@ import {
 import { recordingOutbox } from './support/frames.ts';
 import { testLogger } from './support/logger.ts';
 import { attachPlayer, makeMonsterSpawn, makeNPC, makeSector, makeWorld } from './support/sectorFactory.ts';
-import { StubCharacterRepository, StubNPCDialogStateRepository } from './support/stubRepositories.ts';
+import { StubCharacterRepository } from './support/stubRepositories.ts';
 
 const MEMOR = 'npc:Graveyard/memor';
 const AT_MEMOR: Point = { x: 16, z: 18 };
@@ -45,7 +45,7 @@ const BEYOND_ALICE: Point = { x: 14.5, z: 2 };
 function graveyard(day: number = DAY) {
   const world = arena({
     name: 'Graveyard',
-    npcs: [makeNPC('memor', { x: 16, z: 17 }, '')],
+    npcs: [makeNPC('memor', { x: 16, z: 17 }, {})],
     monsterSpawns: [{ ...makeMonsterSpawn(GHOST_AT), kind: 'skeleton-minion' }],
     placements: [{ id: 'notice-board-1', modelId: 'notice-board', x: 10, z: 13.5, yaw: 0, elevation: 0 }],
     fixtures: [{ id: 'fixture-1', placement: 'notice-board-1', service: 'bountyBoard' }],
@@ -242,8 +242,8 @@ describe('sharing a quest', () => {
     expect(payloads(alice.sent, 'questShared')).toEqual([{ reached: 0 }]);
   });
 
-  it('never gives two offers in the world one id, across its spaces', async () => {
-    const router = await WorldRouter.create(makeWorld([makeSector()]), new StubCharacterRepository(), new StubNPCDialogStateRepository(), testLogger());
+  it('never gives two offers in the world one id, across its spaces', () => {
+    const router = WorldRouter.create(makeWorld([makeSector()]), new StubCharacterRepository(), testLogger());
     const ids = [OUTDOOR_SPACE_ID, router.world.sectorSpace.get(STARTER_SECTOR)!].map((spaceId) => {
       const space = router.space(spaceId)!;
       const sharer = attachPlayer(space, { x: 4, z: 5 }, `sharer-${spaceId}`, { spaceId, character: { quests: holding('restless-graves', [1]) } });

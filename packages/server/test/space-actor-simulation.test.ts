@@ -13,8 +13,8 @@ import {
   sectorPointInSpace,
   spawnArea,
 } from '@somnio/core';
-import type { NPCDialogState, Point, Sector } from '@somnio/core';
-import type { SomnioMessage } from '@somnio/protocol';
+import type { DialogStep, Point, QuestLog, Sector } from '@somnio/core';
+import type { Service, SomnioMessage } from '@somnio/protocol';
 import registryJSON from '@somnio/core/data/ModelRegistry.json' with { type: 'json' };
 import { outdoorSector } from '../../core/test/support/worldFixture.ts';
 import { DEV_SECTORS_DIRECTORY } from '../src/config.ts';
@@ -36,18 +36,13 @@ import {
   makeSector,
   makeSectorLine,
   makeWorld,
+  unconditionalSteps,
 } from './support/sectorFactory.ts';
-
-const GUARD = 'npc:TestSector/guard';
-const COOLDOWN_MS = SOMNIO_CONSTANTS.npcDialogCooldownSeconds * 1000;
+import type { AttachPlayerOptions } from './support/sectorFactory.ts';
 
 /** One 20 x 20 m sector on a clock the test advances. */
 function actor(overrides: Partial<Sector> = {}, options: Partial<SpaceActorOptions> = {}) {
   return makeClockedSpace(makeWorld([makeSector('TestSector', overrides)]), OUTDOOR_SPACE_ID, options);
-}
-
-function guard(dialogScript: string): Partial<Sector> {
-  return { npcs: [makeNPC('guard', { x: 10, z: 10 }, dialogScript)] };
 }
 
 async function monstersSeen(outbox: ConnectionOutbox) {
@@ -55,167 +50,413 @@ async function monstersSeen(outbox: ConnectionOutbox) {
 }
 
 describe('NPC dialog', () => {
+  /** Pugnax's carrier id, which Libus's errand counts a visit to. */
+  const PUGNAX = 'npc:EdariaFighterHall/pugnax';
   const NEAR: Point = { x: 10, z: 11.2 };
   const AWAY: Point = { x: 10, z: 12.7 };
-  const QUIET = { dialogUpserts: [], dialogResets: [] };
-  const KEY = { sectorName: 'TestSector', npcId: 'guard' };
+  /** Within speaking distance of the NPC too, beside `NEAR`. */
+  const BESIDE: Point = { x: 10.8, z: 10.9 };
+  /** In the dialog catalog, 56 graphemes in English and 75 in German, so it is held for the German's 6 s where the English reads in 4.73 s. */
+  const HEALER_LORE = 'Only a Healer draws back the fallen. Leave no one lying.';
+  const LORE_READ_MS = 6000;
+  /** Read in 3.67 s, in either language, since the catalog does not hold it. */
+  const FORTY = 'Forty graphemes, held under four seconds';
+  const OFFER: DialogStep = { text: 'Drive off a nightmare first.', when: { quest: 'fighter-trial', state: 'offered' } };
+  const OFFER_AGAIN: DialogStep = { text: 'Well? Drive one off.', when: { quest: 'fighter-trial', state: 'offered' } };
+  const HELD: DialogStep = { text: 'Has a nightmare fled from you yet?', when: { quest: 'fighter-trial', state: 'held' } };
+  const OWN: DialogStep = { text: 'Guard up, $name.', when: { role: 'own' } };
+  const GRAVES: DialogStep = { text: 'The graves are restless.', when: { quest: 'restless-graves', state: 'held' } };
+  const NEWCOMER: AttachPlayerOptions['character'] = {};
+  const FIGHTER: AttachPlayerOptions['character'] = { lucidity: lucidity('fighter'), quests: { active: [], done: ['fighter-trial'] } };
+  const ON_THE_ERRAND: QuestLog = { active: [{ questId: 'newcomer-errand', progress: [0, 0, 0, 0, 0] }], done: [] };
 
-  it('greets a dreamer who comes within speaking distance with its first line, once, and leaves the cursor alone', async () => {
-    const { clock, space } = actor(guard('Hello, $name.\n---\nFollow up.'));
-    const alice = attachPlayer(space, AWAY, 'alice');
-    expect(space.step(0.05)).toEqual(QUIET);
-    space.handleMove({ ...NEAR, facing: 0, gait: 'jog' }, alice.entityId);
-    expect(space.step(0.05)).toEqual(QUIET);
-    clock.ms += 2 * COOLDOWN_MS;
-    space.step(0.05);
-    expect(serverSays(await collectMessages(alice.outbox))).toEqual(['Hello, alice.']);
-  });
-
-  it('greets a dreamer again who walked away and came back, but not within the greeting pause', async () => {
-    const { clock, space } = actor(guard('Hello, $name.'));
-    const alice = attachPlayer(space, NEAR, 'alice');
-    const walk = (to: Point): void => {
-      clock.ms += 2000;
-      space.handleMove({ ...to, facing: 0, gait: 'jog' }, alice.entityId);
+  /** Pugnax's hall: one 20 x 20 m sector with an NPC at (10, 10) as Pugnax, a master of Fighters unless `service` says otherwise. `at` sets the clock and steps the space. */
+  function hall(script: Parameters<typeof makeNPC>[2], service: Service | undefined = 'fighterMaster') {
+    const world = makeWorld([makeSector('EdariaFighterHall', { npcs: [makeNPC('pugnax', { x: 10, z: 10 }, script, service)] })]);
+    const { clock, space } = makeClockedSpace(world);
+    const at = (ms: number): void => {
+      clock.ms = ms;
       space.step(0.05);
     };
-    space.step(0.05);
-    walk(AWAY);
-    walk(NEAR);
-    walk(AWAY);
-    clock.ms += SOMNIO_CONSTANTS.npcGreetingPauseSeconds * 1000;
-    walk(NEAR);
-    expect(serverSays(await collectMessages(alice.outbox))).toEqual(['Hello, alice.', 'Hello, alice.']);
-  });
-
-  it('greets a dreamer who stays beside it once, however long they stay', async () => {
-    const { clock, space } = actor(guard('Hello, $name.'));
-    const alice = attachPlayer(space, NEAR, 'alice');
-    space.step(0.05);
-    clock.ms += 2 * SOMNIO_CONSTANTS.npcGreetingPauseSeconds * 1000;
-    space.step(0.05);
-    expect(serverSays(await collectMessages(alice.outbox))).toEqual(['Hello, alice.']);
-  });
-
-  it('greets arrivals one at a time, a cooldown apart', async () => {
-    const { clock, space } = actor(guard('Hello, $name.'));
-    const alice = attachPlayer(space, NEAR, 'alice');
-    const bob = attachPlayer(space, { x: 10.8, z: 10.9 }, 'bob');
-    space.step(0.05);
-    clock.ms = COOLDOWN_MS - 1;
-    space.step(0.05);
-    expect(serverSays(await collectMessages(bob.outbox))).toEqual(['Hello, alice.']);
-    clock.ms = COOLDOWN_MS;
-    space.step(0.05);
-    expect(serverSays(await collectMessages(alice.outbox))).toEqual(['Hello, alice.', 'Hello, bob.']);
-  });
-
-  it('answers a dreamer who asks with the lines after its greeting, the first at once and the rest a cooldown apart, then wraps and clears targeting', async () => {
-    const { clock, space } = actor(guard('Hello.\n---\nstep two, $name.\n---\nstep three.'));
-    const alice = attachPlayer(space, NEAR, 'alice');
-    space.step(0.05);
-    space.handleInteract(GUARD, alice.entityId);
-    expect(space.step(0.05)).toEqual({ dialogUpserts: [{ ...KEY, scriptStep: 3 }], dialogResets: [] });
-    clock.ms = COOLDOWN_MS - 1;
-    expect(space.step(0.05)).toEqual(QUIET);
-    clock.ms = COOLDOWN_MS;
-    expect(space.step(0.05)).toEqual({ dialogUpserts: [], dialogResets: [KEY] });
-    clock.ms = 2 * COOLDOWN_MS;
-    expect(space.step(0.05)).toEqual(QUIET);
-    expect(serverSays(await collectMessages(alice.outbox))).toEqual(['Hello.', 'step two, alice.', 'step three.']);
-  });
-
-  it('drops an interact from beyond speaking distance and one at anything but a carrier', async () => {
-    const { clock, space } = actor(guard('Hello, $name.\n---\nFollow up.'));
-    const far = attachPlayer(space, { x: 10, z: 12.1 }, 'far');
-    const near = attachPlayer(space, NEAR, 'near');
-    space.handleInteract(GUARD, far.entityId);
-    space.handleInteract(far.entityId, near.entityId);
-    space.handleInteract('npc:TestSector/nobody', near.entityId);
-    expect(space.step(0.05)).toEqual(QUIET);
-    clock.ms = COOLDOWN_MS;
-    expect(space.step(0.05)).toEqual(QUIET);
-    expect(serverSays(await collectMessages(near.outbox))).toEqual(['Hello, near.']);
-  });
-
-  it('has nothing to go on with when its greeting is all it has', async () => {
-    const { clock, space } = actor(guard('Hello, $name.'));
-    const alice = attachPlayer(space, NEAR, 'alice');
-    space.step(0.05);
-    space.handleInteract(GUARD, alice.entityId);
-    expect(space.step(0.05)).toEqual(QUIET);
-    clock.ms = COOLDOWN_MS;
-    expect(space.step(0.05)).toEqual(QUIET);
-    expect(serverSays(await collectMessages(alice.outbox))).toEqual(['Hello, alice.']);
-  });
-
-  it('a target walking out of speaking distance resets the cursor and emits one digest reset', () => {
-    const { clock, space } = actor(guard('first.\n---\nsecond.\n---\nthird.'));
-    const alice = attachPlayer(space, NEAR, 'alice');
-    space.step(0.05);
-    space.handleInteract(GUARD, alice.entityId);
-    expect(space.step(0.05).dialogUpserts).toHaveLength(1);
-    clock.ms += 1000;
-    space.handleMove({ ...AWAY, facing: 0, gait: 'jog' }, alice.entityId);
-    expect(space.step(0.05)).toEqual({ dialogUpserts: [], dialogResets: [KEY] });
-    expect(space.step(0.05)).toEqual(QUIET);
-  });
-
-  it('a target leaving the space resets the cursor and emits one digest reset', () => {
-    const { space } = actor(guard('first.\n---\nsecond.'));
-    const alice = attachPlayer(space, NEAR, 'alice');
-    space.step(0.05);
-    space.handleInteract(GUARD, alice.entityId);
-    space.handOver(alice.entityId, false);
-    expect(space.step(0.05).dialogResets).toHaveLength(1);
-    expect(space.step(0.05).dialogResets).toEqual([]);
-  });
-});
-
-describe('cursor seeding', () => {
-  const NEAR: Point = { x: 10, z: 11.2 };
-  const persisted = (scriptStep: number, npcId = 'guard'): NPCDialogState[] => [{ sectorName: 'TestSector', npcId, scriptStep }];
-
-  /** Greets the dreamer beside the guard, then has them ask it to go on. */
-  async function asked(script: string, states: NPCDialogState[]) {
-    const { space } = actor(guard(script), { initialDialogStates: states });
-    const alice = attachPlayer(space, NEAR, 'alice');
-    space.step(0.05);
-    space.handleInteract(GUARD, alice.entityId);
-    const digest = space.step(0.05);
-    return { digest, says: serverSays(await collectMessages(alice.outbox)) };
+    return { world, space, at };
   }
 
-  it('resumes at the persisted step', async () => {
-    const { digest, says } = await asked('first.\n---\nsecond.\n---\nthird.', persisted(3));
-    expect(says).toEqual(['first.', 'third.']);
-    expect(digest.dialogResets).toHaveLength(1);
+  /** Attaches a dreamer at `point`, and reads every NPC line they have heard so far, as often as asked. */
+  function listener(space: SpaceActor, point: Point, name: string, options: AttachPlayerOptions = {}) {
+    const recording = recordingOutbox();
+    const player = attachPlayer(space, point, name, { ...options, outbox: recording.outbox });
+    return { ...player, heard: () => serverSays(recording.sent) };
+  }
+
+  function moveTo(space: SpaceActor, point: Point, entityId: string): void {
+    space.handleMove({ ...point, facing: 0, gait: 'jog' }, entityId);
+  }
+
+  it('greets a dreamer who comes within speaking distance with its greeting, once', () => {
+    const { space, at } = hall({ greeting: 'Hello, $name.', dialog: unconditionalSteps('Follow up.') });
+    const alice = listener(space, AWAY, 'alice');
+    at(0);
+    moveTo(space, NEAR, alice.entityId);
+    at(0);
+    at(10_000);
+    expect(alice.heard()).toEqual(['Hello, alice.']);
   });
 
-  it.each([7, 0, -1, 1])('a persisted cursor %i that is out of range or on the greeting starts past the greeting', async (scriptStep) => {
-    const { digest, says } = await asked('first.\n---\nsecond.\n---\nthird.', persisted(scriptStep));
-    expect(says).toEqual(['first.', 'second.']);
-    expect(digest.dialogUpserts[0]?.scriptStep).toBe(3);
+  it('greets a dreamer again who walked away and came back, but not within the greeting pause', () => {
+    const { space, at } = hall({ greeting: 'Hello, $name.' });
+    const alice = listener(space, NEAR, 'alice');
+    let ms = 0;
+    const walk = (to: Point): void => {
+      ms += 2000;
+      moveTo(space, to, alice.entityId);
+      at(ms);
+    };
+    at(0);
+    walk(AWAY);
+    walk(NEAR);
+    walk(AWAY);
+    ms += SOMNIO_CONSTANTS.npcGreetingPauseSeconds * 1000;
+    walk(NEAR);
+    expect(alice.heard()).toEqual(['Hello, alice.', 'Hello, alice.']);
   });
 
-  it('an empty script with a persisted cursor says nothing', async () => {
-    const { digest, says } = await asked('', persisted(3));
-    expect(digest).toEqual({ dialogUpserts: [], dialogResets: [] });
-    expect(says).toEqual([]);
+  it('greets a dreamer who stays beside it once, however long they stay', () => {
+    const { space, at } = hall({ greeting: 'Hello, $name.' });
+    const alice = listener(space, NEAR, 'alice');
+    at(0);
+    at(2 * SOMNIO_CONSTANTS.npcGreetingPauseSeconds * 1000);
+    expect(alice.heard()).toEqual(['Hello, alice.']);
   });
 
-  it.each([false, true])('a persisted cursor stays with its NPC when the records are reordered (reversed: %s)', async (reversed) => {
-    const npcs = [
-      makeNPC('guard', { x: 10, z: 10 }, 'guard one.\n---\nguard two.\n---\nguard three.'),
-      makeNPC('smith', { x: 11.6, z: 10 }, 'smith one.\n---\nsmith two.\n---\nsmith three.'),
-    ];
-    const { space } = actor({ npcs: reversed ? npcs.toReversed() : npcs }, { initialDialogStates: persisted(3, 'smith') });
-    const alice = attachPlayer(space, { x: 10.8, z: 10.9 }, 'alice');
+  it('greets a dreamer back in the space under the same id before its next step as one who just came', () => {
+    const { space, at } = hall({ greeting: 'Hello, $name.' });
+    const alice = listener(space, NEAR, 'alice');
+    at(0);
+    const { checkpoint, transient } = space.handOver(alice.entityId, false)!;
+    space.attach(checkpoint.character, checkpoint.inventory, alice.outbox, 0, 'en', transient);
+    // "Hello, alice." is read in the least time, 3 s.
+    at(3000);
+    expect(alice.heard()).toEqual(['Hello, alice.', 'Hello, alice.']);
+  });
+
+  it('greets arrivals one at a time, a greeting held for its reading time', () => {
+    const { space, at } = hall({ greeting: 'Hello, $name. Mind the step, and the guard who keeps it.' });
+    const alice = listener(space, NEAR, 'alice');
+    const bob = listener(space, BESIDE, 'bob');
+    at(0);
+    // 56 graphemes, read in 4.73 s.
+    at(4733);
+    expect(bob.heard()).toEqual(['Hello, alice. Mind the step, and the guard who keeps it.']);
+    at(4734);
+    expect(alice.heard()).toEqual(['Hello, alice. Mind the step, and the guard who keeps it.', 'Hello, bob. Mind the step, and the guard who keeps it.']);
+  });
+
+  it.each([
+    ['a newcomer the trial is offered to', NEWCOMER, OFFER.text],
+    ['a Fighter who passed the trial', FIGHTER, 'Guard up, alice.'],
+  ])('says to %s only the steps that fit them, and then ends the conversation', (_, character, step) => {
+    const { space, at } = hall({ dialog: [OFFER, OWN] });
+    const alice = listener(space, NEAR, 'alice', { character });
+    space.handleInteract(PUGNAX, alice.entityId);
+    for (let ms = 0; ms <= 20_000; ms += 1000) at(ms);
+    expect(alice.heard()).toEqual([step]);
+  });
+
+  it('says the step that fits a dreamer who took a quest on since the step before', () => {
+    const { space, at } = hall({ dialog: [OFFER, OFFER_AGAIN, HELD] });
+    const alice = listener(space, NEAR, 'alice');
+    space.handleInteract(PUGNAX, alice.entityId);
+    at(0);
+    space.handleAcceptQuest(PUGNAX, 'fighter-trial', alice.entityId);
+    for (let ms = 1000; ms <= 20_000; ms += 1000) at(ms);
+    expect(alice.heard()).toEqual([OFFER.text, HELD.text]);
+  });
+
+  it('ends the conversation, saying nothing, once no step left fits a dreamer who took a quest on, and answers the next who asks', () => {
+    const { space, at } = hall({ dialog: [OFFER, OFFER_AGAIN] });
+    const alice = listener(space, NEAR, 'alice');
+    const bob = listener(space, BESIDE, 'bob');
+    space.handleInteract(PUGNAX, alice.entityId);
+    at(0);
+    space.handleAcceptQuest(PUGNAX, 'fighter-trial', alice.entityId);
+    for (let ms = 1000; ms <= 20_000; ms += 1000) at(ms);
+    expect(alice.heard()).toEqual([OFFER.text]);
+    space.handleInteract(PUGNAX, bob.entityId);
+    at(21_000);
+    expect(bob.heard()).toEqual([OFFER.text, OFFER.text]);
+  });
+
+  it("holds its next step for the reading time of the step's longest translation", () => {
+    const { space, at } = hall({ dialog: unconditionalSteps(HEALER_LORE, FORTY, 'Third.') });
+    const alice = listener(space, NEAR, 'alice');
+    space.handleInteract(PUGNAX, alice.entityId);
+    at(0);
+    at(LORE_READ_MS - 1);
+    expect(alice.heard()).toEqual([HEALER_LORE]);
+    at(LORE_READ_MS);
+    expect(alice.heard()).toEqual([HEALER_LORE, FORTY]);
+    at(LORE_READ_MS + 3666);
+    expect(alice.heard()).toEqual([HEALER_LORE, FORTY]);
+    at(LORE_READ_MS + 3667);
+    expect(alice.heard()).toEqual([HEALER_LORE, FORTY, 'Third.']);
+  });
+
+  it('says the next step 1 s after the last when the dreamer it said it to asks again', () => {
+    const { space, at } = hall({ dialog: unconditionalSteps(HEALER_LORE, 'Second.') });
+    const alice = listener(space, NEAR, 'alice');
+    space.handleInteract(PUGNAX, alice.entityId);
+    at(0);
+    at(500);
+    space.handleInteract(PUGNAX, alice.entityId);
+    at(999);
+    expect(alice.heard()).toEqual([HEALER_LORE]);
+    at(1000);
+    expect(alice.heard()).toEqual([HEALER_LORE, 'Second.']);
+  });
+
+  it('leaves the conversation as it was when another dreamer asks, and counts their ask as a visit', () => {
+    const { space, at } = hall({ dialog: unconditionalSteps(HEALER_LORE, 'Then you, $name.') });
+    const alice = listener(space, NEAR, 'alice');
+    const bob = listener(space, BESIDE, 'bob', { character: { quests: ON_THE_ERRAND } });
+    space.handleInteract(PUGNAX, alice.entityId);
+    at(0);
+    at(500);
+    space.handleInteract(PUGNAX, bob.entityId);
+    expect(characterOf(space, bob.entityId).quests.active[0]!.progress).toEqual([0, 0, 1, 0, 0]);
+    at(1000);
+    at(LORE_READ_MS - 1);
+    expect(bob.heard()).toEqual([HEALER_LORE]);
+    at(LORE_READ_MS);
+    expect(bob.heard()).toEqual([HEALER_LORE, 'Then you, alice.']);
+  });
+
+  it('says the next step 1 s after the last to the dreamer who asked for it when another dreamer asks in between', () => {
+    const { space, at } = hall({ dialog: unconditionalSteps(HEALER_LORE, 'Second.') });
+    const alice = listener(space, NEAR, 'alice');
+    const bob = listener(space, BESIDE, 'bob');
+    space.handleInteract(PUGNAX, alice.entityId);
+    at(0);
+    at(500);
+    space.handleInteract(PUGNAX, alice.entityId);
+    at(750);
+    space.handleInteract(PUGNAX, bob.entityId);
+    at(1000);
+    expect(alice.heard()).toEqual([HEALER_LORE, 'Second.']);
+  });
+
+  it('greets a dreamer who asks before it has greeted them, says their first step 1 s later, and greets them no more', () => {
+    const { space, at } = hall({ greeting: 'Hello, $name.', dialog: unconditionalSteps('First.') });
+    const alice = listener(space, AWAY, 'alice');
+    moveTo(space, NEAR, alice.entityId);
+    space.handleInteract(PUGNAX, alice.entityId);
+    at(0);
+    expect(alice.heard()).toEqual(['Hello, alice.']);
+    at(999);
+    expect(alice.heard()).toEqual(['Hello, alice.']);
+    at(1000);
+    expect(alice.heard()).toEqual(['Hello, alice.', 'First.']);
+    for (let ms = 2000; ms <= 20_000; ms += 1000) at(ms);
+    expect(alice.heard()).toEqual(['Hello, alice.', 'First.']);
+  });
+
+  it('greets a dreamer it greeted because they asked no more when they walk away and come back within the greeting pause, and answers their next ask with a step', () => {
+    const { space, at } = hall({ greeting: 'Hello, $name.', dialog: unconditionalSteps('First.') });
+    const alice = listener(space, NEAR, 'alice');
+    space.handleInteract(PUGNAX, alice.entityId);
+    at(0);
+    at(1000);
+    moveTo(space, AWAY, alice.entityId);
+    at(3000);
+    moveTo(space, NEAR, alice.entityId);
+    at(5000);
+    expect(alice.heard()).toEqual(['Hello, alice.', 'First.']);
+    space.handleInteract(PUGNAX, alice.entityId);
+    at(6000);
+    expect(alice.heard()).toEqual(['Hello, alice.', 'First.', 'First.']);
+  });
+
+  it('stays free when no step fits the dreamer who asks, counting the ask as their visit', () => {
+    const { space, at } = hall({ dialog: [OWN] });
+    const healer = listener(space, NEAR, 'hilde', { character: { lucidity: lucidity('healer'), quests: { ...ON_THE_ERRAND, done: ['healer-trial'] } } });
+    const fighter = listener(space, BESIDE, 'bruno', { character: FIGHTER });
+    space.handleInteract(PUGNAX, healer.entityId);
+    expect(characterOf(space, healer.entityId).quests.active[0]!.progress).toEqual([0, 0, 1, 0, 0]);
+    space.handleInteract(PUGNAX, fighter.entityId);
+    at(0);
+    expect(fighter.heard()).toEqual(['Guard up, bruno.']);
+  });
+
+  it.each([
+    ['its last step', unconditionalSteps(HEALER_LORE)],
+    ['its last step that fits her', [{ text: HEALER_LORE }, GRAVES]],
+  ])('answers the next dreamer who asks after it said %s to another only once that step has been read', (_, dialog) => {
+    const { space, at } = hall({ dialog });
+    const alice = listener(space, NEAR, 'alice');
+    const bob = listener(space, BESIDE, 'bob');
+    space.handleInteract(PUGNAX, alice.entityId);
+    at(0);
+    at(100);
+    space.handleInteract(PUGNAX, bob.entityId);
+    at(200);
+    space.handleInteract(PUGNAX, bob.entityId);
+    at(1000);
+    at(LORE_READ_MS - 1);
+    expect(bob.heard()).toEqual([HEALER_LORE]);
+    at(LORE_READ_MS);
+    expect(bob.heard()).toEqual([HEALER_LORE, HEALER_LORE]);
+  });
+
+  it('holds a greeting for the reading time of a step its target asked to skip and then walked away from', () => {
+    const { space, at } = hall({ greeting: 'Hello, $name.', dialog: unconditionalSteps(HEALER_LORE, 'Second.') });
+    const alice = listener(space, NEAR, 'alice');
+    space.handleInteract(PUGNAX, alice.entityId);
+    at(0);
+    at(1000);
+    expect(alice.heard()).toEqual(['Hello, alice.', HEALER_LORE]);
+    const bob = listener(space, BESIDE, 'bob');
+    at(1500);
+    space.handleInteract(PUGNAX, alice.entityId);
+    at(1800);
+    moveTo(space, AWAY, alice.entityId);
+    at(2000);
+    at(1000 + LORE_READ_MS - 1);
+    expect(bob.heard()).toEqual([]);
+    at(1000 + LORE_READ_MS);
+    expect(bob.heard()).toEqual(['Hello, bob.']);
+  });
+
+  it('holds the greeting to a dreamer who walked out of speaking distance and back and asks again for the reading time of its step to them', () => {
+    const { space, at } = hall({ greeting: 'Hello, $name.', dialog: unconditionalSteps(HEALER_LORE, 'Second.') });
+    const alice = listener(space, NEAR, 'alice');
+    space.handleInteract(PUGNAX, alice.entityId);
+    at(0);
+    at(1000);
+    moveTo(space, AWAY, alice.entityId);
+    at(1500);
+    moveTo(space, NEAR, alice.entityId);
+    at(2000);
+    space.handleInteract(PUGNAX, alice.entityId);
+    at(3000);
+    at(1000 + LORE_READ_MS - 1);
+    expect(alice.heard()).toEqual(['Hello, alice.', HEALER_LORE]);
+    at(1000 + LORE_READ_MS);
+    expect(alice.heard()).toEqual(['Hello, alice.', HEALER_LORE, 'Hello, alice.']);
+  });
+
+  it('says the first step 1 s after the greeting to the dreamer it greeted who asks, and holds it for anyone else for the greeting', () => {
+    const { space, at } = hall({ greeting: 'Hello, $name.', dialog: unconditionalSteps('First, $name.') });
+    const alice = listener(space, NEAR, 'alice');
+    at(0);
+    at(500);
+    space.handleInteract(PUGNAX, alice.entityId);
+    at(999);
+    expect(alice.heard()).toEqual(['Hello, alice.']);
+    at(1000);
+    expect(alice.heard()).toEqual(['Hello, alice.', 'First, alice.']);
+  });
+
+  it("holds the first reply to a dreamer it did not greet for the greeting's reading time", () => {
+    const { space, at } = hall({ greeting: 'Hello, $name.', dialog: unconditionalSteps('First, $name.') });
+    const alice = listener(space, NEAR, 'alice');
+    const bob = listener(space, BESIDE, 'bob');
+    at(0);
+    at(500);
+    space.handleInteract(PUGNAX, bob.entityId);
+    // "Hello, alice." is read in the least time, 3 s.
+    at(2999);
+    expect(bob.heard()).toEqual(['Hello, alice.']);
+    at(3000);
+    expect(bob.heard()).toEqual(['Hello, alice.', 'Hello, bob.']);
+    at(4000);
+    expect(alice.heard()).toEqual(['Hello, alice.', 'Hello, bob.', 'First, bob.']);
+  });
+
+  it("says a bystander the line meant for the dreamer who asked, in the bystander's language", () => {
+    const { space, at } = hall({ dialog: [{ text: 'Be welcome, $name. The Moonstone takes what it gives.', when: { role: 'own' } }] });
+    const fighter = listener(space, NEAR, 'bruno', { character: FIGHTER });
+    // 4 m off, inside a said line's clear radius.
+    const healer = listener(space, { x: 14, z: 10 }, 'hilde', { character: { lucidity: lucidity('healer') }, locale: 'de' });
+    space.handleInteract(PUGNAX, fighter.entityId);
+    at(0);
+    expect(fighter.heard()).toEqual(['Be welcome, bruno. The Moonstone takes what it gives.']);
+    expect(healer.heard()).toEqual(['Sei willkommen, bruno. Der Mondstein nimmt, was er gibt.']);
+  });
+
+  it('drops an interact from beyond speaking distance and one at anything but a carrier', () => {
+    const { space, at } = hall({ greeting: 'Hello, $name.', dialog: unconditionalSteps('Follow up.') });
+    const far = listener(space, { x: 10, z: 12.1 }, 'far');
+    const near = listener(space, NEAR, 'near');
+    space.handleInteract(PUGNAX, far.entityId);
+    space.handleInteract(far.entityId, near.entityId);
+    space.handleInteract('npc:EdariaFighterHall/nobody', near.entityId);
+    at(0);
+    at(10_000);
+    expect(near.heard()).toEqual(['Hello, near.']);
+  });
+
+  it('has nothing to go on with when its greeting is all it has', () => {
+    const { space, at } = hall({ greeting: 'Hello, $name.' });
+    const alice = listener(space, NEAR, 'alice');
+    at(0);
+    space.handleInteract(PUGNAX, alice.entityId);
+    at(0);
+    at(10_000);
+    expect(alice.heard()).toEqual(['Hello, alice.']);
+  });
+
+  it('ends the conversation when its target walks out of speaking distance, so their next ask starts at the first step', () => {
+    const { space, at } = hall({ dialog: unconditionalSteps('First.', 'Second.', 'Third.') });
+    const alice = listener(space, NEAR, 'alice');
+    space.handleInteract(PUGNAX, alice.entityId);
+    at(0);
+    moveTo(space, AWAY, alice.entityId);
+    at(1000);
+    moveTo(space, NEAR, alice.entityId);
+    at(2000);
+    space.handleInteract(PUGNAX, alice.entityId);
+    at(3000);
+    expect(alice.heard()).toEqual(['First.', 'First.']);
+  });
+
+  it('ends the conversation when its target leaves the space, and answers a dreamer who asks before the next step', () => {
+    const { space, at } = hall({ dialog: unconditionalSteps('First.', 'Second.') });
+    const alice = listener(space, NEAR, 'alice');
+    const bob = listener(space, BESIDE, 'bob');
+    space.handleInteract(PUGNAX, alice.entityId);
+    at(0);
+    space.handOver(alice.entityId, false);
+    space.handleInteract(PUGNAX, bob.entityId);
+    at(100);
+    expect(bob.heard()).toEqual(['First.']);
+    at(3000);
+    expect(bob.heard()).toEqual(['First.', 'First.']);
+  });
+
+  it('ends the conversation when its target leaves the space, so one back before the next step hears no step they asked for early', () => {
+    const { space, at } = hall({ dialog: unconditionalSteps(HEALER_LORE, 'Second.') });
+    const alice = listener(space, NEAR, 'alice');
+    space.handleInteract(PUGNAX, alice.entityId);
+    at(0);
+    at(500);
+    space.handleInteract(PUGNAX, alice.entityId);
+    const { checkpoint, transient } = space.handOver(alice.entityId, false)!;
+    space.attach(checkpoint.character, checkpoint.inventory, alice.outbox, 0, 'en', transient);
+    for (let ms = 1000; ms <= 20_000; ms += 1000) at(ms);
+    expect(alice.heard()).toEqual([HEALER_LORE]);
+  });
+
+  it('starts at the first step in a space actor built over the same world after another advanced its conversation', () => {
+    const script = { dialog: unconditionalSteps('First.', 'Second.') };
+    const first = hall(script);
+    const alice = listener(first.space, NEAR, 'alice');
+    first.space.handleInteract(PUGNAX, alice.entityId);
+    first.at(0);
+    expect(alice.heard()).toEqual(['First.']);
+    const { space } = makeClockedSpace(first.world);
+    const bob = listener(space, NEAR, 'bob');
+    space.handleInteract(PUGNAX, bob.entityId);
     space.step(0.05);
-    space.handleInteract(GUARD, alice.entityId);
-    space.handleInteract('npc:TestSector/smith', alice.entityId);
-    space.step(0.05);
-    expect(serverSays(await collectMessages(alice.outbox)).toSorted()).toEqual(['guard one.', 'guard two.', 'smith one.', 'smith three.']);
+    expect(bob.heard()).toEqual(['First.']);
   });
 });
 

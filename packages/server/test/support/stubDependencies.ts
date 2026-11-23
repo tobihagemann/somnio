@@ -16,7 +16,6 @@ import {
   StubAccountRepository,
   StubCharacterRepository,
   StubItemRepository,
-  StubNPCDialogStateRepository,
   StubQuestRepository,
   StubSessionRepository,
   StubWorldClockRepository,
@@ -51,18 +50,16 @@ export interface StubDependencyOptions {
  * A fully-stubbed `ConnectionDependencies` over a world of the starter sector alone. `sectors` and
  * `characters` are overridable together because a join into another sector needs both.
  */
-export async function makeStubConnectionDependencies(options: StubDependencyOptions = {}): Promise<ConnectionDependencies> {
+export function makeStubConnectionDependencies(options: StubDependencyOptions = {}): ConnectionDependencies {
   const logger = options.logger ?? testLogger();
   const characters = options.characters ?? new StubCharacterRepository();
-  const worldRouter =
-    options.worldRouter ?? (await WorldRouter.create(makeWorld(options.sectors), characters, new StubNPCDialogStateRepository(), logger, logger, options.now));
+  const worldRouter = options.worldRouter ?? WorldRouter.create(makeWorld(options.sectors), characters, logger, logger, options.now);
   const worldClock = new WorldClockService(new StubWorldClockRepository(), options.initialWorldSeconds ?? BOOT_DEFAULT_WORLD_SECONDS, logger);
   return {
     accounts: options.accounts ?? new StubAccountRepository(),
     characters,
     items: new StubItemRepository(),
     quests: new StubQuestRepository(),
-    npcDialogStates: new StubNPCDialogStateRepository(),
     sessions: options.sessions ?? new StubSessionRepository(),
     worldRouter,
     worldClock,

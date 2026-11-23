@@ -1,19 +1,18 @@
 import { describe, expect, it, vi } from 'vitest';
 import { OUTDOOR_SPACE_ID } from '@somnio/core';
-import type { NPCDialogState } from '@somnio/core';
 import { SimulationService } from '../src/services/simulationService.ts';
 import { WorldRouter } from '../src/world/worldRouter.ts';
 import { collectMessages } from './support/frames.ts';
 import { testLogger } from './support/logger.ts';
-import { attachPlayer, makeNPC, makeSector, makeWorld } from './support/sectorFactory.ts';
+import { attachPlayer, makeSector, makeWorld } from './support/sectorFactory.ts';
 import { makeStubConnectionDependencies } from './support/stubDependencies.ts';
-import { StubCharacterRepository, StubNPCDialogStateRepository } from './support/stubRepositories.ts';
+import { StubCharacterRepository } from './support/stubRepositories.ts';
 
 /** A service over one outdoor sector, on a clock the test advances. */
-async function simulation(npcDialogStates = new StubNPCDialogStateRepository()) {
+function simulation() {
   const clock = { ms: 0 };
-  const sector = makeSector('Field', { npcs: [makeNPC('guard', { x: 10, z: 10 }, 'first.\n---\nsecond.\n---\nthird.')] });
-  const router = await WorldRouter.create(makeWorld([sector]), new StubCharacterRepository(), npcDialogStates, testLogger());
+  const sector = makeSector('Field');
+  const router = WorldRouter.create(makeWorld([sector]), new StubCharacterRepository(), testLogger());
   const service = new SimulationService(router, 50, () => clock.ms);
   const space = router.space(OUTDOOR_SPACE_ID)!;
   const join = (name: string, x: number) => attachPlayer(space, { x, z: 11.2 }, name);
@@ -22,7 +21,7 @@ async function simulation(npcDialogStates = new StubNPCDialogStateRepository()) 
 
 describe('SimulationService', () => {
   it('an aborted signal ends run() cleanly', async () => {
-    const dependencies = await makeStubConnectionDependencies();
+    const dependencies = makeStubConnectionDependencies();
     const service = new SimulationService(dependencies.worldRouter, 5);
     const control = new AbortController();
     const run = service.run(control.signal);
@@ -32,7 +31,7 @@ describe('SimulationService', () => {
   });
 
   it('sends each connection one moves frame per 100 ms, holding the latest position of what moved', async () => {
-    const { clock, service, space, join } = await simulation();
+    const { clock, service, space, join } = simulation();
     const mover = join('mover', 5);
     const watcher = join('watcher', 15);
     const step = (x: number) => {
@@ -50,58 +49,13 @@ describe('SimulationService', () => {
     expect((await collectMessages(mover.outbox)).filter((message) => message.tag === 'moves')).toEqual([]);
   });
 
-  it('steps each pass by the time since the previous one, clamped to a quarter second', async () => {
-    const { clock, router, service } = await simulation();
+  it('steps each pass by the time since the previous one, clamped to a quarter second', () => {
+    const { clock, router, service } = simulation();
     const stepped = vi.spyOn(router, 'runTickAcrossSpaces');
     clock.ms += 50;
     service.runPass();
     clock.ms += 10_000;
     service.runPass();
     expect(stepped.mock.calls).toEqual([[0.05], [0.25]]);
-  });
-
-  it('persists the dialog digest of the step it ran', async () => {
-    const upserted: NPCDialogState[] = [];
-    class RecordingDialogRepository extends StubNPCDialogStateRepository {
-      override upsert(state: NPCDialogState): Promise<void> {
-        upserted.push(state);
-        return Promise.resolve();
-      }
-    }
-    const { clock, router, service, space, join } = await simulation(new RecordingDialogRepository());
-    space.handleInteract('npc:Field/guard', join('talker', 10).entityId);
-    clock.ms += 50;
-    service.runPass();
-    await router.settleDialogWrites();
-    expect(upserted).toEqual([{ sectorName: 'Field', npcId: 'guard', scriptStep: 3 }]);
-  });
-
-  it('steps the world at its interval while a dialog write is held, and once aborted waits for it', async () => {
-    /** Every upsert waits until `release`. */
-    class HeldDialogRepository extends StubNPCDialogStateRepository {
-      upserts = 0;
-      release = (): void => {};
-      private readonly released = new Promise<void>((resolve) => (this.release = resolve));
-      override upsert(): Promise<void> {
-        this.upserts += 1;
-        return this.released;
-      }
-    }
-    const held = new HeldDialogRepository();
-    const { router, space, join } = await simulation(held);
-    const service = new SimulationService(router, 5);
-    const stepped = vi.spyOn(router, 'runTickAcrossSpaces');
-    space.handleInteract('npc:Field/guard', join('talker', 10).entityId);
-    const control = new AbortController();
-    const run = service.run(control.signal);
-    await vi.waitFor(() => expect(stepped.mock.calls.length).toBeGreaterThanOrEqual(5));
-    expect(held.upserts).toBe(1);
-    control.abort();
-    let ended = false;
-    void run.then(() => (ended = true));
-    await new Promise((resolve) => setTimeout(resolve, 30));
-    expect(ended).toBe(false);
-    held.release();
-    await run;
   });
 });

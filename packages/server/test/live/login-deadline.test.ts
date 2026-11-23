@@ -18,7 +18,7 @@ const TIMED_OUT = { code: CLOSE_POLICY_VIOLATION, reason: LOGIN_TIMED_OUT };
 
 describe('the login deadline', () => {
   it('closes a socket that sends nothing', async () => {
-    const dependencies = await makeStubConnectionDependencies({ loginDeadlineMs: DEADLINE_MS });
+    const dependencies = makeStubConnectionDependencies({ loginDeadlineMs: DEADLINE_MS });
     await withLiveServer({ dependencies }, async (server) => {
       const client = await TestClient.open(gameplayURL(server));
       expect(await client.closed).toEqual(TIMED_OUT);
@@ -32,7 +32,7 @@ describe('the login deadline', () => {
   it('leaves a socket that logged in within it open while it chooses a character', async () => {
     const sessions = new StubSessionRepository();
     const issued = await sessions.issue(crypto.randomUUID(), 3600);
-    const dependencies = await makeStubConnectionDependencies({ sessions, loginDeadlineMs: DEADLINE_MS });
+    const dependencies = makeStubConnectionDependencies({ sessions, loginDeadlineMs: DEADLINE_MS });
     await withLiveServer({ dependencies }, async (server) => {
       const client = await TestClient.open(gameplayURL(server));
       expect((await redeemToCard(client, issued.token)).characters).toEqual([]);
@@ -43,7 +43,7 @@ describe('the login deadline', () => {
   });
 
   it('closes a socket that keeps failing to log in all the same', async () => {
-    const dependencies = await makeStubConnectionDependencies({ loginDeadlineMs: DEADLINE_MS });
+    const dependencies = makeStubConnectionDependencies({ loginDeadlineMs: DEADLINE_MS });
     await withLiveServer({ dependencies }, async (server) => {
       const client = await TestClient.open(gameplayURL(server));
       const sender = setInterval(() => client.send(FAILED_LOGIN_FRAME), 20);
@@ -57,7 +57,7 @@ describe('the login deadline', () => {
 
   it('closes a socket whose handler is still running, and keeps its slot until the handler ends', async () => {
     const sessions = new HeldSessionRepository();
-    const dependencies = await makeStubConnectionDependencies({ sessions, loginDeadlineMs: DEADLINE_MS });
+    const dependencies = makeStubConnectionDependencies({ sessions, loginDeadlineMs: DEADLINE_MS });
     const socketAdmission = new SocketAdmission({
       perAddressEnabled: true,
       perAddress: 1,
@@ -94,7 +94,7 @@ describe('the character card deadline', () => {
   it('closes a socket on the card that asks nothing, and its account can log in again', async () => {
     const sessions = new StubSessionRepository();
     const issued = await sessions.issue(crypto.randomUUID(), 3600);
-    const dependencies = await makeStubConnectionDependencies({ sessions, cardDeadlineMs: DEADLINE_MS });
+    const dependencies = makeStubConnectionDependencies({ sessions, cardDeadlineMs: DEADLINE_MS });
     await withLiveServer({ dependencies }, async (server) => {
       const idle = await onCard(server, issued.token);
       expect(await idle.closed).toEqual(CARD_TIMED);
@@ -107,7 +107,7 @@ describe('the character card deadline', () => {
   it('starts again at each request on the card', async () => {
     const sessions = new StubSessionRepository();
     const issued = await sessions.issue(crypto.randomUUID(), 3600);
-    const dependencies = await makeStubConnectionDependencies({ sessions, cardDeadlineMs: DEADLINE_MS });
+    const dependencies = makeStubConnectionDependencies({ sessions, cardDeadlineMs: DEADLINE_MS });
     await withLiveServer({ dependencies }, async (server) => {
       const client = await onCard(server, issued.token);
       const asker = setInterval(
@@ -132,7 +132,7 @@ describe('joining the world', () => {
     const accountId = crypto.randomUUID();
     const issued = await sessions.issue(accountId, 3600);
     const characters = new StubCharacterRepository(new Map([[accountId, [character]]]));
-    const dependencies = await makeStubConnectionDependencies({ sessions, characters, cardDeadlineMs: DEADLINE_MS });
+    const dependencies = makeStubConnectionDependencies({ sessions, characters, cardDeadlineMs: DEADLINE_MS });
     await withLiveServer({ dependencies }, async (server) => {
       const client = await TestClient.open(gameplayURL(server));
       await join(client, issued.token);

@@ -1,12 +1,14 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
+  NO_LUCIDITY,
+  NO_QUESTS,
   OUTDOOR_SPACE_ID,
   SOMNIO_CONSTANTS,
   SPEECH,
   WORLD_TIME_RATE,
   buildSpaceCollision,
   dialogLine,
-  dialogSteps,
+  dialogStepFits,
   distance,
   doorContains,
   headingFromCardinal,
@@ -192,13 +194,13 @@ describe('gameplay end to end', () => {
     const libus = librarySector.npcs.find((npc) => npc.id === 'libus')!;
     const beside = standableNear(library(), libus, SOMNIO_CONSTANTS.speakingDistance);
     const talker = await joinFreshPlayerAt(server, 'talker', { space: STARTER_SECTOR, position: beside });
-    const line = (step: number) => ({
+    const line = (step: string) => ({
       tag: 'serverSay',
       payload: {
         entityId: LIBUS,
         name: libus.name,
         kind: 'say',
-        text: dialogLine(dialogSteps(libus.dialogScript)[step]!, talker.name),
+        text: dialogLine(step, talker.name),
         clarity: 1,
         x: libus.x,
         z: libus.z,
@@ -206,7 +208,7 @@ describe('gameplay end to end', () => {
     });
     // The greeting comes on a space step, which can run before the join's drain is answered.
     const greeting = talker.join.find((message) => message.tag === 'serverSay') ?? (await talker.client.until('serverSay')).target;
-    expect(greeting).toEqual(line(0));
+    expect(greeting).toEqual(line(libus.greeting!));
     const corners = [0, librarySector.size.width].flatMap((x) => [0, librarySector.size.depth].map((z) => ({ x, z })));
     const furthest = corners.reduce((best, corner) => (distance(corner, libus) > distance(best, libus) ? corner : best));
     const listening = standableNear(library(), furthest, 1);
@@ -218,7 +220,9 @@ describe('gameplay end to end', () => {
     // The drain is answered behind the `interact`, so the one from afar is handled before the one from beside.
     expect(await drainFrames(afar.client)).toEqual([]);
     talker.client.send(frame({ tag: 'interact', payload: { carrierId: LIBUS } }));
-    expect((await talker.client.until('serverSay')).target).toEqual(line(1));
+    // A fresh dreamer hears the first step for one who may take Libus's errand.
+    const firstStep = libus.dialog.find((step) => dialogStepFits(step.when, { lucidity: NO_LUCIDITY, quests: NO_QUESTS }, libus.service))!;
+    expect((await talker.client.until('serverSay')).target).toEqual(line(firstStep.text));
     // The one from afar stands past the clear radius of Libus's lines, so they hear the line crumbled, and nothing else since the `interact`.
     const overheard = await drainFrames(afar.client);
     expect(overheard).toMatchObject([{ tag: 'serverSay', payload: { entityId: LIBUS, kind: 'say' } }]);

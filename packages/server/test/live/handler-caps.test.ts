@@ -11,7 +11,7 @@ async function resumableWorld() {
   const sessions = new StubSessionRepository();
   const accountId = crypto.randomUUID();
   const issued = await sessions.issue(accountId, 3600);
-  const { dependencies } = await makeOneSectorWorld({ sessions, accountId });
+  const { dependencies } = makeOneSectorWorld({ sessions, accountId });
   return { dependencies, sessions, token: issued.token };
 }
 

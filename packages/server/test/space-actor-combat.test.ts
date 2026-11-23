@@ -42,6 +42,7 @@ import {
   makeSector,
   makeSectorLine,
   makeWorld,
+  unconditionalSteps,
 } from './support/sectorFactory.ts';
 
 /** A Fighter whose one landed cudgel swing drives off any nightmare short of a boss. */
@@ -137,7 +138,7 @@ describe('attacking a nightmare', () => {
     ['with an NPC as the target', (space, aliceId) => space.handleTarget('npc:TestSector/guard', aliceId)],
     ['with another dreamer as the target', (space, aliceId, bobId) => space.handleTarget(bobId, aliceId)],
   ])('refuses slot 1 %s, swinging at nothing, not even the nightmare in reach in front', async (_label, choose) => {
-    const { clock, space, dice } = arena({ npcs: [makeNPC('guard', { x: 11, z: 10.7 }, 'Hello.')] });
+    const { clock, space, dice } = arena({ npcs: [makeNPC('guard', { x: 11, z: 10.7 }, { greeting: 'Hello.' })] });
     dice.hit = false;
     const alice = attachPlayer(space, BESIDE_GHOST, 'alice');
     const bob = attachPlayer(space, { x: 9.4, z: 10.7 }, 'bob');
@@ -204,7 +205,7 @@ describe('attacking a nightmare', () => {
   });
 
   it('switches Attack off for a dreamer who cannot mend when the target changes to anything but a nightmare, and keeps it off on changing back', async () => {
-    const { clock, space, dice } = arena({ npcs: [makeNPC('guard', { x: 11, z: 10.7 }, 'Hello.')] });
+    const { clock, space, dice } = arena({ npcs: [makeNPC('guard', { x: 11, z: 10.7 }, { greeting: 'Hello.' })] });
     dice.hit = false;
     const alice = attachPlayer(space, BESIDE_GHOST, 'alice');
     attackGhost(space, alice.entityId);
@@ -723,7 +724,7 @@ describe('balance', () => {
 
 describe('a target', () => {
   it('sends the dreamer who targets an entity its health at once, and no one else', async () => {
-    const { clock, space } = arena({ npcs: [makeNPC('guard', { x: 15, z: 15 }, 'Hello.')] });
+    const { clock, space } = arena({ npcs: [makeNPC('guard', { x: 15, z: 15 }, { greeting: 'Hello.' })] });
     const alice = vitalsOutbox(clock);
     const aliceId = attachPlayer(space, BESIDE_GHOST, 'alice', { outbox: alice.outbox }).entityId;
     const bob = attachPlayer(space, { x: 5, z: 5 }, 'bob');
@@ -1499,7 +1500,7 @@ describe('slot 1 at a dreamer', () => {
     expect(energyOf(space, healer.entityId).spiritCurrent).toBe(100);
   });
 
-  const GUARD = makeNPC('guard', { x: 6, z: 5 }, 'Hello.');
+  const GUARD = makeNPC('guard', { x: 6, z: 5 }, { greeting: 'Hello.' });
   const GUARD_ID = 'npc:TestSector/guard';
 
   it('is refused at an NPC to a Healer with the Moonstone in hand, so it is not on at a dreamer targeted next', async () => {
@@ -1792,7 +1793,7 @@ describe('what a dreamer never does', () => {
   });
 
   it('does nothing a fallen dreamer asks for: no Attack, no answer, no Mend', async () => {
-    const { space, steps, dice } = arena({ npcs: [makeNPC('guard', { x: 10, z: 12 }, 'Hello, $name.\n---\nMore.')] });
+    const { space, steps, dice } = arena({ npcs: [makeNPC('guard', { x: 10, z: 12 }, { greeting: 'Hello, $name.', dialog: unconditionalSteps('More.') })] });
     dice.hit = false;
     const fallen = { energy: energy({ healthCurrent: 0 }), lucidity: lucidity('healer', { touch: 3 }) };
     const alice = attachPlayer(space, { x: 10, z: 10.85 }, 'alice', { character: fallen, inventory: wearing(MOONSTONE) });

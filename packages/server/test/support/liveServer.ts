@@ -36,8 +36,8 @@ export const TEST_ADMIN_TOKEN = 'secret';
  * socket and closes. Vitest's per-test timeout is the only bound.
  */
 export async function withLiveServer<T>(options: LiveServerOptions, body: (server: RunningServer) => Promise<T>): Promise<T> {
-  const dependencies = options.dependencies ?? (await makeStubConnectionDependencies());
-  const adminDependencies = options.adminDependencies ?? (await makeAdminDependencies());
+  const dependencies = options.dependencies ?? makeStubConnectionDependencies();
+  const adminDependencies = options.adminDependencies ?? makeAdminDependencies();
   const app = options.app ?? new Hono().get('/admin', (context) => context.text('Unauthorized', 401));
   const server = await startServer({
     app,

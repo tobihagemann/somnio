@@ -42,7 +42,7 @@ function viewportPoint(point: Point, ctx: DragContext): ScreenPoint {
 }
 
 function npc(at: Point, facing = headingFromCardinal('south')): SectorNPC {
-  return { id: 'libus', name: 'Libus', characterModelId: 'hero', ...at, facing, dialogScript: '' };
+  return { id: 'libus', name: 'Libus', characterModelId: 'hero', ...at, facing, dialog: [] };
 }
 
 function blocker(id: string, x: number, z: number, width = 1, depth = 1) {
@@ -253,7 +253,7 @@ describe('placement', () => {
     for (const tool of ['placement', 'blocker', 'npc', 'monsterSpawn'] as const) placeRecord(tool, { x: 3, z: 4, ...TAP_SIZE }, body, DEFAULTS);
     expect(body.placements).toEqual([{ id: 'box-1', modelId: 'box', x: 3, z: 4, yaw: 0, elevation: 0 }]);
     expect(body.blockers).toEqual([{ id: 'blocker-1', x: 3, z: 4, width: 1, depth: 1 }]);
-    expect(body.npcs).toEqual([{ id: 'npc-1', name: '', characterModelId: 'hero', x: 3, z: 4, facing: 0, dialogScript: '' }]);
+    expect(body.npcs).toEqual([{ id: 'npc-1', name: '', characterModelId: 'hero', x: 3, z: 4, facing: 0, dialog: [] }]);
     expect(body.monsterSpawns).toEqual([{ id: 'spawn-1', kind: 'ghost', x: 3, z: 4, width: 1, depth: 1, maxAlive: 1, eliteChance: 0 }]);
   });
 

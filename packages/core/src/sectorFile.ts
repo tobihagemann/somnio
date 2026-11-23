@@ -5,6 +5,7 @@ import {
   decodeSectorView,
   encodeSectorView,
   isAbsent,
+  mapArray,
   mapRecords,
   requireFloat,
   requireId,
@@ -22,14 +23,17 @@ import { SOMNIO_CONSTANTS } from './constants.ts';
 import { rectContains } from './geometry.ts';
 import { heading } from './heading.ts';
 import { MONSTER_KIND_IDS } from './monsterKinds.ts';
-import { dialogLineFits, dialogSteps } from './npcDialog.ts';
+import { LISTENER_ROLES, QUEST_STANDINGS, dialogLineFits, dialogLineInBudget, listenerRolesFor } from './npcDialog.ts';
+import type { DialogCondition, DialogStep, ListenerRole } from './npcDialog.ts';
+import { QUEST_IDS } from './quests.ts';
 import type { MonsterSpawn, Sector, SectorNPC, SectorSpawn } from './sector.ts';
 
 /**
  * The `.somnio-sector` disk codec: the sector view the wire carries plus the server-side content,
  * as plain JSON with recursively sorted keys, a 2-space indent, and a trailing newline. Defaults
  * are left out (`yaw` and `elevation` at 0, a mark's `opacity` at 1, a spawn's `eliteChance` at 0,
- * empty record arrays and marks, an unset `spawn` or `service`), so an unedited open-and-save is byte-stable.
+ * empty record arrays and marks, an NPC's empty `dialog`, an unset `spawn`, `service`, `greeting`, or
+ * step `when`), so an unedited open-and-save is byte-stable.
  *
  * The sector name is never part of the JSON: it is the filename, supplied by the reader.
  */
@@ -87,14 +91,12 @@ function decodeSpawn(container: Record<string, unknown>, path: string): SectorSp
 }
 
 function decodeNPC(container: Record<string, unknown>, path: string): SectorNPC {
-  const dialogScript = requireString(container, 'dialogScript', path);
-  const oversized = dialogSteps(dialogScript).findIndex((step) => !dialogLineFits(step));
-  if (oversized !== -1) {
-    throw new WireDecodingError(
-      `${path}.dialogScript`,
-      `step ${oversized + 1} can exceed ${SOMNIO_PROTOCOL_CONSTANTS.maxSayUTF8Bytes} UTF-8 bytes once spoken`,
-    );
+  // The reader ignores keys it does not know, so an old file would read as an NPC with nothing to say, and the next save would write that out.
+  if (Object.hasOwn(container, 'dialogScript')) {
+    throw new WireDecodingError(`${path}.dialogScript`, 'replaced by "dialog", a list of steps');
   }
+  const service = isAbsent(container, 'service') ? undefined : requireStringEnum(container, 'service', path, SERVICES);
+  const listenerRoles = listenerRolesFor(service);
   return {
     id: requireId(container, 'id', path),
     name: requireString(container, 'name', path),
@@ -102,9 +104,54 @@ function decodeNPC(container: Record<string, unknown>, path: string): SectorNPC 
     x: requireMetres(container, 'x', path),
     z: requireMetres(container, 'z', path),
     facing: heading(requireFloat(container, 'facing', path)),
-    dialogScript,
-    ...(isAbsent(container, 'service') ? {} : { service: requireStringEnum(container, 'service', path, SERVICES) }),
+    ...(isAbsent(container, 'greeting') ? {} : { greeting: requireDialogLine(container, 'greeting', path) }),
+    dialog: isAbsent(container, 'dialog')
+      ? []
+      : mapArray(container, 'dialog', path, SOMNIO_CONSTANTS.maxNPCDialogSteps, (step, stepPath) => decodeDialogStep(step, stepPath, listenerRoles)),
+    ...(service === undefined ? {} : { service }),
   };
+}
+
+function decodeDialogStep(container: Record<string, unknown>, path: string, listenerRoles: readonly ListenerRole[]): DialogStep {
+  return {
+    text: requireDialogLine(container, 'text', path),
+    ...(isAbsent(container, 'when') ? {} : { when: decodeDialogCondition(requireNested(container, 'when', path), `${path}.when`, listenerRoles) }),
+  };
+}
+
+function decodeDialogCondition(container: Record<string, unknown>, path: string, listenerRoles: readonly ListenerRole[]): DialogCondition {
+  switch (Object.keys(container).sort().join(',')) {
+    case 'role': {
+      const role = requireStringEnum(container, 'role', path, LISTENER_ROLES);
+      if (!listenerRoles.includes(role)) {
+        throw new WireDecodingError(`${path}.role`, `"${role}" is for a master's steps, and this NPC is no master`);
+      }
+      return { role };
+    }
+    case 'quest,state':
+      return { quest: requireStringEnum(container, 'quest', path, QUEST_IDS), state: requireStringEnum(container, 'state', path, QUEST_STANDINGS) };
+    default:
+      throw new WireDecodingError(path, 'expected either "role" alone or "quest" and "state"');
+  }
+}
+
+/** A greeting or a step's text: not blank, within the say cap however long the name it is said to, and within `npcDialogLineGraphemes`. */
+function requireDialogLine(container: Record<string, unknown>, key: string, path: string): string {
+  const text = requireString(container, key, path);
+  if (text.trim() === '') {
+    throw new WireDecodingError(`${path}.${key}`, 'says nothing');
+  }
+  if (!dialogLineFits(text)) {
+    throw new WireDecodingError(`${path}.${key}`, `can exceed ${SOMNIO_PROTOCOL_CONSTANTS.maxSayUTF8Bytes} UTF-8 bytes once spoken`);
+  }
+  if (!dialogLineInBudget(text)) {
+    throw new WireDecodingError(`${path}.${key}`, `runs past ${SOMNIO_CONSTANTS.npcDialogLineGraphemes} graphemes`);
+  }
+  return text;
+}
+
+function encodeNPC({ dialog, ...npc }: SectorNPC): Record<string, unknown> {
+  return dialog.length === 0 ? npc : { ...npc, dialog };
 }
 
 function decodeMonsterSpawn(container: Record<string, unknown>, path: string): MonsterSpawn {
@@ -136,7 +183,7 @@ export function writeSectorFile(sector: Sector): string {
   const body: Record<string, unknown> = {
     ...encodeSectorView(sector),
     ...(sector.spawn === undefined ? {} : { spawn: sector.spawn }),
-    ...(sector.npcs.length === 0 ? {} : { npcs: sector.npcs }),
+    ...(sector.npcs.length === 0 ? {} : { npcs: sector.npcs.map(encodeNPC) }),
     ...(sector.monsterSpawns.length === 0 ? {} : { monsterSpawns: sector.monsterSpawns.map(encodeMonsterSpawn) }),
   };
   delete body['name'];

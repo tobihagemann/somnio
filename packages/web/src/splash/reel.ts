@@ -2,7 +2,6 @@ import {
   OUTDOOR_SPACE_ID,
   SOMNIO_CONSTANTS,
   clamp,
-  dialogSteps,
   distance,
   gaitMetresPerSecond,
   localizedDialogLine,
@@ -400,7 +399,7 @@ export function stageReel(reel: readonly SplashShot[], sectors: readonly Sector[
         kind: 'speech',
         speaker: beat.npc,
         speech: 'say',
-        text: () => localizedDialogLine(dialogSteps(npc.dialogScript)[0] ?? '', currentLocale(), beat.listener),
+        text: () => localizedDialogLine(npc.greeting ?? '', currentLocale(), beat.listener),
       };
     });
     const outdoorDoors = new Map(spaceSectors.map((sector) => [sector.name, outdoorDoorIds(sector, sectors)]));

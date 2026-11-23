@@ -42,7 +42,7 @@ describe('upgrade guards', () => {
 
   it('an upgrade arriving while shutdown awaits a connection is refused with 503', async () => {
     const sessions = new HeldSessionRepository();
-    const dependencies = await makeStubConnectionDependencies({ sessions });
+    const dependencies = makeStubConnectionDependencies({ sessions });
     await withLiveServer({ dependencies }, async (server) => {
       // A connection stuck in a handler keeps `close()` awaiting its exit with the listener still
       // open: exactly the window a late upgrade lands in.
@@ -100,7 +100,7 @@ describe('the cap on sockets awaiting login', () => {
   /** One slot of each kind: the second account's upgrade needs the first socket's pre-login slot, and its login the slot the first held on the card. */
   it('stops counting a socket once its player is in the world', async () => {
     const sessions = new StubSessionRepository();
-    const world = await makeOneSectorWorld({ sessions });
+    const world = makeOneSectorWorld({ sessions });
     const played = await sessions.issue(world.accountId, 3600);
     const other = await sessions.issue(crypto.randomUUID(), 3600);
     await withLiveServer({ dependencies: world.dependencies, socketAdmission: admission(true, 1, 1) }, async (server) => {
@@ -117,7 +117,7 @@ describe('the cap on sockets awaiting login', () => {
     const sessions = new StubSessionRepository();
     const first = await sessions.issue(crypto.randomUUID(), 3600);
     const second = await sessions.issue(crypto.randomUUID(), 3600);
-    const dependencies = await makeStubConnectionDependencies({ sessions });
+    const dependencies = makeStubConnectionDependencies({ sessions });
     await withLiveServer({ dependencies, socketAdmission: admission(false, 1, 1) }, async (server) => {
       const idle = await TestClient.open(gameplayURL(server));
       await redeemToCard(idle, first.token);

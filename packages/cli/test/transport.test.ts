@@ -45,7 +45,7 @@ describe('send', () => {
   it("returns the dispatcher's decoded response on the happy path", async () => {
     const router = new StubAdminWorldRouter();
     router.playerCount = 11;
-    const adminDependencies = await makeAdminDependencies({ worldRouter: router });
+    const adminDependencies = makeAdminDependencies({ worldRouter: router });
     cleanups.push(() => adminDependencies.logging.cleanup());
     await withLiveServer({ adminDependencies }, async (server) => {
       expect(await send({ tag: 'players' }, adminURL(server), TEST_ADMIN_TOKEN)).toEqual({
@@ -56,7 +56,7 @@ describe('send', () => {
   });
 
   it('fails with connectFailed when the bearer is refused', async () => {
-    const adminDependencies = await makeAdminDependencies();
+    const adminDependencies = makeAdminDependencies();
     cleanups.push(() => adminDependencies.logging.cleanup());
     await withLiveServer({ adminDependencies }, async (server) => {
       const error = await expectTransportError('connectFailed', () => send({ tag: 'players' }, adminURL(server), 'wrong'));

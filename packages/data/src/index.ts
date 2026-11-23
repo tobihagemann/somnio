@@ -10,7 +10,6 @@ export * from './repositories/errors.ts';
 export * from './repositories/accounts.ts';
 export * from './repositories/characters.ts';
 export * from './repositories/items.ts';
-export * from './repositories/npcDialogStates.ts';
 export * from './repositories/quests.ts';
 export * from './repositories/sessions.ts';
 export * from './repositories/worldClock.ts';

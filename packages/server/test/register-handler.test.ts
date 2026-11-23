@@ -22,7 +22,7 @@ class RecordingAccountRepository extends StubAccountRepository {
 const valid = VALID_REGISTER_MESSAGE;
 
 async function registerResult(message: RegisterMessage, repository = new RecordingAccountRepository()) {
-  const dependencies = await makeStubConnectionDependencies({ accounts: repository });
+  const dependencies = makeStubConnectionDependencies({ accounts: repository });
   const connection = new ConnectionActor(dependencies);
   await handleRegister(message, connection, dependencies);
   return registerResults(await collectMessages(connection.outbox));

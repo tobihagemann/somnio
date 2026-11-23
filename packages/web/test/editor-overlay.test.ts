@@ -81,7 +81,7 @@ describe('AuthoringOverlay', () => {
         doorPlacement,
       ],
       doors: [door],
-      npcs: [{ id: 'libus', name: 'Libus', characterModelId: 'hero', x: 3, z: 9, facing: 0, dialogScript: '' }],
+      npcs: [{ id: 'libus', name: 'Libus', characterModelId: 'hero', x: 3, z: 9, facing: 0, dialog: [] }],
       monsterSpawns: [{ id: 'spawn-1', kind: 'ghost', x: 12, z: 12, width: 4, depth: 4, maxAlive: 3, eliteChance: 0 }],
       spawn: { x: 5, z: 15, facing: 0 },
     });
@@ -300,8 +300,8 @@ describe('overlayLabels', () => {
     placements: [doorPlacement],
     doors: [door],
     npcs: [
-      { id: 'libus', name: 'Libus', characterModelId: 'hero', x: 3, z: 9, facing: 0, dialogScript: '' },
-      { id: 'npc-2', name: '', characterModelId: 'hero', x: 4, z: 9, facing: 0, dialogScript: '' },
+      { id: 'libus', name: 'Libus', characterModelId: 'hero', x: 3, z: 9, facing: 0, dialog: [] },
+      { id: 'npc-2', name: '', characterModelId: 'hero', x: 4, z: 9, facing: 0, dialog: [] },
     ],
     monsterSpawns: [{ id: 'spawn-1', kind: 'ghost', x: 12, z: 12, width: 4, depth: 2, maxAlive: 3, eliteChance: 0 }],
   });

@@ -29,4 +29,3 @@ export * from './speech.ts';
 export * from './domain/account.ts';
 export * from './domain/character.ts';
 export * from './domain/inventory.ts';
-export * from './domain/npcDialogState.ts';

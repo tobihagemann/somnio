@@ -1,4 +1,4 @@
-import type { AccountRepository, CharacterRepository, ItemRepository, NPCDialogStateRepository, QuestRepository, SessionRepository } from '@somnio/data';
+import type { AccountRepository, CharacterRepository, ItemRepository, QuestRepository, SessionRepository } from '@somnio/data';
 import type { Logger } from '../logging.ts';
 import type { WorldClockService } from '../services/worldClockService.ts';
 import type { WorldRouter } from '../world/worldRouter.ts';
@@ -11,7 +11,6 @@ export interface ConnectionDependencies {
   characters: CharacterRepository;
   items: ItemRepository;
   quests: QuestRepository;
-  npcDialogStates: NPCDialogStateRepository;
   sessions: SessionRepository;
   worldRouter: WorldRouter;
   worldClock: WorldClockService;

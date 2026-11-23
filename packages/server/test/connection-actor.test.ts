@@ -3,8 +3,8 @@ import { ConnectionActor } from '../src/connection/connectionActor.ts';
 import { makeStubConnectionDependencies } from './support/stubDependencies.ts';
 
 describe('ConnectionActor state primitives', () => {
-  it('setAttached replaces spaceId while preserving entityId and accountId', async () => {
-    const connection = new ConnectionActor(await makeStubConnectionDependencies());
+  it('setAttached replaces spaceId while preserving entityId and accountId', () => {
+    const connection = new ConnectionActor(makeStubConnectionDependencies());
     const accountId = crypto.randomUUID();
     connection.markAttached('player', 'EdariaLibrary', accountId);
     connection.setAttached('EdariaArena');
@@ -16,14 +16,14 @@ describe('ConnectionActor state primitives', () => {
     });
   });
 
-  it('setAttached is a no-op while the connection is awaitingLogin', async () => {
-    const connection = new ConnectionActor(await makeStubConnectionDependencies());
+  it('setAttached is a no-op while the connection is awaitingLogin', () => {
+    const connection = new ConnectionActor(makeStubConnectionDependencies());
     connection.setAttached('Phantom');
     expect(connection.state).toEqual({ kind: 'awaitingLogin' });
   });
 
-  it('disconnectForAdminKick is a no-op when there is no active read loop', async () => {
-    const connection = new ConnectionActor(await makeStubConnectionDependencies());
+  it('disconnectForAdminKick is a no-op when there is no active read loop', () => {
+    const connection = new ConnectionActor(makeStubConnectionDependencies());
     connection.disconnectForAdminKick();
     expect(connection.state).toEqual({ kind: 'awaitingLogin' });
   });

@@ -1,6 +1,6 @@
-import type { Door, Locale } from '@somnio/protocol';
+import type { Door, Locale, Service } from '@somnio/protocol';
 import { NO_LUCIDITY, NO_QUESTS, NO_STATS, OUTDOOR_SPACE_ID, fullPools, headingFromCardinal } from '@somnio/core';
-import type { Character, Inventory, MonsterSpawn, Point, Sector, SectorNPC } from '@somnio/core';
+import type { Character, DialogStep, Inventory, MonsterSpawn, Point, Sector, SectorNPC } from '@somnio/core';
 import { STARTER_SECTOR } from '@somnio/data';
 import { TEST_REGISTRY, interiorSector, outdoorSector } from '../../../core/test/support/worldFixture.ts';
 import { ConnectionOutbox } from '../../src/connection/outbox.ts';
@@ -48,8 +48,22 @@ export function makeDoor(id: string, at: Point, target: Door['target']): Pick<Se
   };
 }
 
-export function makeNPC(id: string, at: Point, dialogScript: string): SectorNPC {
-  return { id, name: 'test-npc', characterModelId: 'hero', ...at, facing: headingFromCardinal('south'), dialogScript };
+export function makeNPC(id: string, at: Point, script: { greeting?: string; dialog?: DialogStep[] }, service?: Service): SectorNPC {
+  return {
+    id,
+    name: 'test-npc',
+    characterModelId: 'hero',
+    ...at,
+    facing: headingFromCardinal('south'),
+    ...(script.greeting === undefined ? {} : { greeting: script.greeting }),
+    dialog: script.dialog ?? [],
+    ...(service === undefined ? {} : { service }),
+  };
+}
+
+/** Dialog steps for everyone, one for each text. */
+export function unconditionalSteps(...texts: string[]): DialogStep[] {
+  return texts.map((text) => ({ text }));
 }
 
 /**

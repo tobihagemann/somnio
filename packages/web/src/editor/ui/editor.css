@@ -70,9 +70,15 @@
   color: var(--somnio-secondary-text);
 }
 
-.editor-script-field {
-  height: 96px;
-  font-family: ui-monospace, monospace;
+.editor-line-field {
+  height: 48px;
+}
+
+.editor-dialog-step {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0;
 }
 
 /* The bottom-leading X/Z/W/D strip, monospaced so the digits do not jitter. */

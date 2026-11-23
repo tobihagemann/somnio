@@ -26,27 +26,21 @@ export class SimulationService {
     this.lastFlushAt = this.lastPassAt;
   }
 
-  /** Once aborted, it waits for the dialog writes still queued, each bounded by the pool's timeouts. */
-  async run(signal: AbortSignal): Promise<void> {
-    await runPeriodically(this.intervalMs, signal, () => {
+  run(signal: AbortSignal): Promise<void> {
+    return runPeriodically(this.intervalMs, signal, () => {
       this.runPass();
       return Promise.resolve();
     });
-    await this.worldRouter.settleDialogWrites();
   }
 
-  /**
-   * The test seam: one pass. The dialog digest is queued after the step and written outside it, so
-   * a slow write never holds a space mid-step, nor the next pass.
-   */
+  /** The test seam: one pass. */
   runPass(): void {
     const now = this.now();
-    const digest = this.worldRouter.runTickAcrossSpaces(Math.min(now - this.lastPassAt, MAX_STEP_MS) / 1000);
+    this.worldRouter.runTickAcrossSpaces(Math.min(now - this.lastPassAt, MAX_STEP_MS) / 1000);
     this.lastPassAt = now;
     if (now - this.lastFlushAt >= MOVES_FLUSH_INTERVAL_MS) {
       this.worldRouter.flushMoves();
       this.lastFlushAt = now;
     }
-    this.worldRouter.queueDialogDigest(digest);
   }
 }

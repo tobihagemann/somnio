@@ -1,8 +1,8 @@
-import { headingFromVector, sectorView } from '@somnio/core';
+import { headingFromVector, sectorView, speechReadSeconds } from '@somnio/core';
 import type { Heading, ModelRegistry, Point } from '@somnio/core';
 import type { Condition } from '@somnio/protocol';
 import type { WorldScene } from '@/scene/worldScene';
-import { bubbleLifetimeMs, wrapSpeech } from '@/scene/speechBubbleText';
+import { wrapSpeech } from '@/scene/speechBubbleText';
 import { DIP_SECONDS, SPLASH_REEL, pathPoint, shotFraming, shotWorldSeconds, stageReel } from './reel';
 import type { SplashShot, StagedActor, StagedShot, Viewport } from './reel';
 import { splashSectors } from './sectors';
@@ -274,12 +274,12 @@ export class SplashDirector {
           this.surface.showRaising(beat.target, beat.raise);
           break;
         case 'speech': {
-          const lines = wrapSpeech(beat.text(), this.measure);
+          const text = beat.text();
           this.surface.showSpeechBubble({
             entityId: beat.speaker,
             source: this.actors.get(beat.speaker)!.position,
-            lines,
-            lifetimeMs: bubbleLifetimeMs(lines.length),
+            lines: wrapSpeech(text, this.measure),
+            lifetimeMs: speechReadSeconds(text) * 1000,
             kind: beat.speech,
             clarity: 1,
           });

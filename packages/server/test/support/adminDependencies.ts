@@ -13,11 +13,9 @@ export interface AdminDependencyOptions {
 }
 
 /** Admin dependencies over a stub router and temp log files. */
-export async function makeAdminDependencies(options: AdminDependencyOptions = {}): Promise<AdminDependencies & { logging: TempLogging }> {
+export function makeAdminDependencies(options: AdminDependencyOptions = {}): AdminDependencies & { logging: TempLogging } {
   const logging = options.logging ?? tempLogging();
-  const connection = await makeStubConnectionDependencies(
-    options.initialWorldSeconds === undefined ? {} : { initialWorldSeconds: options.initialWorldSeconds },
-  );
+  const connection = makeStubConnectionDependencies(options.initialWorldSeconds === undefined ? {} : { initialWorldSeconds: options.initialWorldSeconds });
   return {
     worldRouter: options.worldRouter ?? new StubAdminWorldRouter(),
     worldClock: connection.worldClock,

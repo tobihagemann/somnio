@@ -296,7 +296,7 @@ describe('sector settings', () => {
   it('stays open over an unchanged document when the document refuses the edit', () => {
     const shell = shellWithDocument();
     shell.document.mutate('Seed', (sector) => {
-      sector.npcs.push({ id: 'npc-1', name: '', characterModelId: 'fighter-master', x: 10, z: 19, facing: 0, dialogScript: '' });
+      sector.npcs.push({ id: 'npc-1', name: '', characterModelId: 'fighter-master', x: 10, z: 19, facing: 0, dialog: [] });
     });
     const before = structuredClone(shell.document.sector);
     const depth = shell.document.undoDepth;
@@ -331,6 +331,45 @@ describe('unsaved changes', () => {
     expect(shell.presentedOverlay).toBeUndefined();
   });
 
+  it("drops every NPC's new step when a sector is opened, even one whose NPC has the same id", async () => {
+    // The file API of the committed fixtures, but for the sector list, which is held once `holding` is set.
+    let holding = false;
+    let release: (() => void) | undefined;
+    vi.stubGlobal('fetch', (input: string | URL) => {
+      const name = decodeURIComponent(String(input).split('/__editor/sectors')[1]!.slice(1));
+      const answer = (): Response =>
+        new Response(name === '' ? JSON.stringify(SECTOR_FIXTURE_NAMES) : readSectorFixture(name as SectorFixtureName), { status: 200 });
+      if (name === '' && holding) return new Promise<Response>((resolve) => (release = () => resolve(answer())));
+      return Promise.resolve(answer());
+    });
+    const shell = headlessShell();
+    await open(shell, 'EdariaShop');
+    const mercus = (): void => {
+      shell.selection = [{ kind: 'npc', id: 'mercus' }];
+      shell.inspector.render(shell.document.sector, shell.selection, false);
+    };
+    mercus();
+    const box = (): HTMLInputElement => labelled(shell.inspector.root, 'New step');
+    box().value = 'Mind the shelves.';
+    box().dispatchEvent(new Event('input'));
+    // The line typed in the box leaves the document clean, so no question stands in the way.
+    expect(shell.document.isDirty).toBe(false);
+    const first = shell.document.sector;
+    // As after Save As and Esc, the picker opens over Mercus still selected.
+    const row = await pickerRow(shell, 'EdariaShop');
+    holding = true;
+    row.click();
+    await vi.waitFor(() => expect(shell.presentedOverlay).toBeUndefined());
+    expect(shell.document.sector).not.toBe(first);
+    // The other sectors are still on their way, and the panel already shows the new sector alone.
+    expect(release).toBeDefined();
+    expect(shell.selection).toEqual([]);
+    expect([...shell.inspector.root.querySelectorAll('button')].map((button) => button.textContent)).not.toContain('Add step');
+    release!();
+    mercus();
+    expect(box().value).toBe('');
+  });
+
   it('asks before a new map replaces a dirty document, and keeps it on Cancel', () => {
     const shell = shellWithDocument();
     const confirm = vi.fn(() => false);
@@ -358,7 +397,7 @@ describe('commands', () => {
       sector.doors.push({ id: 'to-shop', placement: 'door-1', anchor: 'main', target: { sector: 'Shop', door: 'exit' } });
       sector.blockers.push({ id: 'blocker-1', x: 2, z: 2, width: 1, depth: 1 });
       sector.ground.marks.push({ id: 'mark-1', materialId: 'dirt-path', opacity: 1, shape: { kind: 'stroke', radius: 1, points: [{ x: 4, z: 4 }] } });
-      sector.npcs.push({ id: 'npc-1', name: 'Libus', characterModelId: 'fighter-master', x: 14, z: 6, facing: 0, dialogScript: '' });
+      sector.npcs.push({ id: 'npc-1', name: 'Libus', characterModelId: 'fighter-master', x: 14, z: 6, facing: 0, dialog: [] });
       sector.monsterSpawns.push({ id: 'spawn-1', kind: 'ghost', x: 13, z: 12, width: 3, depth: 3, maxAlive: 2, eliteChance: 0 });
       sector.spawn = { x: 8, z: 8, facing: 0 };
     });
@@ -504,6 +543,62 @@ describe('commands', () => {
     shell.redo();
     expect(shell.selection).toEqual([{ kind: 'blocker', id: 'north-wall' }]);
     expect(labelled(shell.inspector.root, 'Id').value).toBe('north-wall');
+  });
+
+  it("keeps an NPC's new step with it through a rename, back through undo and forward through redo", () => {
+    const shell = withRecords();
+    shell.selection = [{ kind: 'npc', id: 'npc-1' }];
+    shell.inspector.render(shell.document.sector, shell.selection, false);
+    const box = (): HTMLInputElement => labelled(shell.inspector.root, 'New step');
+    box().value = 'Ready for your trial?';
+    box().dispatchEvent(new Event('input'));
+    typeId(shell, 'libus');
+    expect(shell.selection).toEqual([{ kind: 'npc', id: 'libus' }]);
+    expect(box().value).toBe('Ready for your trial?');
+    shell.undo();
+    expect(shell.selection).toEqual([{ kind: 'npc', id: 'npc-1' }]);
+    expect(box().value).toBe('Ready for your trial?');
+    shell.redo();
+    expect(box().value).toBe('Ready for your trial?');
+  });
+
+  it("keeps an NPC's new step through an undo of its rename while another NPC is selected", () => {
+    const shell = withRecords();
+    shell.document.mutate('Seed', (sector) => {
+      sector.npcs.push({ id: 'npc-2', name: 'Quieta', characterModelId: 'fighter-master', x: 4, z: 6, facing: 0, dialog: [] });
+    });
+    const select = (id: string): void => {
+      shell.selection = [{ kind: 'npc', id }];
+      shell.inspector.render(shell.document.sector, shell.selection, false);
+    };
+    const box = (): HTMLInputElement => labelled(shell.inspector.root, 'New step');
+    select('npc-1');
+    box().value = 'Ready for your trial?';
+    box().dispatchEvent(new Event('input'));
+    typeId(shell, 'libus');
+    select('npc-2');
+    shell.undo();
+    expect(shell.document.sector.npcs.map((npc) => npc.id)).toEqual(['npc-1', 'npc-2']);
+    expect(box().value).toBe('');
+    select('npc-1');
+    expect(box().value).toBe('Ready for your trial?');
+  });
+
+  it('leaves the Enter an input method takes in the Save As name to it, and saves on a plain Enter', () => {
+    const shell = shellWithDocument();
+    const saveAs = vi.spyOn(shell.document, 'saveAs').mockResolvedValue();
+    shell.present('saveAs');
+    const name = labelled(dialog('Save As'), 'Sector name');
+    name.focus();
+    name.value = 'Copy';
+    for (const init of [{ isComposing: true }, { keyCode: 229 }]) {
+      const event = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true, ...init });
+      name.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(false);
+    }
+    expect(saveAs).not.toHaveBeenCalled();
+    name.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }));
+    expect(saveAs).toHaveBeenCalledWith('Copy');
   });
 
   it('adds a door from the inspector and selects it', () => {

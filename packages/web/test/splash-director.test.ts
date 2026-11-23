@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { bundledModelRegistry, dialogLine, dialogSteps } from '@somnio/core';
+import { bundledModelRegistry, dialogLine, speechReadSeconds } from '@somnio/core';
 import { setLocale } from '@/i18n';
 import type { Point } from '@somnio/core';
 import type { ClientEntity, RaiseProgress, SpeechBubbleRequest } from '@/client';
@@ -341,13 +341,15 @@ describe('the splash director', () => {
     return d.named('showSpeechBubble')[0]?.args[0] as SpeechBubbleRequest;
   }
 
-  it("greets with the first step of the NPC's own dialog, said to the dreamer who came near", () => {
+  it("greets with the NPC's own greeting, said to the dreamer who came near, for as long as it takes to read", () => {
     const pugnax = splashSectors()
       .find((sector) => sector.name === 'EdariaFighterHall')!
       .npcs.find((npc) => npc.id === 'pugnax')!;
     const bubble = greeted();
     expect(bubble.entityId).toBe('npc:EdariaFighterHall/pugnax');
-    expect(bubble.lines.join(' ')).toBe(dialogLine(dialogSteps(pugnax.dialogScript)[0]!, 'Mira'));
+    const line = dialogLine(pugnax.greeting!, 'Mira');
+    expect(bubble.lines.join(' ')).toBe(line);
+    expect(bubble.lifetimeMs).toBe(speechReadSeconds(line) * 1000);
   });
 
   it('greets in the language the page reads in', () => {

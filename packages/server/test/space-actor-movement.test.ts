@@ -233,7 +233,7 @@ describe('SpaceActor.handleMove', () => {
   });
 
   it('blocks at an NPC where its sector puts it in the space, which is where its entity is drawn', async () => {
-    const { space } = makeClockedSpace(makeWorld(makeSectorLine({ middle: { npcs: [makeNPC('guard', { x: 10, z: 10 }, '')] } })));
+    const { space } = makeClockedSpace(makeWorld(makeSectorLine({ middle: { npcs: [makeNPC('guard', { x: 10, z: 10 }, {})] } })));
     // Middle starts at x 20, so its guard stands at (30, 10); (10, 10) is open ground in West.
     const beside = attachPlayer(space, { x: 29, z: 10 }, 'beside');
     const elsewhere = attachPlayer(space, { x: 9, z: 10 }, 'elsewhere');
@@ -247,7 +247,7 @@ describe('SpaceActor.handleMove', () => {
   });
 
   it.each<[string, Partial<Sector>]>([
-    ['an NPC', { npcs: [makeNPC('guard', { x: 10, z: 10 }, '')] }],
+    ['an NPC', { npcs: [makeNPC('guard', { x: 10, z: 10 }, {})] }],
     ['a gap narrower than the body', { blockers: [wall('north', 0, 9.75), wall('south', 10.25, 9.75)] }],
   ])('does not let a fully accrued allowance carry a move through %s', async (_label, overrides) => {
     const { space } = field(overrides);

@@ -13,11 +13,17 @@ import { interiorSector, outdoorSector } from './support/worldFixture.ts';
  */
 
 function npc(overrides: Partial<SectorNPC> = {}): SectorNPC {
-  return { id: 'libus', name: 'Libus', characterModelId: 'libus', x: 1, z: 1, facing: 0, dialogScript: '', ...overrides };
+  return { id: 'libus', name: 'Libus', characterModelId: 'libus', x: 1, z: 1, facing: 0, dialog: [], ...overrides };
 }
 
 function monsterSpawn(overrides: Partial<MonsterSpawn> = {}): MonsterSpawn {
   return { id: 'spawn-1', kind: 'ghost', x: 1, z: 1, width: 4, depth: 4, maxAlive: 3, eliteChance: 0, ...overrides };
+}
+
+/** An interior sector file holding one NPC built from raw JSON, for the reader's refusals of what the model cannot express. */
+function roomWithNPC(record: Record<string, unknown>): string {
+  const room = JSON.parse(writeSectorFile(interiorSector('Room'))) as Record<string, unknown>;
+  return JSON.stringify({ ...room, npcs: [{ id: 'libus', name: 'Libus', characterModelId: 'libus', x: 1, z: 1, facing: 0, ...record }] });
 }
 
 /** A committed sector file with one piece of its text replaced, for the reader's refusals. */
@@ -86,15 +92,42 @@ describe('the written form', () => {
       {
         placements: [{ id: 'candle-1', modelId: 'candle', x: 1, z: 2, yaw: 137.5, elevation: 0.76 }],
         spawn: { x: 3, z: 4, facing: 90 },
-        npcs: [npc({ dialogScript: 'Grüß dich, "$name".\n---\nBis bald.' })],
+        npcs: [npc({ greeting: 'Grüß dich, "$name".', dialog: [{ text: 'Bis bald.' }] })],
         monsterSpawns: [monsterSpawn()],
       },
     );
     const text = writeSectorFile(sector);
     expect(text).toContain('"yaw": 137.5');
     expect(text).toContain('"elevation": 0.76');
-    expect(text).toContain('Grüß dich, \\"$name\\".\\n---\\nBis bald.');
+    expect(text).toContain('"greeting": "Grüß dich, \\"$name\\"."');
     expect(readSectorFile(text, 'Town')).toEqual(sector);
+  });
+
+  it("writes an NPC's greeting and each shape of a step's when, and reads them back byte-identical", () => {
+    const pugnax = npc({
+      id: 'pugnax',
+      service: 'fighterMaster',
+      greeting: 'Well, $name?',
+      dialog: [
+        { text: 'Whoever would learn from me first drives off a nightmare.', when: { quest: 'fighter-trial', state: 'offered' } },
+        { text: 'Meet a blow with your guard.', when: { role: 'own' } },
+        { text: 'You walk another path now.', when: { role: 'other' } },
+        { text: 'Stand up straight.', when: { role: 'none' } },
+        { text: 'In the north the dream frays.' },
+      ],
+    });
+    const sector = interiorSector('Hall', { npcs: [pugnax] });
+    const text = writeSectorFile(sector);
+    expect(text.match(/"when"/g)).toHaveLength(4);
+    expect(readSectorFile(text, 'Hall')).toEqual(sector);
+    expect(writeSectorFile(readSectorFile(text, 'Hall'))).toBe(text);
+  });
+
+  it('writes neither a greeting nor a dialog for an NPC with neither', () => {
+    const text = writeSectorFile(interiorSector('Room', { npcs: [npc()] }));
+    expect(text).not.toContain('"greeting"');
+    expect(text).not.toContain('"dialog"');
+    expect(readSectorFile(text, 'Room').npcs).toEqual([npc()]);
   });
 });
 
@@ -137,13 +170,64 @@ describe('reader validation', () => {
     expect(() => readSectorFile(text, 'EdariaLibrary')).toThrow(/npcs\[0\]\.service: unknown value "banker"/);
   });
 
+  it.each([
+    ['a script', 'Hello.\n---\nBye.'],
+    ['null', null],
+  ])('rejects an NPC still carrying a dialogScript of %s, even beside a valid dialog', (_case, dialogScript) => {
+    const text = roomWithNPC({ dialogScript, dialog: [{ text: 'Bye.' }] });
+    expect(() => readSectorFile(text, 'Room')).toThrow(/npcs\[0\]\.dialogScript: replaced by "dialog"/);
+  });
+
+  it('rejects more dialog steps than an NPC may hold before decoding any of them', () => {
+    const text = roomWithNPC({ dialog: Array.from({ length: SOMNIO_CONSTANTS.maxNPCDialogSteps + 1 }, () => ({})) });
+    expect(() => readSectorFile(text, 'Room')).toThrow(/npcs\[0\]\.dialog: exceeds 32 records/);
+  });
+
+  it.each([
+    ['an empty greeting', { greeting: '' }, /npcs\[0\]\.greeting: says nothing/],
+    ['a greeting of spaces', { greeting: '   ' }, /npcs\[0\]\.greeting: says nothing/],
+    ['a greeting past the budget', { greeting: 'a'.repeat(101) }, /npcs\[0\]\.greeting: runs past 100 graphemes/],
+    ['an empty step', { dialog: [{ text: '' }] }, /npcs\[0\]\.dialog\[0\]\.text: says nothing/],
+    ['a step of spaces', { dialog: [{ text: '   ' }] }, /npcs\[0\]\.dialog\[0\]\.text: says nothing/],
+    // 101 bytes, well within the say cap, so only the budget refuses it.
+    ['a step of 101 graphemes', { dialog: [{ text: 'a'.repeat(101) }] }, /npcs\[0\]\.dialog\[0\]\.text: runs past 100 graphemes/],
+    ['an unknown quest', { dialog: [{ text: 'Hi.', when: { quest: 'dragon-hunt', state: 'held' } }] }, /dialog\[0\]\.when\.quest: unknown value "dragon-hunt"/],
+    [
+      'an unknown quest standing',
+      { dialog: [{ text: 'Hi.', when: { quest: 'fighter-trial', state: 'lost' } }] },
+      /dialog\[0\]\.when\.state: unknown value "lost"/,
+    ],
+    [
+      'a when mixing both shapes',
+      { dialog: [{ text: 'Hi.', when: { role: 'none', quest: 'fighter-trial', state: 'held' } }] },
+      /dialog\[0\]\.when: expected either/,
+    ],
+    ['an empty when', { dialog: [{ text: 'Hi.', when: {} }] }, /dialog\[0\]\.when: expected either/],
+  ])('rejects %s', (_name, record, message) => {
+    expect(() => readSectorFile(roomWithNPC(record), 'Room')).toThrow(message);
+  });
+
+  it.each(['own', 'other'])('rejects a step for the %s role on an NPC that is no master', (role) => {
+    for (const service of [{}, { service: 'shopkeeper' }]) {
+      const text = roomWithNPC({ ...service, dialog: [{ text: 'Hi.', when: { role } }] });
+      expect(() => readSectorFile(text, 'Room')).toThrow(new RegExp(`dialog\\[0\\]\\.when\\.role: "${role}" is for a master's steps`));
+    }
+  });
+
+  it('reads a step for no role on an NPC that is no master', () => {
+    for (const service of [{}, { service: 'shopkeeper' }]) {
+      const text = roomWithNPC({ ...service, dialog: [{ text: 'Hi.', when: { role: 'none' } }] });
+      expect(readSectorFile(text, 'Room').npcs[0]!.dialog).toEqual([{ text: 'Hi.', when: { role: 'none' } }]);
+    }
+  });
+
   it('takes the sector name from the caller, never from the file', () => {
     const text = edited('EdariaArena', '"kind": "interior"', '"kind": "interior", "name": "Elsewhere"');
     expect(readSectorFile(text, 'EdariaArena').name).toBe('EdariaArena');
   });
 
   it('normalizes an out-of-range facing rather than rejecting it', () => {
-    const libus = '"facing": 0,\n      "id": "libus"';
+    const libus = '"facing": 0,\n      "greeting": "Greetings, $name!"';
     const sector = readSectorFile(edited('EdariaLibrary', libus, libus.replace('0', '450')), 'EdariaLibrary');
     expect(sector.npcs[0]?.facing).toBe(90);
   });
@@ -176,10 +260,11 @@ describe('writer guards', () => {
   });
 
   it('rejects a dialog step that could exceed the say cap once it names the longest character name', () => {
-    const atCap = `${'a'.repeat(SOMNIO_PROTOCOL_CONSTANTS.maxSayUTF8Bytes - SOMNIO_PROTOCOL_CONSTANTS.maxIdentifierUTF8Bytes)}$name`;
-    const room = (dialogScript: string) => interiorSector('Room', { npcs: [npc({ dialogScript })] });
-    expect(readSectorFile(writeSectorFile(room(`Hello.\n---\n${atCap}`)), 'Room').npcs[0]?.dialogScript).toBe(`Hello.\n---\n${atCap}`);
-    expect(() => writeSectorFile(room(`Hello.\n---\na${atCap}`))).toThrow(/npcs\[0\]\.dialogScript: step 2 can exceed 256 UTF-8 bytes/);
+    // Four bytes and one grapheme each, so the line reaches the say cap at 60 budgeted graphemes.
+    const atCap = `${'🌙'.repeat((SOMNIO_PROTOCOL_CONSTANTS.maxSayUTF8Bytes - SOMNIO_PROTOCOL_CONSTANTS.maxIdentifierUTF8Bytes) / 4)}$name`;
+    const room = (text: string) => interiorSector('Room', { npcs: [npc({ dialog: [{ text }] })] });
+    expect(readSectorFile(writeSectorFile(room(atCap)), 'Room').npcs[0]?.dialog).toEqual([{ text: atCap }]);
+    expect(() => writeSectorFile(room(`${atCap}a`))).toThrow(/npcs\[0\]\.dialog\[0\]\.text: can exceed 256 UTF-8 bytes/);
   });
 
   it('rejects a spawn keeping more alive than the cap', () => {
@@ -197,14 +282,14 @@ describe('writer guards', () => {
   });
 
   it('rejects a serialized file over the byte cap', () => {
-    const npcs = [npc({ dialogScript: 'a'.repeat(SOMNIO_CONSTANTS.maxSectorFileBytes) })];
+    const npcs = [npc({ dialog: [{ text: 'a'.repeat(SOMNIO_CONSTANTS.maxSectorFileBytes) }] })];
     expect(() => writeSectorFile(interiorSector('Room', { npcs }))).toThrow(/file size/);
   });
 
   it('measures the byte cap in UTF-8 bytes, not UTF-16 code units', () => {
     // An umlaut is one code unit but two UTF-8 bytes, so a `.length` check would pass this.
     const halfCap = Math.trunc(SOMNIO_CONSTANTS.maxSectorFileBytes / 2);
-    const npcs = [npc({ dialogScript: 'ü'.repeat(halfCap + 512) })];
+    const npcs = [npc({ dialog: [{ text: 'ü'.repeat(halfCap + 512) }] })];
     expect(() => writeSectorFile(interiorSector('Room', { npcs }))).toThrow(/file size/);
   });
 });

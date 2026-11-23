@@ -34,7 +34,7 @@ export const FRAME_BUDGETS: Budgets<FrameKind> = { limits: FRAME_LIMITS, keyFiel
  * The budget each client frame spends in the world, so a new tag has to say whether it fans out.
  * A tag mapped to `undefined` spends none. Either it answers only its sender, or it is refused once
  * the player is in the world, or something else already paces what it shows others: the global
- * cooldown paces `useAbility`, an NPC's own cooldown `interact`, the swing and touch timers
+ * cooldown paces `useAbility`, an NPC's reading time and its skip floor `interact`, the swing and touch timers
  * `engage`, having to fall first `wake`, and a quest turned in only once the gift a trial's
  * `turnInQuest` hands. The budgeted `shareQuest` paces `answerQuestOffer`, since each answer
  * settles one offer a share made.

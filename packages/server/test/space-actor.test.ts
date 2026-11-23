@@ -45,7 +45,7 @@ describe('SpaceActor.attach', () => {
   });
 
   it('sends the sector as its client view, without the NPCs and spawns the server acts on', async () => {
-    const { sector, space } = actor({ npcs: [makeNPC('guard', { x: 10, z: 10 }, 'Halt.')], monsterSpawns: [makeMonsterSpawn({ x: 15, z: 15 })] });
+    const { sector, space } = actor({ npcs: [makeNPC('guard', { x: 10, z: 10 }, { greeting: 'Halt.' })], monsterSpawns: [makeMonsterSpawn({ x: 15, z: 15 })] });
     const alice = attachPlayer(space, { x: 2, z: 2 }, 'alice');
     const messages = await collectMessages(alice.outbox);
     expect(messages[1]).toEqual({ tag: 'sector', payload: { sector: sectorView(sector) } });

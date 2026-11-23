@@ -18,8 +18,46 @@
   "npcs": [
     {
       "characterModelId": "fighter-master",
-      "dialogScript": "Well, $name? Stand up straight when you speak to me.---Whoever would learn from me first drives off a Ghost. You will find some in the Arena. Then we talk.---In the north the dream frays. Go and see for yourself, but do not go alone.",
+      "dialog": [
+        {
+          "text": "Whoever would learn from me first drives off a nightmare. The Ghosts in the Arena will do.",
+          "when": {
+            "quest": "fighter-trial",
+            "state": "offered"
+          }
+        },
+        {
+          "text": "Has a nightmare fled from you yet, $name? Then tell me. If not, the Arena has Ghosts.",
+          "when": {
+            "quest": "fighter-trial",
+            "state": "held"
+          }
+        },
+        {
+          "text": "Meet a blow with your guard, not your face. Then strike back harder.",
+          "when": {
+            "role": "own"
+          }
+        },
+        {
+          "text": "You walk another path now. Walk it upright.",
+          "when": {
+            "role": "other"
+          }
+        },
+        {
+          "text": "Memor keeps the Graveyard beyond the West Meadow. He has asked for one of mine.",
+          "when": {
+            "quest": "word-for-memor-fighter",
+            "state": "offered"
+          }
+        },
+        {
+          "text": "In the north the dream frays. Go and see for yourself, but do not go alone."
+        }
+      ],
       "facing": 0,
+      "greeting": "Well, $name? Stand up straight when you speak to me.",
       "id": "pugnax",
       "name": "Pugnax",
       "service": "fighterMaster",

@@ -160,8 +160,8 @@ describe('loadWorld', () => {
         ['EdariaLibrary', 'libus'],
         ['EdariaShop', 'mercus'],
       ] as const
-    ).map(([name, carrier]) => interiorSector(name, { npcs: [makeNPC(carrier, { x: 5, z: 5 }, '')] }));
-    const graveyard = makeSector('Graveyard', { ...land, npcs: [makeNPC('memor', { x: 5, z: 5 }, '')] });
+    ).map(([name, carrier]) => interiorSector(name, { npcs: [makeNPC(carrier, { x: 5, z: 5 }, {})] }));
+    const graveyard = makeSector('Graveyard', { ...land, npcs: [makeNPC('memor', { x: 5, z: 5 }, {})] });
     const board = { id: 'notice-board-1', modelId: 'notice-board', x: 5, z: 5, yaw: 0, elevation: 0 };
     const square = makeSector('EdariaSquare', {
       size: { width: 40.96, depth: 40.96 },

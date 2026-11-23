@@ -24,7 +24,7 @@ import { TestClient, gameplayURL, withLiveServer } from '../support/liveServer.t
 import { testLogger } from '../support/logger.ts';
 import { makeCharacter } from '../support/sectorFactory.ts';
 import { makeStubConnectionDependencies } from '../support/stubDependencies.ts';
-import { StubCharacterRepository, StubNPCDialogStateRepository, StubSessionRepository } from '../support/stubRepositories.ts';
+import { StubCharacterRepository, StubSessionRepository } from '../support/stubRepositories.ts';
 
 /**
  * An honest client walking found paths through the committed world is never corrected. The
@@ -46,8 +46,8 @@ async function committedWorld(spaceId: string, at: Point) {
   const { token } = await sessions.issue(accountId, 3600);
   const characters = new StubCharacterRepository(new Map([[accountId, [makeCharacter(at, 'walker', spaceId)]]]));
   const world = loadWorld(new Map(sectors.map((sector) => [sector.name, sector])), registryJSON);
-  const worldRouter = await WorldRouter.create(world, characters, new StubNPCDialogStateRepository(), testLogger());
-  return { dependencies: await makeStubConnectionDependencies({ sessions, characters, worldRouter }), token };
+  const worldRouter = WorldRouter.create(world, characters, testLogger());
+  return { dependencies: makeStubConnectionDependencies({ sessions, characters, worldRouter }), token };
 }
 
 /** Sends a request the server always answers and reads through to its answer: every frame the server sent before it. */

@@ -6,7 +6,7 @@ import { GAITS } from '@somnio/protocol';
 import { CLIP_PREFERENCES, ONE_SHOT_CLIPS, movementPose, resolveClipName, resolveOneShotClipName } from '@/scene/animation';
 import { worldMovement } from '@/scene/cameraRig';
 import { doorLightState, sunState } from '@/scene/dayNightSun';
-import { BUBBLE_TEXT_WIDTH, bubbleLifetimeMs, wrapSpeech } from '@/scene/speechBubbleText';
+import { BUBBLE_TEXT_WIDTH, wrapSpeech } from '@/scene/speechBubbleText';
 
 describe('movementPose', () => {
   it.each([
@@ -332,25 +332,17 @@ describe('speech bubble wrap', () => {
     expect(wrapSpeech('👍🏽'.repeat(10), tenPerChar)).toEqual(['👍🏽'.repeat(3), '👍🏽'.repeat(3), '👍🏽'.repeat(3), '👍🏽']);
   });
 
-  it('caps at four lines and marks truncation with an ASCII ellipsis', () => {
-    const lines = wrapSpeech('aaaaaaaaaaaaaaa '.repeat(12).trim(), tenPerChar);
-    expect(lines).toHaveLength(4);
-    expect(lines[3]!.endsWith('...')).toBe(true);
-    expect(lines.join('')).not.toContain('…');
+  it('keeps every line, however many the text wraps to', () => {
+    const words = 'abcdefghijkl'.split('').map((letter) => letter.repeat(14));
+    expect(wrapSpeech(words.join(' '), tenPerChar)).toEqual(words);
   });
 
-  const threeFullLines = `${'a'.repeat(14)} ${'b'.repeat(14)} ${'c'.repeat(14)}`;
-
-  it('cuts a full last line back so the truncation mark fits beside it', () => {
-    expect(wrapSpeech(`${threeFullLines} dddd eeeeeeeee f`, tenPerChar).at(-1)).toBe('dddd eeeeee...');
-  });
-
-  it('leaves no space before the truncation mark where the cut ends a word', () => {
-    expect(wrapSpeech(`${threeFullLines} dddddddddd eee f`, tenPerChar).at(-1)).toBe('dddddddddd...');
-  });
-
-  it('derives the lifetime as two seconds plus one per line', () => {
-    expect(bubbleLifetimeMs(1)).toBe(3000);
-    expect(bubbleLifetimeMs(4)).toBe(6000);
+  /** A text ending in an ellipsis, a speaker's own or a crumble's, keeps it on its last line. */
+  it('keeps a trailing ellipsis the text itself ends in', () => {
+    const text = 'the dream wears through here and what was buried climbs back out of the graves...';
+    const lines = wrapSpeech(text, tenPerChar);
+    expect(lines.length).toBeGreaterThan(4);
+    expect(lines.join(' ')).toBe(text);
+    expect(lines.at(-1)!.endsWith('graves...')).toBe(true);
   });
 });

@@ -2,6 +2,7 @@ import type { Fixture, SectorView, Service } from '@somnio/protocol';
 import type { Point, Rect } from './geometry.ts';
 import type { Heading } from './heading.ts';
 import type { MonsterKindId } from './monsterKinds.ts';
+import type { DialogStep } from './npcDialog.ts';
 
 /**
  * The sector model: the client's view of a sector plus the content only the server acts on.
@@ -22,7 +23,10 @@ export interface SectorNPC {
   x: number;
   z: number;
   facing: Heading;
-  dialogScript: string;
+  /** Said to whoever comes near, in English. */
+  greeting?: string;
+  /** The steps said when asked, in order, each to a dreamer it fits. */
+  dialog: DialogStep[];
   /** What asking the NPC offers beyond its dialog. */
   service?: Service;
 }

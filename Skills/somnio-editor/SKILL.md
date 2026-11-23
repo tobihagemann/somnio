@@ -90,7 +90,7 @@ machine.
 directory — screenshots can lie, the saved file cannot. An unedited open+save is byte-identical
 to the input (`cmp` against the fixture), so any diff is exactly your edit. Defaults are left
 out of the file (`yaw` and `elevation` at 0, a mark's `opacity` at 1, empty arrays, an NPC's
-Service at None, a door's night flag off), so an absent key is not a lost edit. AGENTS.md's "Sector format" has the full shape.
+Service at None and Greeting blank, a dialog step's For at Everyone, a door's night flag off), so an absent key is not a lost edit. AGENTS.md's "Sector format" has the full shape.
 
 ## Notes
 
@@ -156,7 +156,10 @@ Service at None, a door's night flag off), so an absent key is not a lost edit. 
 - Inspector fields are metres (degrees for `yaw` and facing) and commit on Return or blur only.
   A press on the canvas, a selection change, or Esc blurs a focused field first, so its draft
   is committed. An unparseable draft reverts, and an equal value commits nothing. Each commit
-  is one undo step.
+  is one undo step. An NPC's New step box is the exception: blur and Save leave its line out,
+  and only Add step or Enter adds it. Until then it keeps the line for that NPC, through
+  selecting another and through a rename, but not once the NPC is deleted, another sector is
+  opened, or a new map is made.
 - A dragged mark previews as its outline and repaints on commit. Marks paint in array order, so
   a later mark covers an earlier one.
 - Grid snap lives in Preferences (game menu), persisted under `somnio.editor.gridSnap`:

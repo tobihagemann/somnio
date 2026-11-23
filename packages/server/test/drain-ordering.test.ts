@@ -68,7 +68,7 @@ class BlockingSocket implements ConnectionSocket {
 describe('drain before close', () => {
   it.each([1, 3])('every queued frame lands before the close frame (gate on write %i)', async (gateOnWrite) => {
     const socket = new BlockingSocket(gateOnWrite);
-    const connection = new ConnectionActor(await makeStubConnectionDependencies());
+    const connection = new ConnectionActor(makeStubConnectionDependencies());
     const run = connection.runConnection(socket);
     // The hello is frame 1; three more make four.
     for (let index = 0; index < 3; index += 1) connection.outbox.send(`frame-${index}`);
@@ -84,7 +84,7 @@ describe('drain before close', () => {
   it('the writer closes with policyViolation after draining when the outbox overflows', async () => {
     const watermark = 4;
     const socket = new BlockingSocket(1);
-    const connection = new ConnectionActor(await makeStubConnectionDependencies({ outboxHighWatermark: watermark }));
+    const connection = new ConnectionActor(makeStubConnectionDependencies({ outboxHighWatermark: watermark }));
     const run = connection.runConnection(socket);
     await socket.waitUntilParked();
     // The hello holds one inflight slot; `watermark` more sends push past the watermark.
@@ -100,7 +100,7 @@ describe('drain before close', () => {
 
   it('an admin kick maps keepOpen to a goingAway close after the hello drains', async () => {
     const socket = new BlockingSocket(0);
-    const connection = new ConnectionActor(await makeStubConnectionDependencies());
+    const connection = new ConnectionActor(makeStubConnectionDependencies());
     const run = connection.runConnection(socket);
     await new Promise((resolve) => setImmediate(resolve));
     connection.disconnectForAdminKick();

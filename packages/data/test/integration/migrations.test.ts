@@ -37,7 +37,6 @@ describe('migrations', () => {
       'items',
       'kysely_migration',
       'kysely_migration_lock',
-      'npc_dialog_states',
       'sessions',
       'world_clock',
     ]);
