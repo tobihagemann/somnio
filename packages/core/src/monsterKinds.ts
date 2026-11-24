@@ -9,7 +9,10 @@ export interface MonsterKind {
   tier: Tier;
   characterModelId: string;
   radius: number;
-  metresPerSecond: number;
+  /** How fast it moves in a fight, following its pack, and walking home. */
+  chaseMetresPerSecond: number;
+  /** How fast it wanders. */
+  strollMetresPerSecond: number;
   /** How close a player has to come for the monster to give chase. */
   aggroRadius: number;
   /**
@@ -32,10 +35,12 @@ export interface MonsterKind {
 }
 
 /**
- * The kinds a monster spawn can name, by id. The Ghost haunts the first ring. The skeletons of the
- * third ring hit harder than a Ghost, to meet the third ring's gear: a Skeleton is quick and frail,
- * a Skeleton Warrior slow and hard to drive off, and the Necromancer, a boss, outlasts any of them
- * by far and comes back only long after it is driven off.
+ * The kinds a monster spawn can name, by id. The Ghost haunts the first ring. The beasts of the
+ * second ring are a quick, frail Wolf that runs in packs, a tough Boar that knocks the balance out
+ * of a dreamer, and a rare, slow, heavy Bogey. The skeletons of the third ring hit harder than a
+ * Ghost, to meet the third ring's gear: a Skeleton is quick and frail, a Skeleton Warrior slow and
+ * hard to drive off, and the Necromancer, a boss, outlasts any of them by far and comes back only
+ * long after it is driven off.
  */
 export const MONSTER_KINDS = {
   ghost: {
@@ -43,7 +48,8 @@ export const MONSTER_KINDS = {
     tier: 1,
     characterModelId: 'ghost',
     radius: 0.3,
-    metresPerSecond: 2.4,
+    chaseMetresPerSecond: 2.4,
+    strollMetresPerSecond: 1.2,
     aggroRadius: 3.84,
     leashMetres: 12,
     respawnSeconds: 60,
@@ -54,12 +60,64 @@ export const MONSTER_KINDS = {
     balanceDamage: 5,
     bounty: 12,
   },
+  wolf: {
+    name: 'Wolf',
+    tier: 2,
+    characterModelId: 'wolf',
+    radius: 0.3,
+    chaseMetresPerSecond: 2.8,
+    strollMetresPerSecond: 1.4,
+    aggroRadius: 4.2,
+    leashMetres: 14,
+    respawnSeconds: 50,
+    health: 55,
+    strikeSeconds: 1.1,
+    hitChance: 0.6,
+    damage: 10,
+    balanceDamage: 4,
+    bounty: 13,
+  },
+  boar: {
+    name: 'Boar',
+    tier: 2,
+    characterModelId: 'boar',
+    radius: 0.35,
+    chaseMetresPerSecond: 2.3,
+    strollMetresPerSecond: 1.15,
+    aggroRadius: 3.6,
+    leashMetres: 13,
+    respawnSeconds: 70,
+    health: 130,
+    strikeSeconds: 1.7,
+    hitChance: 0.62,
+    damage: 15,
+    balanceDamage: 12,
+    bounty: 24,
+  },
+  bogey: {
+    name: 'Bogey',
+    tier: 2,
+    characterModelId: 'bogey',
+    radius: 0.4,
+    chaseMetresPerSecond: 1.9,
+    strollMetresPerSecond: 0.95,
+    aggroRadius: 4.5,
+    leashMetres: 12,
+    respawnSeconds: 240,
+    health: 260,
+    strikeSeconds: 2.2,
+    hitChance: 0.65,
+    damage: 20,
+    balanceDamage: 9,
+    bounty: 45,
+  },
   'skeleton-minion': {
     name: 'Skeleton',
     tier: 3,
     characterModelId: 'skeleton-minion',
     radius: 0.3,
-    metresPerSecond: 2.6,
+    chaseMetresPerSecond: 2.6,
+    strollMetresPerSecond: 1.3,
     aggroRadius: 4.5,
     leashMetres: 15,
     respawnSeconds: 45,
@@ -75,7 +133,8 @@ export const MONSTER_KINDS = {
     tier: 3,
     characterModelId: 'skeleton-warrior',
     radius: 0.3,
-    metresPerSecond: 2.2,
+    chaseMetresPerSecond: 2.2,
+    strollMetresPerSecond: 1.1,
     aggroRadius: 4.5,
     leashMetres: 15,
     respawnSeconds: 75,
@@ -91,7 +150,8 @@ export const MONSTER_KINDS = {
     tier: 3,
     characterModelId: 'necromancer',
     radius: 0.3,
-    metresPerSecond: 2,
+    chaseMetresPerSecond: 2,
+    strollMetresPerSecond: 1,
     aggroRadius: 6,
     leashMetres: 0,
     respawnSeconds: 600,
@@ -125,10 +185,10 @@ export const NIGHTMARE_AWARENESS = { radiusMetres: 4, delaySeconds: 1 } as const
 
 /**
  * How a nightmare at rest moves while some dreamer sees its sector: every `everySeconds`, a random
- * span between `min` and `max`, it walks at `speedShare` of its speed to a random point of its spawn
+ * span between `min` and `max`, it walks at its kind's stroll speed to a random point of its spawn
  * area. A boss and its minions never wander.
  */
-export const NIGHTMARE_WANDER = { everySeconds: { min: 6, max: 15 }, speedShare: 0.5 } as const;
+export const NIGHTMARE_WANDER = { everySeconds: { min: 6, max: 15 } } as const;
 
 /**
  * A move a nightmare telegraphs as a circle round where it stands. Once `seconds` have run it strikes
@@ -195,11 +255,28 @@ export interface EliteTrait {
 
 /** The traits an elite rolls one of as it spawns, by id. An id travels the wire, so it is kebab-case like an effect id. */
 export const ELITE_TRAITS = {
-  stony: { effectId: 'stony', names: { ghost: 'Stony Ghost', 'skeleton-minion': 'Stony Skeleton', 'skeleton-warrior': 'Stony Skeleton Warrior' } },
+  stony: {
+    effectId: 'stony',
+    names: {
+      ghost: 'Stony Ghost',
+      wolf: 'Stony Wolf',
+      boar: 'Stony Boar',
+      bogey: 'Stony Bogey',
+      'skeleton-minion': 'Stony Skeleton',
+      'skeleton-warrior': 'Stony Skeleton Warrior',
+    },
+  },
   shielded: {
     effectId: 'shielded',
     renewSeconds: 8,
-    names: { ghost: 'Shielded Ghost', 'skeleton-minion': 'Shielded Skeleton', 'skeleton-warrior': 'Shielded Skeleton Warrior' },
+    names: {
+      ghost: 'Shielded Ghost',
+      wolf: 'Shielded Wolf',
+      boar: 'Shielded Boar',
+      bogey: 'Shielded Bogey',
+      'skeleton-minion': 'Shielded Skeleton',
+      'skeleton-warrior': 'Shielded Skeleton Warrior',
+    },
   },
 } as const satisfies Record<string, EliteTrait>;
 export type EliteTraitId = keyof typeof ELITE_TRAITS;

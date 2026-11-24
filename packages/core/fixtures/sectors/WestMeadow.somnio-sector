@@ -180,6 +180,17 @@
     ]
   },
   "kind": "outdoor",
+  "monsterSpawns": [
+    {
+      "depth": 6,
+      "id": "spawn-1",
+      "kind": "ghost",
+      "maxAlive": 3,
+      "width": 6.5,
+      "x": 13.5,
+      "z": 1.5
+    }
+  ],
   "origin": {
     "x": -30.72,
     "z": 5.12

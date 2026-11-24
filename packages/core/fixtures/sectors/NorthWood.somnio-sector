@@ -121,11 +121,20 @@
     {
       "depth": 7.36,
       "id": "spawn-1",
-      "kind": "ghost",
-      "maxAlive": 3,
+      "kind": "wolf",
+      "maxAlive": 4,
       "width": 12.16,
       "x": 9.28,
       "z": 8.48
+    },
+    {
+      "depth": 3.2,
+      "id": "spawn-2",
+      "kind": "bogey",
+      "maxAlive": 1,
+      "width": 7,
+      "x": 11,
+      "z": 0.6
     }
   ],
   "origin": {
@@ -463,13 +472,6 @@
       "z": 5.026
     },
     {
-      "id": "gen-tree-1-c-2",
-      "modelId": "tree-1-c",
-      "x": 10.316,
-      "yaw": 342,
-      "z": 4.782
-    },
-    {
       "id": "gen-tree-6-a-8",
       "modelId": "tree-6-a",
       "x": 9.373,
@@ -477,11 +479,11 @@
       "z": 3.002
     },
     {
-      "id": "gen-bush-2-d-5",
-      "modelId": "bush-2-d",
-      "x": 11.46,
+      "id": "gen-tree-7-a-6",
+      "modelId": "tree-7-a",
+      "x": 10.574,
       "yaw": 126,
-      "z": 6.312
+      "z": 5.855
     },
     {
       "id": "gen-bush-4-a-4",
@@ -498,507 +500,620 @@
       "z": 3.549
     },
     {
-      "id": "gen-tree-5-a-5",
-      "modelId": "tree-5-a",
-      "x": 18.912,
-      "yaw": 245,
-      "z": 23.289
-    },
-    {
-      "id": "gen-tree-5-a-6",
-      "modelId": "tree-5-a",
-      "x": 19.043,
+      "id": "gen-bush-2-d-5",
+      "modelId": "bush-2-d",
+      "x": 6.197,
       "yaw": 119,
-      "z": 24.637
-    },
-    {
-      "id": "gen-tree-7-a-6",
-      "modelId": "tree-7-a",
-      "x": 30.269,
-      "yaw": 127,
-      "z": 11.129
+      "z": 2.666
     },
     {
       "id": "gen-tree-2-c-7",
       "modelId": "tree-2-c",
-      "x": 29.004,
-      "yaw": 75,
-      "z": 11.85
-    },
-    {
-      "id": "gen-tree-5-a-7",
-      "modelId": "tree-5-a",
-      "x": 29.115,
-      "yaw": 56,
-      "z": 14.101
-    },
-    {
-      "id": "gen-tree-2-c-8",
-      "modelId": "tree-2-c",
-      "x": 8.741,
-      "yaw": 289,
-      "z": 25.502
-    },
-    {
-      "id": "gen-pine-tree-7",
-      "modelId": "pine-tree",
-      "x": 7.329,
-      "yaw": 250,
-      "z": 22.487
-    },
-    {
-      "id": "gen-bush-2-d-6",
-      "modelId": "bush-2-d",
-      "x": 10.246,
-      "yaw": 262,
-      "z": 23.927
+      "x": 7.968,
+      "yaw": 118,
+      "z": 2.507
     },
     {
       "id": "gen-tree-2-b-7",
       "modelId": "tree-2-b",
-      "x": 11.579,
-      "yaw": 348,
-      "z": 27.803
-    },
-    {
-      "id": "gen-tree-5-a-8",
-      "modelId": "tree-5-a",
-      "x": 17.065,
-      "yaw": 228,
-      "z": 20.628
-    },
-    {
-      "id": "gen-tree-5-a-9",
-      "modelId": "tree-5-a",
-      "x": 18.418,
-      "yaw": 46,
-      "z": 20.68
-    },
-    {
-      "id": "gen-bush-4-a-6",
-      "modelId": "bush-4-a",
-      "x": 20.684,
-      "yaw": 190,
-      "z": 16.727
-    },
-    {
-      "id": "gen-tree-6-a-9",
-      "modelId": "tree-6-a",
-      "x": 21.977,
-      "yaw": 233,
-      "z": 25.393
-    },
-    {
-      "id": "gen-pine-tree-8",
-      "modelId": "pine-tree",
-      "x": 23.624,
-      "yaw": 33,
-      "z": 27.777
-    },
-    {
-      "id": "gen-tree-1-c-3",
-      "modelId": "tree-1-c",
-      "x": 19.86,
-      "yaw": 181,
-      "z": 26.09
-    },
-    {
-      "id": "gen-bush-2-b-6",
-      "modelId": "bush-2-b",
-      "x": 24.202,
-      "yaw": 294,
-      "z": 23.778
-    },
-    {
-      "id": "gen-pine-tree-9",
-      "modelId": "pine-tree",
-      "x": 0.858,
-      "yaw": 44,
-      "z": 5.123
-    },
-    {
-      "id": "gen-tree-6-a-10",
-      "modelId": "tree-6-a",
-      "x": 2.713,
-      "yaw": 345,
-      "z": 4.247
-    },
-    {
-      "id": "gen-bush-2-b-7",
-      "modelId": "bush-2-b",
-      "x": 0.41,
-      "yaw": 151,
-      "z": 9.037
-    },
-    {
-      "id": "gen-tree-5-a-10",
-      "modelId": "tree-5-a",
-      "x": 1.169,
-      "yaw": 273,
-      "z": 18.664
-    },
-    {
-      "id": "gen-tree-2-b-8",
-      "modelId": "tree-2-b",
-      "x": 0.698,
-      "yaw": 341,
-      "z": 20.208
-    },
-    {
-      "id": "gen-tree-2-b-9",
-      "modelId": "tree-2-b",
-      "x": 29.618,
-      "yaw": 300,
-      "z": 20.641
-    },
-    {
-      "id": "gen-tree-2-c-9",
-      "modelId": "tree-2-c",
-      "x": 29.303,
-      "yaw": 323,
-      "z": 19.031
-    },
-    {
-      "id": "gen-tree-5-a-11",
-      "modelId": "tree-5-a",
-      "x": 28.366,
-      "yaw": 154,
-      "z": 21.932
-    },
-    {
-      "id": "gen-tree-5-a-12",
-      "modelId": "tree-5-a",
-      "x": 11.444,
-      "yaw": 247,
-      "z": 29.382
-    },
-    {
-      "id": "gen-tree-1-c-4",
-      "modelId": "tree-1-c",
-      "x": 6.038,
-      "yaw": 264,
-      "z": 21.094
-    },
-    {
-      "id": "gen-tree-5-a-13",
-      "modelId": "tree-5-a",
-      "x": 26.008,
-      "yaw": 87,
-      "z": 9.488
-    },
-    {
-      "id": "gen-tree-2-b-10",
-      "modelId": "tree-2-b",
-      "x": 23.722,
-      "yaw": 339,
-      "z": 11.596
+      "x": 9.455,
+      "yaw": 218,
+      "z": 1.469
     },
     {
       "id": "gen-tree-7-a-7",
       "modelId": "tree-7-a",
-      "x": 24.752,
-      "yaw": 201,
-      "z": 8.033
+      "x": 4.366,
+      "yaw": 315,
+      "z": 4.557
     },
     {
-      "id": "gen-bush-2-d-7",
-      "modelId": "bush-2-d",
-      "x": 26.2,
-      "yaw": 45,
-      "z": 7.881
+      "id": "gen-tree-2-c-8",
+      "modelId": "tree-2-c",
+      "x": 2.834,
+      "yaw": 162,
+      "z": 3.98
     },
     {
-      "id": "gen-tree-5-a-14",
+      "id": "gen-bush-2-b-6",
+      "modelId": "bush-2-b",
+      "x": 4.298,
+      "yaw": 215,
+      "z": 0.417
+    },
+    {
+      "id": "gen-bush-4-a-6",
+      "modelId": "bush-4-a",
+      "x": 2.698,
+      "yaw": 316,
+      "z": 1.145
+    },
+    {
+      "id": "gen-tree-5-a-5",
       "modelId": "tree-5-a",
-      "x": 5.642,
-      "yaw": 187,
-      "z": 2.745
+      "x": 5.022,
+      "yaw": 3,
+      "z": 1.92
+    },
+    {
+      "id": "gen-tree-2-b-8",
+      "modelId": "tree-2-b",
+      "x": 7.794,
+      "yaw": 181,
+      "z": 0.655
+    },
+    {
+      "id": "gen-tree-2-b-9",
+      "modelId": "tree-2-b",
+      "x": 6.434,
+      "yaw": 75,
+      "z": 0.683
+    },
+    {
+      "id": "gen-tree-2-b-10",
+      "modelId": "tree-2-b",
+      "x": 1.418,
+      "yaw": 294,
+      "z": 17.007
+    },
+    {
+      "id": "gen-tree-1-c-2",
+      "modelId": "tree-1-c",
+      "x": 4.362,
+      "yaw": 170,
+      "z": 14.865
+    },
+    {
+      "id": "gen-tree-6-a-9",
+      "modelId": "tree-6-a",
+      "x": 0.557,
+      "yaw": 286,
+      "z": 15.266
+    },
+    {
+      "id": "gen-bush-2-b-7",
+      "modelId": "bush-2-b",
+      "x": 4.655,
+      "yaw": 147,
+      "z": 16.539
+    },
+    {
+      "id": "gen-tree-2-b-11",
+      "modelId": "tree-2-b",
+      "x": 11.961,
+      "yaw": 336,
+      "z": 5.314
     },
     {
       "id": "gen-tree-7-a-8",
       "modelId": "tree-7-a",
-      "x": 4.258,
-      "yaw": 188,
-      "z": 1.646
+      "x": 12.051,
+      "yaw": 24,
+      "z": 6.809
     },
     {
-      "id": "gen-tree-1-c-5",
+      "id": "gen-tree-5-a-6",
+      "modelId": "tree-5-a",
+      "x": 22.423,
+      "yaw": 88,
+      "z": 17.881
+    },
+    {
+      "id": "gen-tree-1-c-3",
       "modelId": "tree-1-c",
-      "x": 8.881,
-      "yaw": 28,
-      "z": 0.881
-    },
-    {
-      "id": "gen-pine-tree-10",
-      "modelId": "pine-tree",
-      "x": 0.428,
-      "yaw": 238,
-      "z": 16.55
+      "x": 25.824,
+      "yaw": 142,
+      "z": 19.581
     },
     {
       "id": "gen-tree-7-a-9",
       "modelId": "tree-7-a",
-      "x": 2.36,
-      "yaw": 341,
-      "z": 15.12
+      "x": 22.926,
+      "yaw": 19,
+      "z": 20.691
     },
     {
-      "id": "gen-tree-6-a-11",
-      "modelId": "tree-6-a",
-      "x": 3.702,
-      "yaw": 200,
-      "z": 17.088
-    },
-    {
-      "id": "gen-tree-7-a-10",
-      "modelId": "tree-7-a",
-      "x": 1.807,
-      "yaw": 262,
-      "z": 16.905
-    },
-    {
-      "id": "gen-bush-2-d-8",
-      "modelId": "bush-2-d",
-      "x": 2.813,
-      "yaw": 252,
-      "z": 18.979
-    },
-    {
-      "id": "gen-tree-2-c-10",
-      "modelId": "tree-2-c",
-      "x": 26.306,
-      "yaw": 129,
-      "z": 13.427
-    },
-    {
-      "id": "gen-tree-6-a-12",
-      "modelId": "tree-6-a",
-      "x": 25.98,
-      "yaw": 26,
-      "z": 14.797
-    },
-    {
-      "id": "gen-pine-tree-11",
-      "modelId": "pine-tree",
-      "x": 27.156,
-      "yaw": 342,
-      "z": 15.51
+      "id": "gen-tree-1-c-4",
+      "modelId": "tree-1-c",
+      "x": 25.222,
+      "yaw": 7,
+      "z": 21.58
     },
     {
       "id": "gen-bush-4-a-7",
       "modelId": "bush-4-a",
-      "x": 24.821,
-      "yaw": 333,
-      "z": 14.034
+      "x": 27.228,
+      "yaw": 308,
+      "z": 18.915
     },
     {
-      "id": "gen-rock-1-a-1",
-      "modelId": "rock-1-a",
-      "x": 3.175,
-      "yaw": 161,
-      "z": 3.022
+      "id": "gen-tree-1-c-5",
+      "modelId": "tree-1-c",
+      "x": 3.21,
+      "yaw": 268,
+      "z": 16.649
+    },
+    {
+      "id": "gen-tree-7-a-10",
+      "modelId": "tree-7-a",
+      "x": 1.901,
+      "yaw": 279,
+      "z": 15.295
+    },
+    {
+      "id": "gen-tree-7-a-11",
+      "modelId": "tree-7-a",
+      "x": 2.668,
+      "yaw": 250,
+      "z": 18.64
+    },
+    {
+      "id": "gen-tree-7-a-12",
+      "modelId": "tree-7-a",
+      "x": 1.355,
+      "yaw": 346,
+      "z": 19.264
+    },
+    {
+      "id": "gen-tree-2-c-9",
+      "modelId": "tree-2-c",
+      "x": 0.723,
+      "yaw": 199,
+      "z": 1.831
+    },
+    {
+      "id": "gen-tree-2-c-10",
+      "modelId": "tree-2-c",
+      "x": 3.168,
+      "yaw": 224,
+      "z": 2.593
+    },
+    {
+      "id": "gen-tree-5-a-7",
+      "modelId": "tree-5-a",
+      "x": 1.163,
+      "yaw": 140,
+      "z": 3.064
+    },
+    {
+      "id": "gen-tree-7-a-13",
+      "modelId": "tree-7-a",
+      "x": 1.782,
+      "yaw": 264,
+      "z": 5.159
     },
     {
       "id": "gen-bush-2-b-8",
       "modelId": "bush-2-b",
-      "x": 8.038,
-      "yaw": 285,
-      "z": 6.587
+      "x": 4.89,
+      "yaw": 228,
+      "z": 3.333
     },
     {
-      "id": "gen-bush-2-d-9",
+      "id": "gen-tree-1-c-6",
+      "modelId": "tree-1-c",
+      "x": 26.143,
+      "yaw": 121,
+      "z": 2.32
+    },
+    {
+      "id": "gen-tree-7-a-14",
+      "modelId": "tree-7-a",
+      "x": 24.81,
+      "yaw": 31,
+      "z": 0.728
+    },
+    {
+      "id": "gen-bush-2-d-6",
       "modelId": "bush-2-d",
-      "x": 28.616,
-      "yaw": 8,
-      "z": 26.369
+      "x": 26.308,
+      "yaw": 207,
+      "z": 4.068
     },
     {
       "id": "gen-bush-4-a-8",
       "modelId": "bush-4-a",
-      "x": 5.536,
-      "yaw": 180,
-      "z": 27.724
+      "x": 22.326,
+      "yaw": 291,
+      "z": 2.543
     },
     {
-      "id": "gen-rock-1-a-2",
-      "modelId": "rock-1-a",
-      "x": 12.915,
-      "yaw": 219,
-      "z": 1.448
+      "id": "gen-tree-7-a-15",
+      "modelId": "tree-7-a",
+      "x": 23.187,
+      "yaw": 140,
+      "z": 8.345
     },
     {
-      "id": "gen-rock-1-d-1",
-      "modelId": "rock-1-d",
-      "x": 8.417,
-      "yaw": 126,
-      "z": 5.677
+      "id": "gen-tree-6-a-10",
+      "modelId": "tree-6-a",
+      "x": 23.672,
+      "yaw": 188,
+      "z": 6.84
+    },
+    {
+      "id": "gen-tree-2-b-12",
+      "modelId": "tree-2-b",
+      "x": 24.858,
+      "yaw": 110,
+      "z": 8.251
+    },
+    {
+      "id": "gen-tree-5-a-8",
+      "modelId": "tree-5-a",
+      "x": 21.433,
+      "yaw": 7,
+      "z": 4.841
+    },
+    {
+      "id": "gen-bush-2-d-7",
+      "modelId": "bush-2-d",
+      "x": 23.597,
+      "yaw": 347,
+      "z": 4.855
+    },
+    {
+      "id": "gen-tree-6-a-11",
+      "modelId": "tree-6-a",
+      "x": 18.062,
+      "yaw": 210,
+      "z": 4.935
+    },
+    {
+      "id": "gen-tree-5-a-9",
+      "modelId": "tree-5-a",
+      "x": 18.138,
+      "yaw": 52,
+      "z": 6.691
+    },
+    {
+      "id": "gen-tree-2-c-11",
+      "modelId": "tree-2-c",
+      "x": 4.617,
+      "yaw": 99,
+      "z": 9.767
+    },
+    {
+      "id": "gen-tree-7-a-16",
+      "modelId": "tree-7-a",
+      "x": 1.724,
+      "yaw": 41,
+      "z": 10.663
+    },
+    {
+      "id": "gen-tree-2-c-12",
+      "modelId": "tree-2-c",
+      "x": 4.113,
+      "yaw": 113,
+      "z": 8.444
+    },
+    {
+      "id": "gen-tree-2-c-13",
+      "modelId": "tree-2-c",
+      "x": 1.282,
+      "yaw": 3,
+      "z": 8.69
+    },
+    {
+      "id": "gen-bush-4-a-9",
+      "modelId": "bush-4-a",
+      "x": 6.505,
+      "yaw": 349,
+      "z": 9.54
+    },
+    {
+      "id": "gen-bush-4-a-10",
+      "modelId": "bush-4-a",
+      "x": 6.197,
+      "yaw": 13,
+      "z": 11.758
     },
     {
       "id": "gen-bush-2-b-9",
       "modelId": "bush-2-b",
-      "x": 22.496,
-      "yaw": 219,
-      "z": 23.844
+      "x": 2.777,
+      "yaw": 284,
+      "z": 12.28
     },
     {
-      "id": "gen-rock-1-a-3",
+      "id": "gen-bush-2-d-8",
+      "modelId": "bush-2-d",
+      "x": 5.838,
+      "yaw": 145,
+      "z": 8.189
+    },
+    {
+      "id": "gen-tree-2-b-13",
+      "modelId": "tree-2-b",
+      "x": 25.363,
+      "yaw": 31,
+      "z": 29.421
+    },
+    {
+      "id": "gen-tree-5-a-10",
+      "modelId": "tree-5-a",
+      "x": 27.191,
+      "yaw": 273,
+      "z": 30.122
+    },
+    {
+      "id": "gen-pine-tree-7",
+      "modelId": "pine-tree",
+      "x": 29.452,
+      "yaw": 146,
+      "z": 30.331
+    },
+    {
+      "id": "gen-bush-2-d-9",
+      "modelId": "bush-2-d",
+      "x": 28.367,
+      "yaw": 320,
+      "z": 28.331
+    },
+    {
+      "id": "gen-tree-5-a-11",
+      "modelId": "tree-5-a",
+      "x": 24.197,
+      "yaw": 248,
+      "z": 13.165
+    },
+    {
+      "id": "gen-pine-tree-8",
+      "modelId": "pine-tree",
+      "x": 25.242,
+      "yaw": 185,
+      "z": 11.041
+    },
+    {
+      "id": "gen-bush-4-a-11",
+      "modelId": "bush-4-a",
+      "x": 22.303,
+      "yaw": 109,
+      "z": 14.62
+    },
+    {
+      "id": "gen-tree-7-a-17",
+      "modelId": "tree-7-a",
+      "x": 22.989,
+      "yaw": 104,
+      "z": 0.733
+    },
+    {
+      "id": "gen-tree-2-b-14",
+      "modelId": "tree-2-b",
+      "x": 20.122,
+      "yaw": 321,
+      "z": 3.045
+    },
+    {
+      "id": "gen-tree-2-b-15",
+      "modelId": "tree-2-b",
+      "x": 23.541,
+      "yaw": 52,
+      "z": 27.579
+    },
+    {
+      "id": "gen-tree-2-b-16",
+      "modelId": "tree-2-b",
+      "x": 1.578,
+      "yaw": 95,
+      "z": 6.467
+    },
+    {
+      "id": "gen-tree-5-a-12",
+      "modelId": "tree-5-a",
+      "x": 0.326,
+      "yaw": 17,
+      "z": 5.659
+    },
+    {
+      "id": "gen-rock-1-a-1",
       "modelId": "rock-1-a",
-      "x": 24.159,
-      "yaw": 286,
-      "z": 29.392
+      "x": 6.382,
+      "yaw": 346,
+      "z": 21.324
     },
     {
       "id": "gen-bush-2-d-10",
       "modelId": "bush-2-d",
-      "x": 2.031,
-      "yaw": 219,
-      "z": 5.802
+      "x": 30.162,
+      "yaw": 211,
+      "z": 15.948
+    },
+    {
+      "id": "gen-rock-1-a-2",
+      "modelId": "rock-1-a",
+      "x": 29.548,
+      "yaw": 158,
+      "z": 17.166
     },
     {
       "id": "gen-bush-2-d-11",
       "modelId": "bush-2-d",
-      "x": 12.129,
-      "z": 4.463
+      "x": 29.918,
+      "yaw": 62,
+      "z": 3.312
+    },
+    {
+      "id": "gen-rock-1-d-1",
+      "modelId": "rock-1-d",
+      "x": 27.675,
+      "yaw": 101,
+      "z": 8.017
+    },
+    {
+      "id": "gen-bush-4-a-12",
+      "modelId": "bush-4-a",
+      "x": 9.784,
+      "yaw": 287,
+      "z": 22.465
+    },
+    {
+      "id": "gen-bush-2-d-12",
+      "modelId": "bush-2-d",
+      "x": 27.152,
+      "yaw": 237,
+      "z": 17.268
+    },
+    {
+      "id": "gen-rock-1-d-2",
+      "modelId": "rock-1-d",
+      "x": 6.523,
+      "yaw": 191,
+      "z": 6.456
+    },
+    {
+      "id": "gen-bush-4-a-13",
+      "modelId": "bush-4-a",
+      "x": 25.204,
+      "yaw": 264,
+      "z": 5.043
     },
     {
       "id": "gen-rock-3-a-1",
+      "modelId": "rock-3-a",
+      "x": 5.578,
+      "yaw": 64,
+      "z": 4.052
+    },
+    {
+      "id": "gen-rock-1-d-3",
+      "modelId": "rock-1-d",
+      "x": 8.649,
+      "yaw": 329,
+      "z": 18.109
+    },
+    {
+      "id": "gen-rock-3-a-2",
+      "modelId": "rock-3-a",
+      "x": 9.274,
+      "yaw": 240,
+      "z": 24.422
+    },
+    {
+      "id": "gen-bush-4-a-14",
+      "modelId": "bush-4-a",
+      "x": 29.163,
+      "yaw": 59,
+      "z": 7.65
+    },
+    {
+      "id": "gen-bush-2-d-13",
+      "modelId": "bush-2-d",
+      "x": 5.119,
+      "yaw": 55,
+      "z": 13.711
+    },
+    {
+      "id": "gen-rock-1-a-3",
+      "modelId": "rock-1-a",
+      "x": 24.328,
+      "yaw": 177,
+      "z": 28.616
+    },
+    {
+      "id": "gen-rock-1-a-4",
+      "modelId": "rock-1-a",
+      "x": 28.036,
+      "yaw": 4,
+      "z": 15.365
+    },
+    {
+      "id": "gen-bush-2-b-10",
+      "modelId": "bush-2-b",
+      "x": 5.499,
+      "yaw": 269,
+      "z": 18.718
+    },
+    {
+      "id": "gen-bush-2-b-11",
+      "modelId": "bush-2-b",
+      "x": 24.442,
+      "yaw": 127,
+      "z": 2.031
+    },
+    {
+      "id": "gen-rock-1-a-5",
+      "modelId": "rock-1-a",
+      "x": 18.667,
+      "yaw": 237,
+      "z": 22.201
+    },
+    {
+      "id": "gen-rock-3-a-3",
       "modelId": "rock-3-a",
       "x": 8.722,
       "yaw": 349,
       "z": 12.144
     },
     {
-      "id": "gen-rock-1-d-2",
-      "modelId": "rock-1-d",
-      "x": 26.56,
-      "yaw": 159,
-      "z": 29.016
+      "id": "gen-bush-2-b-12",
+      "modelId": "bush-2-b",
+      "x": 16.723,
+      "yaw": 219,
+      "z": 20.02
     },
     {
-      "id": "gen-bush-2-d-12",
-      "modelId": "bush-2-d",
-      "x": 25.707,
-      "yaw": 3,
-      "z": 5.384
+      "id": "gen-rock-3-a-4",
+      "modelId": "rock-3-a",
+      "x": 9.022,
+      "yaw": 355,
+      "z": 25.377
     },
     {
-      "id": "gen-rock-3-a-2",
+      "id": "gen-rock-3-a-5",
       "modelId": "rock-3-a",
       "x": 4.917,
       "yaw": 286,
       "z": 6.33
     },
     {
-      "id": "gen-bush-4-a-9",
+      "id": "gen-bush-4-a-15",
       "modelId": "bush-4-a",
       "x": 7.648,
       "yaw": 26,
       "z": 17.671
     },
     {
-      "id": "gen-rock-3-a-3",
+      "id": "gen-rock-1-a-6",
+      "modelId": "rock-1-a",
+      "x": 29.757,
+      "yaw": 268,
+      "z": 11.396
+    },
+    {
+      "id": "gen-rock-3-a-6",
       "modelId": "rock-3-a",
       "x": 13.741,
       "yaw": 178,
       "z": 4.197
     },
     {
-      "id": "gen-bush-2-d-13",
+      "id": "gen-bush-2-d-14",
       "modelId": "bush-2-d",
       "x": 2.768,
       "yaw": 194,
       "z": 29.013
-    },
-    {
-      "id": "gen-bush-4-a-10",
-      "modelId": "bush-4-a",
-      "x": 19.382,
-      "yaw": 7,
-      "z": 1.57
-    },
-    {
-      "id": "gen-rock-3-a-4",
-      "modelId": "rock-3-a",
-      "x": 24.791,
-      "yaw": 110,
-      "z": 0.47
-    },
-    {
-      "id": "gen-bush-2-d-14",
-      "modelId": "bush-2-d",
-      "x": 20.512,
-      "yaw": 319,
-      "z": 29.708
-    },
-    {
-      "id": "gen-rock-1-a-4",
-      "modelId": "rock-1-a",
-      "x": 0.924,
-      "yaw": 173,
-      "z": 30.054
-    },
-    {
-      "id": "gen-bush-2-b-10",
-      "modelId": "bush-2-b",
-      "x": 5.531,
-      "yaw": 55,
-      "z": 17.936
-    },
-    {
-      "id": "gen-bush-2-d-15",
-      "modelId": "bush-2-d",
-      "x": 5.424,
-      "yaw": 18,
-      "z": 16.542
-    },
-    {
-      "id": "gen-bush-2-d-16",
-      "modelId": "bush-2-d",
-      "x": 28.377,
-      "yaw": 22,
-      "z": 10.36
-    },
-    {
-      "id": "gen-rock-1-a-5",
-      "modelId": "rock-1-a",
-      "x": 20.449,
-      "yaw": 42,
-      "z": 3.687
-    },
-    {
-      "id": "gen-rock-1-d-3",
-      "modelId": "rock-1-d",
-      "x": 26.634,
-      "yaw": 14,
-      "z": 18.103
-    },
-    {
-      "id": "gen-rock-3-a-5",
-      "modelId": "rock-3-a",
-      "x": 7.52,
-      "yaw": 314,
-      "z": 16.092
-    },
-    {
-      "id": "gen-bush-2-d-17",
-      "modelId": "bush-2-d",
-      "x": 7.961,
-      "yaw": 278,
-      "z": 20.494
-    },
-    {
-      "id": "gen-bush-2-b-11",
-      "modelId": "bush-2-b",
-      "x": 23.183,
-      "yaw": 231,
-      "z": 7.977
-    },
-    {
-      "id": "gen-rock-3-a-6",
-      "modelId": "rock-3-a",
-      "x": 15.125,
-      "yaw": 269,
-      "z": 2.74
     }
   ],
   "size": {

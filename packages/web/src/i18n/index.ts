@@ -548,7 +548,8 @@ export const RENDERED_KEYS: readonly string[] = [
   'Thanks paragraph',
   'UI borders by Kenney.',
   '3D characters and props by KayKit.',
-  'Ghost model by Quaternius.',
+  "Ghost model, and the Wolf's rig and base motion, by Quaternius.",
+  'Boar model based on one by Teh_Bucket.',
 
   // Browser-only surfaces
   'This browser cannot render 3D graphics.',

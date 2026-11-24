@@ -17,9 +17,10 @@ interface Affix {
 
 /**
  * The stat lines items roll, by id. Every kind of slot offers at least the four a rare item rolls at
- * each tier a nightmare drops, since `rollItem` refuses a count its pool cannot fill. No nightmare
- * drops tier 2, so no line has a range there. An id is saved with every item that rolled it, so it
- * is kebab-case like a teaching id. The ranges are tuned in play, as `COMBAT`'s numbers are.
+ * each tier a nightmare drops, since `rollItem` refuses a count its pool cannot fill. Both bounds of
+ * a line rise from each tier to the next, though neighbouring ranges may overlap. An id is saved with
+ * every item that rolled it, so it is kebab-case like a teaching id. The ranges are tuned in play,
+ * as `COMBAT`'s numbers are.
  */
 export const AFFIXES = {
   health: {
@@ -27,35 +28,47 @@ export const AFFIXES = {
     worth: 5,
     nameKey: '%@ of Vigour',
     slots: ['offHand', 'head', 'chest', 'hands', 'legs', 'feet'],
-    tiers: { 1: [3, 8], 3: [10, 18] },
+    tiers: { 1: [3, 8], 2: [6, 13], 3: [10, 18] },
   },
   balance: {
     stat: 'balanceMax',
     worth: 5,
     nameKey: '%@ of Poise',
     slots: ['mainHand', 'head', 'chest', 'hands', 'legs', 'feet'],
-    tiers: { 1: [3, 8], 3: [10, 18] },
+    tiers: { 1: [3, 8], 2: [6, 13], 3: [10, 18] },
   },
-  spirit: { stat: 'spiritMax', worth: 5, nameKey: '%@ of Reverie', slots: ['offHand', 'neck', 'ring'], tiers: { 1: [3, 8], 3: [10, 18] } },
-  damage: { stat: 'damage', worth: 13, nameKey: '%@ of Might', slots: ['mainHand', 'hands', 'neck', 'ring'], tiers: { 1: [1, 3], 3: [4, 7] } },
+  spirit: { stat: 'spiritMax', worth: 5, nameKey: '%@ of Reverie', slots: ['offHand', 'neck', 'ring'], tiers: { 1: [3, 8], 2: [6, 13], 3: [10, 18] } },
+  damage: { stat: 'damage', worth: 13, nameKey: '%@ of Might', slots: ['mainHand', 'hands', 'neck', 'ring'], tiers: { 1: [1, 3], 2: [2, 5], 3: [4, 7] } },
   guard: {
     stat: 'guard',
     worth: 13,
     nameKey: '%@ of the Bulwark',
     slots: ['offHand', 'head', 'chest', 'hands', 'legs', 'feet'],
-    tiers: { 1: [1, 3], 3: [4, 7] },
+    tiers: { 1: [1, 3], 2: [2, 5], 3: [4, 7] },
   },
-  'swing-speed': { stat: 'swingSpeed', worth: 5, nameKey: '%@ of Haste', slots: ['mainHand', 'hands'], tiers: { 1: [3, 8], 3: [9, 14] } },
+  'swing-speed': { stat: 'swingSpeed', worth: 5, nameKey: '%@ of Haste', slots: ['mainHand', 'hands'], tiers: { 1: [3, 8], 2: [6, 11], 3: [9, 14] } },
   'balance-recovery': {
     stat: 'balanceRecovery',
     worth: 3,
     nameKey: '%@ of Steadiness',
     slots: ['mainHand', 'head', 'chest', 'legs', 'feet', 'neck', 'ring'],
-    tiers: { 1: [5, 15], 3: [16, 30] },
+    tiers: { 1: [5, 15], 2: [10, 22], 3: [16, 30] },
   },
-  'spirit-recovery': { stat: 'spiritRecovery', worth: 3, nameKey: '%@ of Stillness', slots: ['offHand', 'neck', 'ring'], tiers: { 1: [5, 15], 3: [16, 30] } },
-  'mend-depth': { stat: 'mendDepth', worth: 13, nameKey: '%@ of Mending', slots: ['offHand', 'neck', 'ring'], tiers: { 1: [1, 3], 3: [4, 7] } },
-  'ward-strength': { stat: 'wardStrength', worth: 3, nameKey: '%@ of Warding', slots: ['offHand', 'neck', 'ring'], tiers: { 1: [5, 15], 3: [16, 30] } },
+  'spirit-recovery': {
+    stat: 'spiritRecovery',
+    worth: 3,
+    nameKey: '%@ of Stillness',
+    slots: ['offHand', 'neck', 'ring'],
+    tiers: { 1: [5, 15], 2: [10, 22], 3: [16, 30] },
+  },
+  'mend-depth': { stat: 'mendDepth', worth: 13, nameKey: '%@ of Mending', slots: ['offHand', 'neck', 'ring'], tiers: { 1: [1, 3], 2: [2, 5], 3: [4, 7] } },
+  'ward-strength': {
+    stat: 'wardStrength',
+    worth: 3,
+    nameKey: '%@ of Warding',
+    slots: ['offHand', 'neck', 'ring'],
+    tiers: { 1: [5, 15], 2: [10, 22], 3: [16, 30] },
+  },
 } as const satisfies Record<string, Affix>;
 export type AffixId = keyof typeof AFFIXES;
 

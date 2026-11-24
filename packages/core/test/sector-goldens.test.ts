@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { buildSpaceCollision, canStand, isLegalMove, npcBodies } from '../src/collision.ts';
 import { SOMNIO_CONSTANTS } from '../src/constants.ts';
-import { EDGE_TOLERANCE, distance, distanceToRect, rectContains } from '../src/geometry.ts';
+import { EDGE_TOLERANCE, distance, distanceToRect, rectContains, rectDistance } from '../src/geometry.ts';
 import type { Point } from '../src/geometry.ts';
 import { bundledModelRegistry, objectModel } from '../src/modelRegistry.ts';
 import { TELEGRAPHS, monsterKind } from '../src/monsterKinds.ts';
 import { findPath, rasterizeWalkable, walkRasterInputs } from '../src/pathfinding.ts';
 import { quest, reachedAt } from '../src/quests.ts';
-import { sectorPointInSpace, spawnArea } from '../src/sector.ts';
+import { sectorPointInSpace, sectorRect, spawnArea } from '../src/sector.ts';
 import type { Sector } from '../src/sector.ts';
 import { OUTDOOR_SPACE_ID, buildWorld, doorContains, neighbourSectors, resolveDoor, sectorAt } from '../src/world.ts';
 import { loadSectorFixtures } from './support/sectorFixture.ts';
@@ -76,7 +76,7 @@ describe('the committed world', () => {
         size: { width: 40.96, depth: 40.96 },
         origin: { x: 40.96, z: 0 },
         backgroundMaterialId: 'forest-floor',
-        counts: { placements: 175, blockers: 0, doors: 0, npcs: 0, monsterSpawns: 2, marks: 4 },
+        counts: { placements: 170, blockers: 0, doors: 0, npcs: 0, monsterSpawns: 3, marks: 4 },
         doors: {},
         npcs: {},
       },
@@ -192,7 +192,7 @@ describe('the committed world', () => {
         size: { width: 30.72, depth: 30.72 },
         origin: { x: 5.12, z: -30.72 },
         backgroundMaterialId: 'grass-meadow',
-        counts: { placements: 59, blockers: 0, doors: 0, npcs: 0, monsterSpawns: 0, marks: 4 },
+        counts: { placements: 47, blockers: 0, doors: 0, npcs: 0, monsterSpawns: 1, marks: 4 },
         doors: {},
         npcs: {},
       },
@@ -201,7 +201,7 @@ describe('the committed world', () => {
         size: { width: 30.72, depth: 30.72 },
         origin: { x: 5.12, z: -61.44 },
         backgroundMaterialId: 'forest-floor',
-        counts: { placements: 124, blockers: 0, doors: 0, npcs: 0, monsterSpawns: 1, marks: 3 },
+        counts: { placements: 139, blockers: 0, doors: 0, npcs: 0, monsterSpawns: 2, marks: 3 },
         doors: {},
         npcs: {},
       },
@@ -210,7 +210,7 @@ describe('the committed world', () => {
         size: { width: 30.72, depth: 30.72 },
         origin: { x: 5.12, z: 40.96 },
         backgroundMaterialId: 'grass-meadow',
-        counts: { placements: 63, blockers: 0, doors: 0, npcs: 0, monsterSpawns: 0, marks: 3 },
+        counts: { placements: 62, blockers: 0, doors: 0, npcs: 0, monsterSpawns: 1, marks: 3 },
         doors: {},
         npcs: {},
       },
@@ -219,7 +219,7 @@ describe('the committed world', () => {
         size: { width: 30.72, depth: 30.72 },
         origin: { x: -30.72, z: 5.12 },
         backgroundMaterialId: 'grass-meadow',
-        counts: { placements: 61, blockers: 0, doors: 0, npcs: 0, monsterSpawns: 0, marks: 3 },
+        counts: { placements: 61, blockers: 0, doors: 0, npcs: 0, monsterSpawns: 1, marks: 3 },
         doors: {},
         npcs: {},
       },
@@ -394,6 +394,29 @@ describe('the committed world', () => {
     const path = findPath(grid, from, beforeMemor, npcBodies(outdoors), new Set());
     expect(distance(path.waypoints.at(-1) ?? from, beforeMemor)).toBeLessThan(0.01);
   });
+
+  /** A dreamer crossing into a land, or standing at one of Tacita's hidden places, stands beyond the notice of every nightmare at rest in its spawn area. */
+  it.each(['NorthWood', 'AutumnWood', 'NorthMeadow', 'SouthMeadow', 'WestMeadow'])(
+    "keeps every nightmare of %s beyond notice of the edges it shares and of Tacita's hidden places there",
+    (name) => {
+      const land = byName.get(name)!;
+      const neighbours = neighbourSectors(world.spaces.get(OUTDOOR_SPACE_ID)!, name);
+      const places = quest('mystic-trial').objectives.flatMap((objective) =>
+        objective.kind === 'reach' && objective.sector === name && objective.place !== undefined ? [objective.place] : [],
+      );
+      for (const spawn of land.monsterSpawns) {
+        const area = spawnArea(land, spawn);
+        const notice = monsterKind(spawn.kind).aggroRadius;
+        for (const neighbour of neighbours) expect(rectDistance(area, sectorRect(neighbour)), `${spawn.id} by ${neighbour.name}`).toBeGreaterThan(notice);
+        for (const place of places) {
+          expect(
+            distanceToRect(sectorPointInSpace(land, place), area) - place.radius - EDGE_TOLERANCE,
+            `${spawn.id} by (${place.x}, ${place.z})`,
+          ).toBeGreaterThan(notice);
+        }
+      }
+    },
+  );
 
   it('lets a dreamer walk through the crypt hall from the Graveyard to the burial chamber', () => {
     const registry = bundledModelRegistry();

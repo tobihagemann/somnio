@@ -33,11 +33,18 @@ describe('movementPose', () => {
 
   /** The librarian must not skulk through its own room, so NPCs ignore gait and direction. */
   it.each([
-    ['npc', 'walk', 'backward'],
-    ['npc', 'run', 'forward'],
-    ['monster', 'run', 'strafeLeft'],
-  ] as const)('%s at a %s moving %s always walks', (kind, gait, direction) => {
-    expect(movementPose(kind, gait, direction)).toBe('walking');
+    ['walk', 'backward'],
+    ['run', 'forward'],
+  ] as const)('npc at a %s moving %s always walks', (gait, direction) => {
+    expect(movementPose('npc', gait, direction)).toBe('walking');
+  });
+
+  /** A nightmare strolls as it wanders and runs as it chases, whichever way it faces. */
+  it.each([
+    ['walk', 'backward', 'walking'],
+    ['run', 'strafeLeft', 'running'],
+  ] as const)('monster at a %s moving %s uses %s', (gait, direction, pose) => {
+    expect(movementPose('monster', gait, direction)).toBe(pose);
   });
 });
 
@@ -52,11 +59,16 @@ describe('clip preference chains', () => {
   });
 
   /**
-   * The Ghost carries only `Flying_Idle`, so every pose has to reach it — otherwise its drift
-   * freezes on any pose whose chain runs out.
+   * A model that carries only `Flying_Idle`, as the Ghost does for every pose but a run, must reach
+   * it from every pose, or its drift freezes on any pose whose chain runs out.
    */
   it.each(Object.keys(CLIP_PREFERENCES) as (keyof typeof CLIP_PREFERENCES)[])('pose %s reaches Flying_Idle for a ghost-like model', (pose) => {
     expect(resolveClipName(pose, ['Flying_Idle'])).toBe('Flying_Idle');
+  });
+
+  it('runs the Ghost on its fast flight, as the registry expects of it', () => {
+    const clips = modelForCharacter(bundledModelRegistry(), 'ghost')?.expectedClips ?? [];
+    expect(resolveClipName('running', clips)).toBe('Fast_Flying');
   });
 
   it('resolves nothing when the model has no usable clip', () => {
@@ -65,7 +77,7 @@ describe('clip preference chains', () => {
 });
 
 describe('one-shot clips', () => {
-  /** What the player's model and the Ghost carry, as the registry expects of each. */
+  /** The one-shot clips the player's model and the Ghost carry, as the registry expects of each, beside some of their looping clips. */
   const DREAMER = ['Idle', 'Walking_A', 'Death_A', 'Hit_A', 'Melee_1H_Attack_Slice_Horizontal'];
   const GHOST = ['Flying_Idle', 'Death', 'HitReact', 'Punch'];
 

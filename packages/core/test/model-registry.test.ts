@@ -12,6 +12,7 @@ import {
   modelForObjectId,
   objectModel,
   parseModelRegistry,
+  trophyModelStem,
 } from '../src/modelRegistry.ts';
 import { BASE_ITEMS } from '../src/items.ts';
 import { MONSTER_KINDS } from '../src/monsterKinds.ts';
@@ -43,6 +44,9 @@ describe('the committed registry parses', () => {
     expect(modelForCharacter(registry, 'merchant')?.stem).toBe('Merchant');
     expect(modelForCharacter(registry, 'fighter-master')?.stem).toBe('FighterMaster');
     expect(modelForCharacter(registry, 'ghost')?.stem).toBe('Ghost');
+    expect(modelForCharacter(registry, 'wolf')?.stem).toBe('ForestWolf');
+    expect(modelForCharacter(registry, 'boar')?.stem).toBe('ForestBoar');
+    expect(modelForCharacter(registry, 'bogey')?.stem).toBe('ForestBogey');
     expect(modelForCharacter(registry, 'skeleton-warrior')?.stem).toBe('SkeletonWarrior');
     expect(modelForCharacter(registry, 'skeleton-minion')?.stem).toBe('SkeletonMinion');
     expect(modelForCharacter(registry, 'necromancer')?.stem).toBe('Necromancer');
@@ -97,6 +101,18 @@ describe('the committed registry parses', () => {
     expect(groundModelStem(registry, 'cap')).toBe('GroundCap');
   });
 
+  /** A trophy with no ground model draws its name alone. */
+  it("lays each of the Graveyard's and the meadows' trophies as its own ground model", () => {
+    expect(registry.trophyModels).toEqual([
+      { id: 'ghost', stem: 'GroundGhostlyWisp' },
+      { id: 'skeleton-minion', stem: 'GroundOldBone' },
+      { id: 'skeleton-warrior', stem: 'GroundCrackedSkull' },
+      { id: 'necromancer', stem: 'GroundNecromancerSigil' },
+    ]);
+    expect(trophyModelStem(registry, 'skeleton-warrior')).toBe('GroundCrackedSkull');
+    expect(trophyModelStem(registry, 'wolf')).toBeUndefined();
+  });
+
   it('lists every model once, character models before object models', () => {
     const stems = allModelEntries(registry).map((entry) => entry.stem);
     expect(new Set(stems).size).toBe(stems.length);
@@ -106,9 +122,9 @@ describe('the committed registry parses', () => {
     const lastCharacterIndex = Math.max(...registry.characterModels.map((rule) => stems.indexOf(rule.model.stem)));
     const firstPropIndex = Math.min(...registry.objectModels.map((rule) => stems.indexOf(rule.model.stem)));
     expect(lastCharacterIndex).toBeLessThan(firstPropIndex);
-    // Hand and ground models are loaded with the rest, expecting no clip.
-    const itemModels = [...registry.handModels, ...registry.groundModels];
-    expect(allModelEntries(registry).slice(-itemModels.length)).toEqual(itemModels.map(({ stem }) => ({ stem, expectedClips: [] })));
+    // Hand, ground, and trophy models are loaded with the rest, in that order, expecting no clip.
+    const staticModels = [...registry.handModels, ...registry.groundModels, ...registry.trophyModels];
+    expect(allModelEntries(registry).slice(-staticModels.length)).toEqual(staticModels.map(({ stem }) => ({ stem, expectedClips: [] })));
   });
 
   it('gives every prop an empty clip contract and every character a non-empty one', () => {
@@ -164,6 +180,7 @@ describe('structural invariants the JSON shape cannot express', () => {
     playerModel: 'hero',
     handModels: [{ id: 'sword', stem: 'HandSword' }],
     groundModels: [{ id: 'sword', stem: 'GroundSword' }],
+    trophyModels: [{ id: 'ghost', stem: 'GroundGhostlyWisp' }],
     objectModels: [
       {
         id: 'house',
@@ -204,6 +221,11 @@ describe('structural invariants the JSON shape cannot express', () => {
     ['a hand model without a stem', (registry: typeof valid) => (registry.handModels[0]!.stem = ''), /handModels\[0\]\.stem: expected a non-empty string/],
     ['a duplicate hand model', (registry: typeof valid) => registry.handModels.push(registry.handModels[0]!), /duplicate id "sword"/],
     ['a ground model of no item', (registry: typeof valid) => (registry.groundModels[0]!.id = 'halberd'), /groundModels\[0\]\.id: no item "halberd"/],
+    [
+      'a trophy model of no nightmare kind',
+      (registry: typeof valid) => (registry.trophyModels[0]!.id = 'dragon'),
+      /trophyModels\[0\]\.id: no nightmare kind "dragon"/,
+    ],
     ['a footprint without extent', (registry: typeof valid) => (registry.objectModels[0]!.footprint.depth = 0), /footprint\.depth: expected a positive number/],
     [
       'a collider without extent',
@@ -235,8 +257,12 @@ describe('structural invariants the JSON shape cannot express', () => {
     expect(parseModelRegistry(bare).objectModels[0]).toMatchObject({ walkSurfaces: [], doors: [] });
   });
 
-  it('reads absent hand and ground models as none', () => {
-    expect(parseModelRegistry({ ...valid, handModels: undefined, groundModels: undefined })).toMatchObject({ handModels: [], groundModels: [] });
+  it('reads absent hand, ground, and trophy models as none', () => {
+    expect(parseModelRegistry({ ...valid, handModels: undefined, groundModels: undefined, trophyModels: undefined })).toMatchObject({
+      handModels: [],
+      groundModels: [],
+      trophyModels: [],
+    });
   });
 
   it('rejects a non-object root', () => {

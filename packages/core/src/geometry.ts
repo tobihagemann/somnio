@@ -79,6 +79,13 @@ export function rectsOverlap(a: Rect, b: Rect): boolean {
   );
 }
 
+/** How far apart two rects lie: 0 where they touch or overlap. */
+export function rectDistance(a: Rect, b: Rect): number {
+  const dx = Math.max(0, a.x - (b.x + b.width), b.x - (a.x + a.width));
+  const dz = Math.max(0, a.z - (b.z + b.depth), b.z - (a.z + a.depth));
+  return Math.hypot(dx, dz);
+}
+
 /**
  * A model-space point (the model's +X east and +Z south at yaw 0) in the space the transform
  * stands in. Together with `worldToModel` this is the one definition of a placement's yaw: a

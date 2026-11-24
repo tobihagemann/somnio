@@ -349,7 +349,8 @@ describe('overlays', () => {
     expect(about?.querySelector('.overlay-title--large')?.textContent).toBe('Somnio');
     expect([...(about?.querySelectorAll('.about-credits p') ?? [])].map((node) => node.textContent)).toEqual([
       '3D characters and props by KayKit.',
-      'Ghost model by Quaternius.',
+      "Ghost model, and the Wolf's rig and base motion, by Quaternius.",
+      'Boar model based on one by Teh_Bucket.',
       'UI borders by Kenney.',
     ]);
   });

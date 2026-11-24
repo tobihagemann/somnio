@@ -3,13 +3,16 @@ import { rectsOverlap } from './geometry.ts';
 import type { Rect, Size } from './geometry.ts';
 import { isBaseItemId } from './items.ts';
 import type { BaseItemId } from './items.ts';
+import { isMonsterKindId } from './monsterKinds.ts';
+import type { MonsterKindId } from './monsterKinds.ts';
 
 /**
  * The model registry: character model ids to character model stems (each with its clip-presence
  * contract), the items a dreamer holds to the stems drawn in their hands, the items that can drop
- * to the stems drawn lying on the ground, and semantic object ids to prop stems with their
- * collision geometry. It references only filename stems, so one file describes the pack for the
- * browser, the editor, the server's collision, and the asset pipeline's gates.
+ * and the trophies nightmares leave to the stems drawn lying on the ground, and semantic object ids
+ * to prop stems with their collision geometry. It references only filename stems, so one file
+ * describes the pack for the browser, the editor, the server's collision, and the asset pipeline's
+ * gates.
  *
  * Object geometry is in model space: metres, the model's origin at its ground-footprint centre,
  * +X east and +Z south at yaw 0.
@@ -71,6 +74,12 @@ export interface ItemModelRule {
   stem: string;
 }
 
+/** The static model the trophy of the nightmare kind `id` lies on the ground as. */
+export interface TrophyModelRule {
+  id: MonsterKindId;
+  stem: string;
+}
+
 export interface ModelRegistry {
   characterModels: CharacterModelRule[];
   /** The character model every player uses. */
@@ -79,6 +88,8 @@ export interface ModelRegistry {
   handModels: ItemModelRule[];
   /** What a drop of an item draws: a model lying on the ground, its ground bounds centred on the origin, at the size a dreamer holds or wears it. */
   groundModels: ItemModelRule[];
+  /** What a trophy draws, lying on the ground as a drop of an item does. */
+  trophyModels: TrophyModelRule[];
   objectModels: ObjectModelRule[];
 }
 
@@ -88,14 +99,16 @@ export const PLACEHOLDER_REGISTRY: ModelRegistry = {
   playerModel: '',
   handModels: [],
   groundModels: [],
+  trophyModels: [],
   objectModels: [],
 };
 
 /**
  * Validates the structural invariants the JSON shape cannot express: non-empty stems and ids, no
  * duplicate ids, characters expecting at least one clip, a player model that is a character
- * model, hand and ground models of known items, positive sizes, cardinal door facings, walk
- * surfaces of one model that do not overlap, and lights of a known kind not below the ground.
+ * model, hand and ground models of known items, trophy models of known nightmare kinds, positive
+ * sizes, cardinal door facings, walk surfaces of one model that do not overlap, and lights of a
+ * known kind not below the ground.
  */
 export function parseModelRegistry(raw: unknown): ModelRegistry {
   const root = requireRecord(raw, 'registry');
@@ -121,8 +134,9 @@ export function parseModelRegistry(raw: unknown): ModelRegistry {
     throw new ModelRegistryError(`registry.playerModel: no character model "${playerModel}"`);
   }
 
-  const handModels = parseItemModels(root['handModels'], 'registry.handModels');
-  const groundModels = parseItemModels(root['groundModels'], 'registry.groundModels');
+  const handModels = parseStemRules(root['handModels'], 'registry.handModels', isBaseItemId, 'item');
+  const groundModels = parseStemRules(root['groundModels'], 'registry.groundModels', isBaseItemId, 'item');
+  const trophyModels = parseStemRules(root['trophyModels'], 'registry.trophyModels', isMonsterKindId, 'nightmare kind');
 
   const objectModels = requireArray(root['objectModels'], 'registry.objectModels').map((element, index) => {
     const path = `registry.objectModels[${index}]`;
@@ -146,7 +160,7 @@ export function parseModelRegistry(raw: unknown): ModelRegistry {
     'registry.objectModels',
   );
 
-  return { characterModels, playerModel, handModels, groundModels, objectModels };
+  return { characterModels, playerModel, handModels, groundModels, trophyModels, objectModels };
 }
 
 export function modelForCharacter(registry: ModelRegistry, id: string): ModelEntry | undefined {
@@ -163,6 +177,11 @@ export function groundModelStem(registry: ModelRegistry, baseId: string): string
   return registry.groundModels.find((rule) => rule.id === baseId)?.stem;
 }
 
+/** The stem the trophy of `monsterKind` lies on the ground as, or `undefined` for a kind whose trophy has no model. */
+export function trophyModelStem(registry: ModelRegistry, monsterKind: string): string | undefined {
+  return registry.trophyModels.find((rule) => rule.id === monsterKind)?.stem;
+}
+
 export function objectModel(registry: ModelRegistry, id: string): ObjectModelRule | undefined {
   return registry.objectModels.find((rule) => rule.id === id);
 }
@@ -171,12 +190,12 @@ export function modelForObjectId(registry: ModelRegistry, id: string): ModelEntr
   return objectModel(registry, id)?.model;
 }
 
-/** Every entry, character models first and the item models last, dropping duplicate stems. An item model expects no clip. */
+/** Every entry, character models first, then object models, then hand, ground, and trophy models, dropping duplicate stems. A hand, ground, or trophy model expects no clip. */
 export function allModelEntries(registry: ModelRegistry): ModelEntry[] {
   const entries = [
     ...registry.characterModels.map((rule) => rule.model),
     ...registry.objectModels.map((rule) => rule.model),
-    ...[...registry.handModels, ...registry.groundModels].map((rule) => ({ stem: rule.stem, expectedClips: [] })),
+    ...[...registry.handModels, ...registry.groundModels, ...registry.trophyModels].map((rule) => ({ stem: rule.stem, expectedClips: [] })),
   ];
   const seen = new Set<string>();
   const unique: typeof entries = [];
@@ -231,14 +250,14 @@ function parseWalkSurfaces(raw: unknown, path: string): WalkSurface[] {
   return surfaces;
 }
 
-/** Absent, no item shows there. */
-function parseItemModels(raw: unknown, path: string): ItemModelRule[] {
+/** A table of static models by known id. Absent, nothing shows there. */
+function parseStemRules<Id extends string>(raw: unknown, path: string, isKnown: (id: string) => id is Id, noun: string): { id: Id; stem: string }[] {
   if (raw === undefined) return [];
   const rules = requireArray(raw, path).map((element, index) => {
     const rulePath = `${path}[${index}]`;
     const record = requireRecord(element, rulePath);
     const id = requireNonEmptyString(record['id'], `${rulePath}.id`);
-    if (!isBaseItemId(id)) throw new ModelRegistryError(`${rulePath}.id: no item "${id}"`);
+    if (!isKnown(id)) throw new ModelRegistryError(`${rulePath}.id: no ${noun} "${id}"`);
     return { id, stem: requireNonEmptyString(record['stem'], `${rulePath}.stem`) };
   });
   requireUniqueIds(

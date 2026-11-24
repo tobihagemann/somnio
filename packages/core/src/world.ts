@@ -2,7 +2,7 @@ import type { Door, SectorView } from '@somnio/protocol';
 import { buildSpaceCollision, canStand, npcBodies } from './collision.ts';
 import { reachDistance } from './combat.ts';
 import { SOMNIO_CONSTANTS } from './constants.ts';
-import { EDGE_TOLERANCE, distance, distanceToRect, modelToWorld, rectContains, rectsOverlap, worldToModel } from './geometry.ts';
+import { EDGE_TOLERANCE, distance, distanceToRect, modelToWorld, rectContains, rectDistance, rectsOverlap, worldToModel } from './geometry.ts';
 import type { Point, Rect, Transform } from './geometry.ts';
 import { SECTOR_BORDER_SUPPORT_METRES, paddedRasterRect } from './ground.ts';
 import { heading, headingRadians } from './heading.ts';
@@ -197,12 +197,6 @@ function spacingIssues(outdoor: Sector[]): WorldIssue[] {
     }
   }
   return issues;
-}
-
-function rectDistance(a: Rect, b: Rect): number {
-  const dx = Math.max(0, a.x - (b.x + b.width), b.x - (a.x + a.width));
-  const dz = Math.max(0, a.z - (b.z + b.depth), b.z - (a.z + a.depth));
-  return Math.hypot(dx, dz);
 }
 
 /** The sector whose ground holds the point, in the space's coordinates. */

@@ -4,8 +4,8 @@
  * it on screen in its rarity's colour, through the world, since nothing has to be pressed to read it.
  * The name stands clear of the model, and below the feet of a body standing on the drop, so a press
  * on it reaches a drop under a body. A rare drop raises a beam of light in its gold, and a magic or a
- * rare one glows on the ground under its model. A drop whose model is not loaded, or that has none,
- * draws its name alone until the model comes.
+ * rare one glows on the ground under its model. A trophy lies as its kind's model the same way. A
+ * drop draws its name alone while its model is not loaded, and for good when it has none.
  *
  * A drop shown as it falls is thrown there, as Diablo pops its loot: released from where it was
  * thrown from, it flies in an arc, turning over, and only as it lands shows its name and its light,
@@ -33,7 +33,7 @@
  * ends, which frees it for a drop waiting. Under reduced motion, and in a stalled tab, it goes at once.
  */
 import * as THREE from 'three';
-import type { Rarity } from '@somnio/protocol';
+import type { LootContentsMessage, Rarity } from '@somnio/protocol';
 import { hashString } from '@somnio/core';
 import { GROUND_RING_LIFT } from './combatEffects';
 import { fadeOut } from './fadeOut';
@@ -99,13 +99,12 @@ const BOUNCE_SECONDS = 0.16;
 const SAME_PIECE_METRES = 1e-4;
 const UNIT_SCALE = new THREE.Vector3(1, 1, 1);
 
-/** A drop as the scene draws it: where it lies, at the height a body there stands at, the base of the item it is, none for a trophy, its name, and its rarity. */
+/** A drop as the scene draws it: where it lies, at the height a body there stands at, the item or trophy it is, and its name. */
 export interface ShownLoot {
   lootId: string;
   at: { x: number; z: number; height: number };
-  baseId: string | undefined;
+  contents: LootContentsMessage;
   name: string;
-  rarity: Rarity;
 }
 
 /**
@@ -172,8 +171,8 @@ export class LootMarkers {
   private readonly orientation: THREE.Quaternion;
   /** Up the screen, in the world: the way a name stands under its model. */
   private readonly screenUp: THREE.Vector3;
-  /** A clone of the model an item of the base lies on the ground as, or `undefined` while there is none. */
-  private readonly groundModel: (baseId: string) => THREE.Object3D | undefined;
+  /** A clone of the model a drop of the contents lies on the ground as, or `undefined` while there is none. */
+  private readonly groundModel: (contents: LootContentsMessage) => THREE.Object3D | undefined;
   private readonly reducedMotion: boolean;
   /** Turns a beam about the vertical to face the camera, which looks from one fixed yaw. */
   private readonly beamYaw: number;
@@ -197,7 +196,7 @@ export class LootMarkers {
   /** `orientation` turns a plane to face the camera, as the plaques are turned. */
   constructor(
     orientation: THREE.Quaternion,
-    groundModel: (baseId: string) => THREE.Object3D | undefined,
+    groundModel: (contents: LootContentsMessage) => THREE.Object3D | undefined,
     viewpoint: () => { x: number; z: number } | undefined,
     reducedMotion: boolean,
   ) {
@@ -285,12 +284,13 @@ export class LootMarkers {
   }
 
   /**
-   * The drops on the ground, each with its base and its model: lying where they landed or hopping
-   * as they land; none drawn without one, and none in the air.
+   * The drops on the ground, lying where they landed or hopping as they land, each with its model
+   * and a key for what the model is, one per base or trophy kind. A drop without a model, or one in
+   * the air, is left out.
    */
-  lying(): { baseId: string; model: THREE.Object3D }[] {
+  lying(): { key: string; model: THREE.Object3D }[] {
     return this.markers.flatMap(({ loot, model, flight }) =>
-      loot?.baseId === undefined || model === undefined || (flight !== undefined && !this.touchedDown(flight)) ? [] : [{ baseId: loot.baseId, model }],
+      loot === undefined || model === undefined || (flight !== undefined && !this.touchedDown(flight)) ? [] : [{ key: modelKey(loot.contents), model }],
     );
   }
 
@@ -430,8 +430,9 @@ export class LootMarkers {
     marker.holder.rotation.y = lootYaw(loot.lootId);
     this.layModel(marker, loot);
     this.showLanded(marker);
-    if (loot.rarity !== 'plain') marker.glow.material = this.glowMaterials[loot.rarity];
-    const art = renderNamePlaque(loot.name, LOOT_LABEL_BACKGROUND, true, cssColor(RARITY_COLORS[loot.rarity]));
+    const rarity = rarityOf(loot.contents);
+    if (rarity !== 'plain') marker.glow.material = this.glowMaterials[rarity];
+    const art = renderNamePlaque(loot.name, LOOT_LABEL_BACKGROUND, true, cssColor(RARITY_COLORS[rarity]));
     const texture = new THREE.CanvasTexture(art.canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
     marker.plate.material.map?.dispose();
@@ -519,9 +520,10 @@ export class LootMarkers {
    */
   private tossOver(marker: Marker, prop: THREE.Object3D): { position: THREE.Vector3; quaternion: THREE.Quaternion; scale: THREE.Vector3 } | undefined {
     const { model, loot } = marker;
-    if (model === undefined || loot?.baseId === undefined || prop.parent === null) return undefined;
-    if (!this.laidDown.has(loot.baseId)) this.laidDown.set(loot.baseId, laidDown(prop, model));
-    const fromHand = this.laidDown.get(loot.baseId);
+    if (model === undefined || loot?.contents.kind !== 'item' || prop.parent === null) return undefined;
+    const { baseId } = loot.contents;
+    if (!this.laidDown.has(baseId)) this.laidDown.set(baseId, laidDown(prop, model));
+    const fromHand = this.laidDown.get(baseId);
     if (fromHand === undefined) return undefined;
     prop.updateWorldMatrix(true, false);
     marker.root.updateWorldMatrix(true, false);
@@ -548,7 +550,7 @@ export class LootMarkers {
 
   /** Shows the drop's name, and the glow and the beam its rarity raises. */
   private showLanded(marker: Marker): void {
-    const rarity = marker.loot?.rarity ?? 'plain';
+    const rarity = marker.loot === undefined ? 'plain' : rarityOf(marker.loot.contents);
     marker.label.visible = true;
     marker.glow.visible = rarity !== 'plain';
     marker.beam.visible = rarity === 'rare';
@@ -568,7 +570,7 @@ export class LootMarkers {
    */
   private layModel(marker: Marker, loot: ShownLoot): void {
     marker.model?.removeFromParent();
-    marker.model = loot.baseId === undefined ? undefined : this.groundModel(loot.baseId);
+    marker.model = this.groundModel(loot.contents);
     if (marker.model !== undefined) {
       marker.holder.add(marker.model);
       // Measured where it lies, not where a flight has it; the next tick poses the flight again.
@@ -611,6 +613,15 @@ function settle(toss: THREE.Object3D): void {
   toss.position.set(0, 0, 0);
   toss.quaternion.identity();
   toss.scale.set(1, 1, 1);
+}
+
+/** An item's rarity; a trophy is plain. */
+function rarityOf(contents: LootContentsMessage): Rarity {
+  return contents.kind === 'item' ? contents.rarity : 'plain';
+}
+
+function modelKey(contents: LootContentsMessage): string {
+  return contents.kind === 'item' ? `item:${contents.baseId}` : `trophy:${contents.monsterKind}`;
 }
 
 /**

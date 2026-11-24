@@ -11,6 +11,7 @@ import {
   reachDistance,
   rectContains,
   sectorPointInSpace,
+  sectorRect,
   spawnArea,
 } from '@somnio/core';
 import type { DialogStep, Point, QuestLog, Sector } from '@somnio/core';
@@ -521,7 +522,9 @@ describe('monster spawn cadence', () => {
       clock.ms = pass * monsterKind('skeleton-warrior').respawnSeconds * 1000;
       space.step(0);
     }
-    const seen = await monstersSeen(attachPlayer(space, sectorPointInSpace(graveyard, { x: 36, z: 20.4 }), 'watcher').outbox);
+    const seen = (await monstersSeen(attachPlayer(space, sectorPointInSpace(graveyard, { x: 36, z: 20.4 }), 'watcher').outbox)).filter((monster) =>
+      rectContains(sectorRect(graveyard), monster),
+    );
     const names = Object.fromEntries(graveyard.monsterSpawns.map((spawn) => [monsterKind(spawn.kind).name, spawn]));
     expect(seen.map((monster) => monster.name).toSorted()).toEqual(['Skeleton', 'Skeleton', 'Skeleton', 'Skeleton', 'Skeleton Warrior', 'Skeleton Warrior']);
     const graves = graveyard.placements.filter((placement) => placement.modelId.startsWith('grave')).map((grave) => sectorPointInSpace(graveyard, grave));
@@ -549,7 +552,8 @@ describe('monster aggro and chase', () => {
   const AFAR: Point = { x: 1, z: 19 };
   const FALLEN = { character: { energy: energy({ healthCurrent: 0 }) } };
   const REACH = reachDistance(monsterKind('ghost').radius);
-  const STRIDE = monsterKind('ghost').metresPerSecond * 0.05;
+  const STRIDE = monsterKind('ghost').chaseMetresPerSecond * 0.05;
+  const STROLL_STRIDE = monsterKind('ghost').strollMetresPerSecond * 0.05;
   const WEST = headingFromVector(-1, 0);
   /** A Fighter whose Cleave lands a share of a cudgel swing, little enough to leave a Ghost standing. */
   const CLEAVER = { character: { lucidity: lucidity('fighter', { strike: 1, cleave: 1 }) }, inventory: wearing(CUDGEL) };
@@ -654,12 +658,12 @@ describe('monster aggro and chase', () => {
     return payloads(await collectMessages(fighter.outbox), 'blow');
   }
 
-  it('moves toward an in-radius player at its speed, facing them', async () => {
+  it('runs toward an in-radius player at its chase speed, facing them', async () => {
     const { space } = withMonster();
     const alice = attachPlayer(space, { x: 12, z: 12 }, 'alice');
     space.step(0.05);
     const [frame] = await monsterMoves(space, alice.outbox);
-    expect(frame).toMatchObject({ id: GHOST, facing: headingFromVector(2, 2) });
+    expect(frame).toMatchObject({ id: GHOST, facing: headingFromVector(2, 2), gait: 'run' });
     expect(frame!.x).toBeCloseTo(10 + STRIDE / Math.SQRT2, 9);
     expect(frame!.z).toBeCloseTo(10 + STRIDE / Math.SQRT2, 9);
   });
@@ -694,12 +698,12 @@ describe('monster aggro and chase', () => {
     expect(chasing.x).toBeCloseTo(10 + 11 * STRIDE, 9);
   });
 
-  it('attaching after a chase delivers the post-step monster facing in the entity frame', async () => {
+  it('attaching after a chase delivers the post-step monster facing and gait in the entity frame', async () => {
     const { space } = withMonster();
     attachPlayer(space, { x: 8, z: 8 }, 'alice');
     space.step(0.05);
     const bob = attachPlayer(space, { x: 2, z: 2 }, 'bob');
-    expect((await monstersSeen(bob.outbox))[0]?.facing).toBe(headingFromVector(-2, -2));
+    expect((await monstersSeen(bob.outbox))[0]).toMatchObject({ facing: headingFromVector(-2, -2), gait: 'run' });
   });
 
   it.each([true, false])('targets the nearest in-radius player regardless of attach order (closer first: %s)', async (closerFirst) => {
@@ -824,6 +828,16 @@ describe('monster aggro and chase', () => {
     // It was home about 2.2 s after giving up, and may wander 6 to 15 s after that.
     expect(movesIn(await sentOver(space, steps, 100))).toEqual([]);
     expect(movesIn(await sentOver(space, steps, 200))).not.toEqual([]);
+  });
+
+  it('runs home after giving up, its last step home included as it rests there', async () => {
+    const { space, steps, giveUp } = await chasedOut();
+    giveUp();
+    const homeward = movesIn(await sentOver(space, steps, 60));
+    expect(homeward.length).toBeGreaterThan(1);
+    expect(new Set(homeward.map((move) => move.gait))).toEqual(new Set(['run']));
+    expect(homeward.at(-1)!.x).toBeCloseTo(HOME.x, 9);
+    expect(homeward.at(-1)!.z).toBeCloseTo(HOME.z, 9);
   });
 
   it('notices no one on its way home after giving up, and chases a dreamer within its notice once it is home and whole', async () => {
@@ -1144,7 +1158,7 @@ describe('monster aggro and chase', () => {
     const { space, steps } = withMonster({}, 0);
     const alice = attachPlayer(space, { x: 10.7, z: 10 }, 'alice');
     steps(1);
-    expect(await monsterMoves(space, alice.outbox)).toEqual([{ id: GHOST, x: 10, z: 10, facing: headingFromCardinal('east'), gait: 'jog' }]);
+    expect(await monsterMoves(space, alice.outbox)).toEqual([{ id: GHOST, x: 10, z: 10, facing: headingFromCardinal('east'), gait: 'walk' }]);
   });
 
   it('leaves the space once a wall it chased round has kept it from home for 10 s, and its spawn fills again after the respawn time', () => {
@@ -1304,7 +1318,7 @@ describe('monster aggro and chase', () => {
   });
 
   describe('wandering', () => {
-    it('stands still while no dreamer sees its sector, and wanders its area at half its speed once one does', async () => {
+    it('stands still while no dreamer sees its sector, and walks its area at its stroll speed once one does', async () => {
       const sectors = makeSectorLine({ west: { monsterSpawns: [makeMonsterGround(HOME, 4)] } });
       const { clock, space } = makeClockedSpace(makeWorld(sectors), OUTDOOR_SPACE_ID, { random: landsAtCentre(4), wanderRandom: seededRandom(1) });
       clock.ms = RESPAWN_MS;
@@ -1322,7 +1336,8 @@ describe('monster aggro and chase', () => {
       expect(path.length).toBeGreaterThan(1);
       for (const point of path) expect(inArea(point)).toBe(true);
       const strides = path.slice(1).map((point, index) => distance(point, path[index]!));
-      expect(Math.max(...strides)).toBeCloseTo(STRIDE / 2, 9);
+      expect(Math.max(...strides)).toBeCloseTo(STROLL_STRIDE, 9);
+      expect(new Set(movesIn(watcher.sent).map((move) => move.gait))).toEqual(new Set(['walk']));
     });
 
     it('ends a wander the step the last dreamer who sees its sector leaves', async () => {
@@ -1394,6 +1409,16 @@ describe('monster aggro and chase', () => {
       }
       expect(Object.fromEntries(firstMoves)).toEqual({ [C]: 1, [B]: 21, [A]: 41 });
       expect(firstMoves.has(D)).toBe(false);
+    });
+
+    it('runs to follow the one it is aware of', () => {
+      const { space, steps, watcher } = pack();
+      attachPlayer(space, PULL_AT, 'alice');
+      // B follows C from 1 s, and would notice her itself at 2.5 s.
+      steps(45);
+      const following = entityMoves(watcher).filter((move) => move.id === B);
+      expect(following.length).toBeGreaterThan(1);
+      expect(new Set(following.map((move) => move.gait))).toEqual(new Set(['run']));
     });
 
     it('sends those it stirred back home without evading once the one they follow is driven off before they notice anyone', async () => {

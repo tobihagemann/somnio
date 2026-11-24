@@ -647,9 +647,13 @@
     "en": "Gear",
     "de": "Ausrüstung"
   },
-  "Ghost model by Quaternius.": {
-    "en": "Ghost model by Quaternius.",
-    "de": "Geist-Modell von Quaternius."
+  "Ghost model, and the Wolf's rig and base motion, by Quaternius.": {
+    "en": "Ghost model, and the Wolf's rig and base motion, by Quaternius.",
+    "de": "Gespenst-Modell sowie Rig und Grundbewegungen des Wolfs von Quaternius."
+  },
+  "Boar model based on one by Teh_Bucket.": {
+    "en": "Boar model based on one by Teh_Bucket.",
+    "de": "Keiler-Modell nach einer Vorlage von Teh_Bucket."
   },
   "Give up": {
     "en": "Give up",

@@ -387,6 +387,9 @@ export function collectsTrophy(log: QuestLog, monsterKind: MonsterKindId): boole
 /** The catalog key of the trophy each nightmare kind leaves for a dreamer who collects it. It never enters the bag. */
 export const TROPHIES: Record<MonsterKindId, string> = {
   ghost: 'Ghostly wisp',
+  wolf: "Wolf's fang",
+  boar: "Boar's tusk",
+  bogey: "Bogey's knot",
   'skeleton-minion': 'Old bone',
   'skeleton-warrior': 'Cracked skull',
   necromancer: "Necromancer's sigil",

@@ -148,7 +148,7 @@ const ODO = 'splash:odo';
 const PUGNAX = 'npc:EdariaFighterHall/pugnax';
 const LIBUS = 'npc:EdariaLibrary/libus';
 const QUIETA = 'npc:EdariaInn/quieta';
-const GHOST = 'monster:splash-1';
+const WOLF = 'monster:splash-1';
 const NORTH_WOOD_SPAWN = { sector: 'NorthWood', id: 'spawn-1' };
 
 /** The reel in the order it plays. Every scripted path is a straight run between points the reel test proves legal. */
@@ -258,11 +258,11 @@ export const SPLASH_REEL: readonly SplashShot[] = [
     space: OUTDOOR_SPACE_ID,
     seconds: 6,
     hour: 13,
-    camera: { kind: 'subject', subject: GHOST, side: 'right', drop: -0.2, scale: { from: 5, to: 5 }, span: 1.25 },
+    camera: { kind: 'subject', subject: WOLF, side: 'right', drop: -0.2, scale: { from: 5, to: 5 }, span: 1.25 },
     actors: [
       {
         kind: 'monster',
-        id: GHOST,
+        id: WOLF,
         spawn: NORTH_WOOD_SPAWN,
         at: { x: 24, z: -52.5 },
         facing: 60,
@@ -282,26 +282,26 @@ export const SPLASH_REEL: readonly SplashShot[] = [
     hour: 13,
     camera: { kind: 'subject', subject: AUREL, side: 'right', drop: -0.2, scale: { from: 5.2, to: 5 }, span: 1.75 },
     actors: [
-      { kind: 'peer', id: AUREL, name: 'Aurel', at: { x: 25, z: -48.1 }, facing: 35, gait: 'jog', path: [], faces: GHOST },
-      { kind: 'carried', id: GHOST, path: [], faces: AUREL },
+      { kind: 'peer', id: AUREL, name: 'Aurel', at: { x: 25, z: -48.1 }, facing: 35, gait: 'jog', path: [], faces: WOLF },
+      { kind: 'carried', id: WOLF, path: [], faces: AUREL },
     ],
     beats: [
-      { at: 0.5, kind: 'blow', attacker: GHOST, target: AUREL, hit: true },
+      { at: 0.5, kind: 'blow', attacker: WOLF, target: AUREL, hit: true },
       { at: 0.5, kind: 'condition', id: AUREL, condition: 'grazed' },
-      { at: 0.8, kind: 'blow', attacker: AUREL, target: GHOST, hit: false },
-      { at: 1.8, kind: 'blow', attacker: AUREL, target: GHOST, hit: true },
-      { at: 1.8, kind: 'condition', id: GHOST, condition: 'grazed' },
-      { at: 2, kind: 'blow', attacker: GHOST, target: AUREL, hit: true },
+      { at: 0.8, kind: 'blow', attacker: AUREL, target: WOLF, hit: false },
+      { at: 1.8, kind: 'blow', attacker: AUREL, target: WOLF, hit: true },
+      { at: 1.8, kind: 'condition', id: WOLF, condition: 'grazed' },
+      { at: 2, kind: 'blow', attacker: WOLF, target: AUREL, hit: true },
       { at: 2, kind: 'condition', id: AUREL, condition: 'wounded' },
-      { at: 2.8, kind: 'blow', attacker: AUREL, target: GHOST, hit: false },
-      { at: 3.5, kind: 'blow', attacker: GHOST, target: AUREL, hit: true },
+      { at: 2.8, kind: 'blow', attacker: AUREL, target: WOLF, hit: false },
+      { at: 3.5, kind: 'blow', attacker: WOLF, target: AUREL, hit: true },
       { at: 3.5, kind: 'condition', id: AUREL, condition: 'hurt' },
-      { at: 3.8, kind: 'blow', attacker: AUREL, target: GHOST, hit: true },
-      { at: 4.8, kind: 'blow', attacker: AUREL, target: GHOST, hit: false },
-      { at: 5, kind: 'blow', attacker: GHOST, target: AUREL, hit: true },
+      { at: 3.8, kind: 'blow', attacker: AUREL, target: WOLF, hit: true },
+      { at: 4.8, kind: 'blow', attacker: AUREL, target: WOLF, hit: false },
+      { at: 5, kind: 'blow', attacker: WOLF, target: AUREL, hit: true },
       { at: 5, kind: 'condition', id: AUREL, condition: 'failing' },
-      { at: 5.8, kind: 'blow', attacker: AUREL, target: GHOST, hit: true },
-      { at: 6.5, kind: 'blow', attacker: GHOST, target: AUREL, hit: true },
+      { at: 5.8, kind: 'blow', attacker: AUREL, target: WOLF, hit: true },
+      { at: 6.5, kind: 'blow', attacker: WOLF, target: AUREL, hit: true },
       { at: 6.5, kind: 'condition', id: AUREL, condition: 'fallen' },
     ],
   },
@@ -313,7 +313,7 @@ export const SPLASH_REEL: readonly SplashShot[] = [
     camera: { kind: 'subject', subject: AUREL, side: 'right', drop: -0.2, scale: { from: 5, to: 5 }, span: 1.75 },
     actors: [
       { kind: 'carried', id: AUREL, path: [] },
-      { kind: 'carried', id: GHOST, path: [{ x: 23.5, z: -50 }] },
+      { kind: 'carried', id: WOLF, path: [{ x: 23.5, z: -50 }] },
       { kind: 'peer', id: MIRA, name: 'Mira', at: { x: 22.5, z: -45 }, facing: 120, gait: 'jog', path: [{ x: 25.65, z: -48.13 }], faces: AUREL },
     ],
     beats: [
@@ -458,7 +458,7 @@ function stageActor(actor: SplashActor, shot: SplashShot, previous: StagedShot |
         characterModelId: kind.characterModelId,
         name: kind.name,
         radius: kind.radius,
-        metresPerSecond: kind.metresPerSecond,
+        metresPerSecond: kind.strollMetresPerSecond,
         gait: 'walk',
         start: actor.at,
         facing: actor.facing,

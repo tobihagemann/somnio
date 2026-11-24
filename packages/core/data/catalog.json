@@ -59,6 +59,22 @@
     "en": "Bind",
     "de": "Fesseln"
   },
+  "Boar": {
+    "en": "Boar",
+    "de": "Keiler"
+  },
+  "Boar's tusk": {
+    "en": "Boar's tusk",
+    "de": "Keilerhauer"
+  },
+  "Bogey": {
+    "en": "Bogey",
+    "de": "Waldschrat"
+  },
+  "Bogey's knot": {
+    "en": "Bogey's knot",
+    "de": "Schratknoten"
+  },
   "Bone dagger": {
     "en": "Bone dagger",
     "de": "Knochendolch"
@@ -119,6 +135,14 @@
     "en": "Dream-bolt",
     "de": "Traumgeschoss"
   },
+  "Drive off %@ Boars there.": {
+    "en": "Drive off %@ Boars there.",
+    "de": "Vertreibe dort %@ Keiler."
+  },
+  "Drive off %@ Bogeys there.": {
+    "en": "Drive off %@ Bogeys there.",
+    "de": "Vertreibe dort %@ Waldschrate."
+  },
   "Drive off %@ Ghosts there.": {
     "en": "Drive off %@ Ghosts there.",
     "de": "Vertreibe dort %@ Gespenster."
@@ -130,6 +154,10 @@
   "Drive off %@ Skeletons there.": {
     "en": "Drive off %@ Skeletons there.",
     "de": "Vertreibe dort %@ Skelette."
+  },
+  "Drive off %@ Wolves there.": {
+    "en": "Drive off %@ Wolves there.",
+    "de": "Vertreibe dort %@ Wölfe."
   },
   "Drive off 3 nightmares.": {
     "en": "Drive off 3 nightmares.",
@@ -167,6 +195,14 @@
     "en": "Follow-through",
     "de": "Nachsetzen"
   },
+  "Gather %@ boar's tusks from Boars.": {
+    "en": "Gather %@ boar's tusks from Boars.",
+    "de": "Sammle %@ Keilerhauer von Keilern."
+  },
+  "Gather %@ bogey's knots from Bogeys.": {
+    "en": "Gather %@ bogey's knots from Bogeys.",
+    "de": "Sammle %@ Schratknoten von Waldschraten."
+  },
   "Gather %@ cracked skulls from Skeleton Warriors.": {
     "en": "Gather %@ cracked skulls from Skeleton Warriors.",
     "de": "Sammle %@ gesprungene Schädel von Skelettkriegern."
@@ -178,6 +214,10 @@
   "Gather %@ old bones from Skeletons.": {
     "en": "Gather %@ old bones from Skeletons.",
     "de": "Sammle %@ alte Knochen von Skeletten."
+  },
+  "Gather %@ wolf's fangs from Wolves.": {
+    "en": "Gather %@ wolf's fangs from Wolves.",
+    "de": "Sammle %@ Wolfszähne von Wölfen."
   },
   "Gather 3 cracked skulls from Skeleton Warriors.": {
     "en": "Gather 3 cracked skulls from Skeleton Warriors.",
@@ -307,6 +347,14 @@
     "en": "Sense the fallen",
     "de": "Gefallene spüren"
   },
+  "Shielded Boar": {
+    "en": "Shielded Boar",
+    "de": "Schildbewehrter Keiler"
+  },
+  "Shielded Bogey": {
+    "en": "Shielded Bogey",
+    "de": "Schildbewehrter Waldschrat"
+  },
   "Shielded Ghost": {
     "en": "Shielded Ghost",
     "de": "Schildbewehrtes Gespenst"
@@ -318,6 +366,10 @@
   "Shielded Skeleton Warrior": {
     "en": "Shielded Skeleton Warrior",
     "de": "Schildbewehrter Skelettkrieger"
+  },
+  "Shielded Wolf": {
+    "en": "Shielded Wolf",
+    "de": "Schildbewehrter Wolf"
   },
   "Short sword": {
     "en": "Short sword",
@@ -347,6 +399,14 @@
     "en": "Spirit deepening",
     "de": "Geistesstärke"
   },
+  "Stony Boar": {
+    "en": "Stony Boar",
+    "de": "Steinerner Keiler"
+  },
+  "Stony Bogey": {
+    "en": "Stony Bogey",
+    "de": "Steinerner Waldschrat"
+  },
   "Stony Ghost": {
     "en": "Stony Ghost",
     "de": "Steinernes Gespenst"
@@ -358,6 +418,10 @@
   "Stony Skeleton Warrior": {
     "en": "Stony Skeleton Warrior",
     "de": "Steinerner Skelettkrieger"
+  },
+  "Stony Wolf": {
+    "en": "Stony Wolf",
+    "de": "Steinerner Wolf"
   },
   "Strike": {
     "en": "Strike",
@@ -422,5 +486,13 @@
   "Weaken": {
     "en": "Weaken",
     "de": "Schwächen"
+  },
+  "Wolf": {
+    "en": "Wolf",
+    "de": "Wolf"
+  },
+  "Wolf's fang": {
+    "en": "Wolf's fang",
+    "de": "Wolfszahn"
   }
 }

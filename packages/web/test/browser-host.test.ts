@@ -18,6 +18,7 @@ function emptyAssets(): ModelAssets {
     character: () => undefined,
     hand: () => undefined,
     ground: () => undefined,
+    trophy: () => undefined,
     object: () => undefined,
     clipsFor: () => [],
     prototypeMeshes: () => undefined,

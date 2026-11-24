@@ -22,6 +22,7 @@ function assets(resolves: () => boolean): ModelAssets {
     character: () => (resolves() ? rig() : undefined),
     hand: (baseId) => Object.assign(new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.6, 0.1)), { name: baseId }),
     ground: () => undefined,
+    trophy: () => undefined,
     object: () => undefined,
     clipsFor: () => [],
     prototypeMeshes: () => undefined,

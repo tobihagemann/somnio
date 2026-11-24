@@ -61,7 +61,14 @@ describe("the board's day", () => {
 describe('the lands', () => {
   it('are the committed sectors keeping nightmares alive, outdoors and in, but not the boss chamber, with how many of each kind they keep', () => {
     expect(bountyLands(loadSectorFixtures())).toEqual([
-      { name: 'AutumnWood', kinds: [{ kind: 'ghost', alive: 6 }] },
+      {
+        name: 'AutumnWood',
+        kinds: [
+          { kind: 'boar', alive: 3 },
+          { kind: 'bogey', alive: 1 },
+          { kind: 'wolf', alive: 4 },
+        ],
+      },
       { name: 'EdariaArena', kinds: [{ kind: 'ghost', alive: 3 }] },
       {
         name: 'Graveyard',
@@ -77,7 +84,16 @@ describe('the lands', () => {
           { kind: 'skeleton-warrior', alive: 2 },
         ],
       },
-      { name: 'NorthWood', kinds: [{ kind: 'ghost', alive: 3 }] },
+      { name: 'NorthMeadow', kinds: [{ kind: 'ghost', alive: 3 }] },
+      {
+        name: 'NorthWood',
+        kinds: [
+          { kind: 'bogey', alive: 1 },
+          { kind: 'wolf', alive: 4 },
+        ],
+      },
+      { name: 'SouthMeadow', kinds: [{ kind: 'ghost', alive: 3 }] },
+      { name: 'WestMeadow', kinds: [{ kind: 'ghost', alive: 3 }] },
     ]);
   });
 

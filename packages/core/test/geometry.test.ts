@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { relativeDirection, speedMultiplier } from '../src/gait.ts';
-import { EDGE_TOLERANCE, clamp, distance, modelToWorld, rectContains, rectsOverlap, worldToModel } from '../src/geometry.ts';
+import { EDGE_TOLERANCE, clamp, distance, modelToWorld, rectContains, rectDistance, rectsOverlap, worldToModel } from '../src/geometry.ts';
 
 describe('rects', () => {
   const rect = { x: 2, z: 3, width: 4, depth: 5 };
@@ -18,6 +18,13 @@ describe('rects', () => {
     expect(rectsOverlap(rect, { x: 6 - EDGE_TOLERANCE / 2, z: 3, width: 4, depth: 5 })).toBe(false);
     expect(rectsOverlap(rect, { x: 5.9, z: 7.9, width: 4, depth: 5 })).toBe(true);
     expect(rectsOverlap(rect, { x: 5.9, z: 8, width: 4, depth: 5 })).toBe(false);
+  });
+
+  it('lie apart by the straight gap between their nearest edges, none where they touch or overlap', () => {
+    expect(rectDistance(rect, { x: 6, z: 3, width: 4, depth: 5 })).toBe(0);
+    expect(rectDistance(rect, { x: 5, z: 7, width: 4, depth: 5 })).toBe(0);
+    expect(rectDistance(rect, { x: 8, z: 3, width: 4, depth: 5 })).toBe(2);
+    expect(rectDistance(rect, { x: 9, z: 12, width: 1, depth: 1 })).toBe(5);
   });
 });
 

@@ -49,6 +49,9 @@ export type BountyKindId = Exclude<MonsterKindId, BossKindId>;
  */
 export const BOUNTY_KINDS: Record<BountyKindId, Record<BountyObjective, string>> = {
   ghost: { driveOff: 'Drive off %@ Ghosts there.', collect: 'Gather %@ ghostly wisps from Ghosts.' },
+  wolf: { driveOff: 'Drive off %@ Wolves there.', collect: "Gather %@ wolf's fangs from Wolves." },
+  boar: { driveOff: 'Drive off %@ Boars there.', collect: "Gather %@ boar's tusks from Boars." },
+  bogey: { driveOff: 'Drive off %@ Bogeys there.', collect: "Gather %@ bogey's knots from Bogeys." },
   'skeleton-minion': { driveOff: 'Drive off %@ Skeletons there.', collect: 'Gather %@ old bones from Skeletons.' },
   'skeleton-warrior': { driveOff: 'Drive off %@ Skeleton Warriors there.', collect: 'Gather %@ cracked skulls from Skeleton Warriors.' },
 };

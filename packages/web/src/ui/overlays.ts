@@ -288,7 +288,8 @@ export class Overlays {
           className: 'about-credits',
           children: [
             element('p', { text: t('3D characters and props by KayKit.') }),
-            element('p', { text: t('Ghost model by Quaternius.') }),
+            element('p', { text: t("Ghost model, and the Wolf's rig and base motion, by Quaternius.") }),
+            element('p', { text: t('Boar model based on one by Teh_Bucket.') }),
             element('p', { text: t('UI borders by Kenney.') }),
           ],
         }),

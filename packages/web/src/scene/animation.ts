@@ -7,14 +7,15 @@ export type AnimationPose = 'idle' | 'sneaking' | 'walking' | 'running' | 'backp
 /**
  * Movement clip per gait and travel direction.
  *
- * The walk gait reads as sneaking and the run gait as running, but only when moving forward and
- * only for players. Backpedalling and strafing collapse to their single directional clip
- * regardless of gait, because no tier-specific variants exist. NPCs amble on
- * the plain walk clip — the librarian must not skulk through its own room — and monsters drift
- * on their single clip, so `direction` is ignored for both.
+ * For players the walk gait reads as sneaking and the run gait as running, but only when moving
+ * forward. Backpedalling and strafing collapse to their single directional clip regardless of
+ * gait, because no tier-specific variants exist. NPCs amble on the plain walk clip whatever
+ * their gait — the librarian must not skulk through its own room — and monsters run on the run
+ * gait and walk on any other, so `direction` is ignored for both.
  */
 export function movementPose(kind: WorldEntityKind, gait: Gait, direction: RelativeDirection): AnimationPose {
-  if (kind === 'npc' || kind === 'monster') return 'walking';
+  if (kind === 'npc') return 'walking';
+  if (kind === 'monster') return gait === 'run' ? 'running' : 'walking';
   switch (direction) {
     case 'forward':
       return gait === 'walk' ? 'sneaking' : gait === 'run' ? 'running' : 'walking';
@@ -29,9 +30,9 @@ export function movementPose(kind: WorldEntityKind, gait: Gait, direction: Relat
 
 /**
  * Clip preference per pose, each falling back toward the forward walk clip and finally
- * `Flying_Idle`. The Ghost carries only `Flying_Idle`, so every pose has to reach it or the
- * drift freezes; sneak and run fall back to the walk clip for models converted before those
- * clips were merged in.
+ * `Flying_Idle`. The Ghost has no walk clip. It drifts on `Flying_Idle` and runs on
+ * `Fast_Flying`, so every pose has to reach `Flying_Idle` or the drift freezes. Sneak and run
+ * fall back to the walk clip because a model in the operator-supplied pack may lack them.
  *
  * There is deliberately **no** playback-rate scaling anywhere: KayKit's clips are cadence-tuned
  * as authored, and a gap tier collapses to the single available clip rather than being
@@ -41,7 +42,7 @@ export const CLIP_PREFERENCES: Record<AnimationPose, readonly string[]> = {
   idle: ['Idle', 'Flying_Idle'],
   walking: ['Walking_A', 'Flying_Idle'],
   sneaking: ['Sneaking', 'Walking_A', 'Flying_Idle'],
-  running: ['Running_A', 'Walking_A', 'Flying_Idle'],
+  running: ['Running_A', 'Walking_A', 'Fast_Flying', 'Flying_Idle'],
   backpedal: ['Walking_Backwards', 'Walking_A', 'Flying_Idle'],
   strafeLeft: ['Running_Strafe_Left', 'Walking_A', 'Flying_Idle'],
   strafeRight: ['Running_Strafe_Right', 'Walking_A', 'Flying_Idle'],

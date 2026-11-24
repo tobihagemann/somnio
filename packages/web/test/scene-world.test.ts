@@ -60,6 +60,7 @@ function emptyAssets(): ModelAssets {
     character: () => undefined,
     hand: () => undefined,
     ground: () => undefined,
+    trophy: () => undefined,
     object: () => undefined,
     clipsFor: () => [],
     prototypeMeshes: () => undefined,
@@ -72,6 +73,7 @@ function resolvingAssets(): ModelAssets {
     character: () => new THREE.Object3D(),
     hand: () => undefined,
     ground: () => undefined,
+    trophy: () => undefined,
     object: () => new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1)),
     clipsFor: () => [],
     prototypeMeshes: () => undefined,
@@ -182,17 +184,21 @@ function rings(scene: WorldScene): THREE.Mesh[] {
 
 /**
  * A skinned model with its own skeleton, matching what `SkeletonUtils.clone` hands back: a box
- * one unit tall standing on its node, every vertex bound to the one bone. A `head` bone under it
- * stands 0.9 units up, as the pack's models carry one.
+ * one unit tall standing on its node, or the `geometry` given, every vertex bound to the one bone.
+ * A `head` bone under it stands 0.9 units up, as the pack's models carry one.
  */
-function skinnedModel(): { root: THREE.Object3D; skeleton: THREE.Skeleton; bone: THREE.Bone; head: THREE.Bone } {
+function skinnedModel(geometry: THREE.BufferGeometry = new THREE.BoxGeometry(0.2, 1, 0.2).translate(0, 0.5, 0)): {
+  root: THREE.Object3D;
+  skeleton: THREE.Skeleton;
+  bone: THREE.Bone;
+  head: THREE.Bone;
+} {
   const bone = new THREE.Bone();
   const head = new THREE.Bone();
   head.name = 'head';
   head.position.y = 0.9;
   bone.add(head);
   const skeleton = new THREE.Skeleton([bone]);
-  const geometry = new THREE.BoxGeometry(0.2, 1, 0.2).translate(0, 0.5, 0);
   const vertices = geometry.getAttribute('position').count;
   geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(new Array<number>(vertices * 4).fill(0), 4));
   geometry.setAttribute(
@@ -1510,6 +1516,31 @@ describe('the model pack', () => {
     // A cut-out's depth must test its alpha, which three's own depth variant for it does.
     expect(cape!.customDepthMaterial).toBeUndefined();
   });
+
+  it('gives a trophy the model its kind lies as, and a kind with none no model', async () => {
+    const requested: string[] = [];
+    vi.stubGlobal('fetch', (input: RequestInfo | URL) => {
+      requested.push(String(input instanceof Request ? input.url : input));
+      return Promise.resolve(new Response(skinnedGLB()));
+    });
+    const assets = new HttpModelAssets({
+      ...TEST_REGISTRY,
+      characterModels: [],
+      handModels: [],
+      groundModels: [],
+      trophyModels: [{ id: 'ghost', stem: 'GroundGhostlyWisp' }],
+      objectModels: [],
+    });
+    await assets.prewarm();
+
+    expect(requested).toEqual([expect.stringContaining('/assets/Models/GroundGhostlyWisp.glb')]);
+    const meshes: THREE.Mesh[] = [];
+    assets.trophy('ghost')!.traverse((object) => {
+      if ((object as THREE.Mesh).isMesh) meshes.push(object as THREE.Mesh);
+    });
+    expect(meshes).toHaveLength(3);
+    expect(assets.trophy('wolf')).toBeUndefined();
+  });
 });
 
 /**
@@ -1883,6 +1914,33 @@ describe('what a pointer is over, and the target', () => {
     }
   });
 
+  /**
+   * A body bound 0.1 m round that its idle pose spreads to 0.5 m, as a wolf's snout and tail reach
+   * past its 0.3 m radius, is picked as far out as it is drawn standing, and no further. The blade
+   * its hand holds out 1 m is no part of the body, and a press near its tip passes the body by.
+   */
+  it('picks a body whose idle pose reaches past its radius as far beside it as the model is drawn, its held blade aside', () => {
+    const { root, bone } = skinnedModel(new THREE.CylinderGeometry(0.1 / CHARACTER_SCALE, 0.1 / CHARACTER_SCALE, 1).translate(0, 0.5, 0));
+    bone.name = 'Root';
+    const hand = Object.assign(new THREE.Bone(), { name: 'handslotr' });
+    hand.position.y = 0.5;
+    root.add(hand);
+    const idle = new THREE.AnimationClip('Idle', 1, [new THREE.VectorKeyframeTrack('Root.scale', [0], [5, 1, 5])]);
+    const blade = (): THREE.Object3D => new THREE.Mesh(new THREE.BoxGeometry(1 / CHARACTER_SCALE, 0.02, 0.02).translate(0.5 / CHARACTER_SCALE, 0, 0));
+    const scene = makeScene({ ...emptyAssets(), character: (id) => (id === 'wide' ? root : undefined), hand: blade, clipsFor: () => [idle] });
+    scene.placeEntity(player());
+    scene.placeEntity(player({ id: 'peer', kind: 'peer', characterModelId: 'wide', position: { x: 13, z: 10 }, held: { mainHand: 'sword' } }));
+    for (const [metres, picked] of [
+      [0.45, 'peer'],
+      [-0.45, 'peer'],
+      [0.55, undefined],
+      [0.95, undefined],
+    ] as const) {
+      const besidePeer = besideBody(scene, { x: 13, z: 10 }, metres);
+      expect(scene.entityAt(besidePeer.x, besidePeer.y)).toBe(picked);
+    }
+  });
+
   describe('a fixture', () => {
     const BOARD = 'fixture:EdariaSquare/fixture-1';
     /** A notice board's face: a board 1.4 m wide raised 1 m on its posts, which stand on no more ground than the face is thick. */
@@ -2039,16 +2097,47 @@ describe('what a pointer is over, and the target', () => {
       expect(scene.pressTargetAt(model.x, model.y)).toEqual({ kind: 'loot', lootId: 'open' });
     });
 
-    it('raises a beam from a rare drop alone, and glows under a magic and a rare one in its colour', () => {
-      const scene = makeScene({ ...emptyAssets(), ground: lyingDagger });
+    it("lays a trophy as its kind's model, and one whose kind has none as its name alone", () => {
+      const scene = makeScene({ ...emptyAssets(), trophy: (monsterKind) => (monsterKind === 'ghost' ? lyingDagger() : undefined) });
       scene.enterSpace(world());
       scene.placeEntity(player());
-      for (const [index, rarity] of RARITIES.entries()) scene.showLoot(drop(rarity, 4 + index * 3, 4, rarity));
+      scene.showLoot({ lootId: 'wisp', x: 13, z: 10, contents: { kind: 'trophy', monsterKind: 'ghost' } });
+      scene.showLoot({ lootId: 'fang', x: 10, z: 13, contents: { kind: 'trophy', monsterKind: 'wolf' } });
+      const wisp = scene._viewportPointOfLoot('wisp', 'model')!;
+      expect(scene.pressTargetAt(wisp.x, wisp.y)).toEqual({ kind: 'loot', lootId: 'wisp' });
+      expect(scene._viewportPointOfLoot('fang', 'model')).toBeUndefined();
+      const fang = scene._viewportPointOfLoot('fang', 'label')!;
+      expect(scene.pressTargetAt(fang.x, fang.y)).toEqual({ kind: 'loot', lootId: 'fang' });
+    });
+
+    it('raises a beam from a rare drop alone, glows under a magic and a rare one in its colour, and names each in its colour, a trophy as a plain drop', () => {
+      const scene = makeScene({ ...emptyAssets(), ground: lyingDagger, trophy: lyingDagger });
+      scene.enterSpace(world());
+      scene.placeEntity(player());
+      const inks: unknown[] = [];
+      const context = {
+        fillStyle: '',
+        scale() {},
+        fillRect() {},
+        strokeRect() {},
+        measureText: () => ({ width: 14 }),
+        fillText() {
+          inks.push(this.fillStyle);
+        },
+      };
+      vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D);
+      try {
+        for (const [index, rarity] of RARITIES.entries()) scene.showLoot(drop(rarity, 4 + index * 3, 4, rarity));
+        scene.showLoot({ lootId: 'wisp', x: 13, z: 4, contents: { kind: 'trophy', monsterKind: 'ghost' } });
+      } finally {
+        vi.restoreAllMocks();
+      }
       expect(shown(scene, LOOT_BEAM_NAME).map((beam) => beam.parent!.position.x)).toEqual([10]);
       expect(shown(scene, LOOT_GLOW_NAME).map((glow) => [glow.parent!.position.x, glow.material.color.getHex()])).toEqual([
         [7, RARITY_COLORS.magic],
         [10, RARITY_COLORS.rare],
       ]);
+      expect(inks).toEqual([...RARITIES, 'plain' as const].map((rarity) => `#${RARITY_COLORS[rarity].toString(16)}`));
     });
 
     it('brightens and dims its beam, and holds it steady under reduced motion', () => {
@@ -3863,18 +3952,25 @@ describe('scatter', () => {
   });
 
   /** A program compiled on its first draw stalls the frame it draws in. */
-  it("compiles the programs the ground, what grows on it, a prop, a drop lying on it, and a tap's ring draw in the prewarm, and keeps them past a door", async () => {
+  it("compiles the programs the ground, what grows on it, a prop, a drop and a trophy lying on it, and a tap's ring draw in the prewarm, and keeps them past a door", async () => {
     // Each kind drawn with a material of its own type, so each is a program of its own.
     const model = (material: THREE.Material): THREE.Object3D => new THREE.Group().add(new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.6, 0.2), material));
     const grass = model(new THREE.MeshLambertMaterial());
     const pebble = model(new THREE.MeshPhongMaterial());
     const lying = model(new THREE.MeshToonMaterial());
+    const trophy = model(new THREE.MeshMatcapMaterial());
     const assets = {
       ...scatterAssets(),
       ground: () => lying.clone(),
+      trophy: () => trophy.clone(),
       prototypeMeshes: (id: string) => prototypeMeshesOf(id === PEBBLE_MODEL_ID ? pebble : grass),
     };
-    const scene = new WorldScene(assets, { ...TEST_REGISTRY, groundModels: [{ id: 'cap', stem: 'Cap' }] }, 1, false);
+    const scene = new WorldScene(
+      assets,
+      { ...TEST_REGISTRY, groundModels: [{ id: 'cap', stem: 'Cap' }], trophyModels: [{ id: 'ghost', stem: 'GroundGhostlyWisp' }] },
+      1,
+      false,
+    );
     const { compileAsync, uncompiled, released } = recordingCompiler();
     await scene.prewarm({ compileAsync });
 
@@ -3882,6 +3978,7 @@ describe('scatter', () => {
     scene.addSector(outdoorSector('West', { x: 0, z: 0 }, { placements: [placement('box-1', 'box', { x: 10, z: 10 })] }));
     scene.addSector(outdoorSector('Wood', { x: 20, z: 0 }, { ground: { backgroundMaterialId: 'forest-floor', marks: [] } }));
     scene.showLoot({ lootId: 'cap', x: 12, z: 12, contents: { kind: 'item', baseId: 'cap', rarity: 'plain' } });
+    scene.showLoot({ lootId: 'wisp', x: 14, z: 12, contents: { kind: 'trophy', monsterKind: 'ghost' } });
     scene.showPressMarker({ x: 5, z: 5 });
     for (let frame = 0; frame < 3; frame += 1) scene.tick(0.016);
     expect(scatterGroups(scene)).toHaveLength(2);
@@ -3894,6 +3991,7 @@ describe('scatter', () => {
     scene.addSector(outdoorSector('West', { x: 0, z: 0 }));
     scene.placeEntity(player({ position: { x: 5, z: 5 } }));
     scene.showPressMarker({ x: 6, z: 6 });
+    scene.showLoot({ lootId: 'wisp-2', x: 7, z: 7, contents: { kind: 'trophy', monsterKind: 'ghost' } });
     scene.tick(0.016);
     expect(groundMeshes(scene).length).toBeGreaterThan(0);
     expect(released(scene.scene)).toEqual([]);
@@ -4152,6 +4250,42 @@ describe('scatter', () => {
     expect(tilt()).toBeLessThan(1);
     for (let frame = 0; frame < 165; frame += 1) scene.tick(1 / 60);
     expect(tilt()).toBeLessThan(0.05);
+  });
+
+  /** A trophy as its ground model lies: low and round, as wide as it is long. */
+  const lyingWisp = (): THREE.Object3D => new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.05, 0.3).translate(0, 0.025, 0));
+  const wisp = (lootId: string, at: { x: number; z: number }): LootMessage => ({
+    lootId,
+    x: at.x,
+    z: at.z,
+    contents: { kind: 'trophy', monsterKind: 'ghost' },
+  });
+
+  it("presses the grass under a trophy lying as its kind's model flat", () => {
+    const { scene, root, tilt } = grown({ trophy: (monsterKind) => (monsterKind === 'ghost' ? lyingWisp() : undefined) });
+    scene.showLoot(wisp('wisp', root));
+    for (let frame = 0; frame < 30; frame += 1) scene.tick(1 / 60);
+    expect(tilt()).toBeGreaterThan(1.45);
+  });
+
+  /** Another kind's trophy as its ground model lies: low, round, and wider than a wisp. */
+  const lyingFang = (): THREE.Object3D => new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.05, 0.5).translate(0, 0.025, 0));
+
+  /** Each lying model is measured under its own key, an item's apart from a trophy's and one kind's trophy apart from another's, so none takes another's reach. */
+  it("presses the grass by each lying model's own reach, a dagger and two kinds of trophy at once", () => {
+    const { scene } = grown({ ground: lyingDagger, trophy: (monsterKind) => (monsterKind === 'wolf' ? lyingFang() : lyingWisp()) });
+    scene.showLoot(dagger('dagger', { x: 2, z: 4 }));
+    scene.showLoot(wisp('wisp', { x: 5, z: 4 }));
+    scene.showLoot({ ...wisp('fang', { x: 8, z: 4 }), contents: { kind: 'trophy', monsterKind: 'wolf' } });
+    const step = vi.spyOn(GrassSpring.prototype, 'step');
+    scene.tick(1 / 60);
+    const [contacts] = step.mock.calls[0]!;
+    step.mockRestore();
+    expect(contacts.map(({ x, radius }) => ({ x: Math.round(x), radius }))).toEqual([
+      { x: 2, radius: expect.closeTo(0.05, 6) },
+      { x: 5, radius: expect.closeTo(0.15, 6) },
+      { x: 8, radius: expect.closeTo(0.25, 6) },
+    ]);
   });
 
   it('presses nothing with a drop in the air, until it lands', () => {

@@ -139,11 +139,12 @@ interface EntityRenderState {
   isPlaceholder: boolean;
   /**
    * How far above its node the model reaches standing, measured once when the model is put in, in
-   * its idle pose. A skinned mesh keeps the bounds of the pose it was first measured in, so a first
-   * measure of a body that lies fallen would come back low and stay low. `headPoint` is what follows
-   * the pose.
+   * its idle pose, so a body put in lying fallen still measures its standing height. `headPoint` is
+   * what follows the pose.
    */
   headHeight: number;
+  /** How far across the ground the model reaches from its node, a snout or a tail included, measured with `headHeight` in the same pose. A press picks the body by at least this. A placeholder's is `0`, since it is drawn from the radius. */
+  bodyReach: number;
   /** The model's head bone, which a fallen body's head is followed down by; `undefined` for a model without one. */
   headBone: THREE.Object3D | undefined;
   /** The bones that brush grass: the feet and toes on the ground, and the lower legs wading through it. */
@@ -463,8 +464,9 @@ export class WorldScene implements WorldRenderSurface {
     groundMesh(UNIT_RECT, UNIT_RECT, { columns: 1, rows: 1 }, [new Uint8Array(4), new Uint8Array(4)]),
     groundRingMesh(PRESS_MARKER_RADIUS, SELECTION_RING_COLOR),
   ];
-  /** By base, how a hand's model and a ground model reach into grass, measured once each; `undefined` for a model with no mesh. */
+  /** By base, how a hand's model reaches into grass, measured once each; `undefined` for a model with no mesh. */
   private readonly heldReaches = new Map<string, GrassReach | undefined>();
+  /** By `LootMarkers.lying`'s key, how a drop's model reaches into grass, measured once each; `undefined` for a model with no mesh. */
   private readonly lyingReaches = new Map<string, GrassReach | undefined>();
   /** The clock the wind sways the grass by. */
   private readonly wind = { value: 0 };
@@ -568,8 +570,8 @@ export class WorldScene implements WorldRenderSurface {
     this.configureDoorSpill();
     this.loot = new LootMarkers(
       OVERLAY_ORIENTATION,
-      (baseId) => {
-        const model = this.assets.ground(baseId);
+      (contents) => {
+        const model = contents.kind === 'item' ? this.assets.ground(contents.baseId) : this.assets.trophy(contents.monsterKind);
         if (model !== undefined) enableShadows(model);
         return model;
       },
@@ -691,6 +693,7 @@ export class WorldScene implements WorldRenderSurface {
       ...this.registry.characterModels.map((rule) => this.assets.character(rule.id)),
       ...this.registry.handModels.map((rule) => this.assets.hand(rule.id)),
       ...this.registry.groundModels.map((rule) => this.assets.ground(rule.id)),
+      ...this.registry.trophyModels.map((rule) => this.assets.trophy(rule.id)),
       ...this.registry.objectModels.map((rule) => this.assets.object(rule.id)),
     ].filter((model) => model !== undefined);
     if (loaded.length > 0) models.add(...loaded);
@@ -712,6 +715,7 @@ export class WorldScene implements WorldRenderSurface {
     const models = [
       ...[...new Set(Object.values(MONSTER_KINDS).map((kind) => kind.characterModelId))].map((id) => this.assets.character(id)),
       ...this.registry.groundModels.map((rule) => this.assets.ground(rule.id)),
+      ...this.registry.trophyModels.map((rule) => this.assets.trophy(rule.id)),
     ].filter((model) => model !== undefined);
     await compileFadeOut(renderer, models, this.camera, this.scene);
     for (const model of models) disposeSubtree(model);
@@ -1105,9 +1109,9 @@ export class WorldScene implements WorldRenderSurface {
         if (contact !== undefined) contacts.push(contact);
       }
     }
-    for (const { baseId, model } of this.loot.lying()) {
+    for (const { key, model } of this.loot.lying()) {
       model.updateWorldMatrix(true, false);
-      const contact = grassContact(model, measuredReach(this.lyingReaches, baseId, model), FLAT_TILT, IMPACT_PRESS_RATE);
+      const contact = grassContact(model, measuredReach(this.lyingReaches, key, model), FLAT_TILT, IMPACT_PRESS_RATE);
       if (contact !== undefined) contacts.push(contact);
     }
     for (const batch of this.grass.step(contacts, dt)) {
@@ -1144,6 +1148,7 @@ export class WorldScene implements WorldRenderSurface {
         pendingMotion: false,
         isPlaceholder: true,
         headHeight: 0,
+        bodyReach: 0,
         headBone: undefined,
         grassBones: [],
         headBoneRest: 0,
@@ -1300,19 +1305,16 @@ export class WorldScene implements WorldRenderSurface {
 
   /**
    * A drop of a base or a trophy of a kind this build does not know is not drawn, so nothing can be
-   * pressed for it. A trophy has no model, so its name alone is drawn, as plain. One shown as it
-   * falls is thrown there. Under reduced motion or in a stalled tab it lies there at once, and a
-   * hand it left empties with the `held` that follows.
+   * pressed for it. A trophy lies as its kind's model, or as its name alone for a kind with none,
+   * its name drawn plain. One shown as it falls is thrown there. Under reduced motion or in a stalled
+   * tab it lies there at once, and a hand it left empties with the `held` that follows.
    */
   showLoot({ lootId, x, z, contents, from }: LootMessage): void {
     const labelKey = contents.kind === 'item' ? itemLabelKey(contents.baseId) : trophyLabelKey(contents.monsterKind);
     if (labelKey === undefined) return;
     const item = contents.kind === 'item' ? contents : undefined;
     const thrown = from === undefined || this.effects.stalled(this.now()) ? undefined : this.throwFrom(from, item?.baseId);
-    this.loot.show(
-      { lootId, at: { x, z, height: this.groundHeight({ x, z }) }, baseId: item?.baseId, name: t(labelKey), rarity: item?.rarity ?? 'plain' },
-      this.reducedMotion ? undefined : thrown,
-    );
+    this.loot.show({ lootId, at: { x, z, height: this.groundHeight({ x, z }) }, contents, name: t(labelKey) }, this.reducedMotion ? undefined : thrown);
   }
 
   /**
@@ -1589,16 +1591,17 @@ export class WorldScene implements WorldRenderSurface {
 
   /**
    * The body a ray enters first, other than `skipped` and a nightmare driven off: a capsule from its
-   * feet to its head as drawn, by the radius its body is drawn with, wider under a finger. Bodies
-   * overlap, so they are ranked by where the ray enters each rather than where it passes nearest
-   * its middle. `undefined` where the ray passes every body by.
+   * feet to its head as drawn, as far out as its model reaches and never narrower than its radius,
+   * wider under a finger. Bodies overlap, so they are ranked by where the ray enters each rather
+   * than where it passes nearest its middle. `undefined` where the ray passes every body by.
    */
   private nearestBodyAt(ray: THREE.Ray, skipped?: string): { id: string; state: EntityRenderState } | undefined {
     let picked: { id: string; state: EntityRenderState } | undefined;
     let nearest = Number.POSITIVE_INFINITY;
     for (const [id, state] of this.entityStates) {
       if (id === skipped || drivenOff(state)) continue;
-      const reach = this.coarsePointer ? Math.max(state.radius, COARSE_PICK_METRES) : state.radius;
+      const drawn = Math.max(state.radius, state.bodyReach);
+      const reach = this.coarsePointer ? Math.max(drawn, COARSE_PICK_METRES) : drawn;
       const along = capsuleEntry(ray, state.node.position, this.headPoint(state), reach);
       if (along === undefined || along >= nearest) continue;
       picked = { id, state };
@@ -1871,16 +1874,32 @@ export class WorldScene implements WorldRenderSurface {
   }
 
   /**
-   * How far above its node an entity's model reaches. Measures the model only — the persistent
-   * name plaque hanging off the node would otherwise stretch the bounds and push an overlay up.
-   * The bounds are in world space, so the node's own height comes back off: overlays hang from
-   * the node, which may stand on raised ground.
+   * How far above its node an entity's model reaches, and how far across the ground from it, in the
+   * pose it stands in. Both come from its highest and furthest vertex as skinned, so the reach holds
+   * whichever way the body faces. It measures the model only, since the name plaque hanging off the
+   * node would stretch the height and push an overlay up. The vertices are in world space, so the
+   * node's own position comes back off: overlays hang from the node, which may stand on raised
+   * ground.
    */
-  private measureHeadHeight(state: EntityRenderState): number {
+  private measureBody(state: EntityRenderState): { headHeight: number; bodyReach: number } {
     state.node.updateWorldMatrix(true, false);
-    // `updateMatrixWorld`, because only there does a skinned mesh re-read where it is bound, which its bounds are skinned against.
+    // `updateMatrixWorld`, because only there does a skinned mesh re-read where it is bound, which its vertices are skinned against.
     state.jolt.updateMatrixWorld(true);
-    return Math.max(new THREE.Box3().setFromObject(state.modelHolder).max.y - state.node.position.y, 0);
+    const feet = state.node.position;
+    const vertex = new THREE.Vector3();
+    let top = Number.NEGATIVE_INFINITY;
+    let bodyReach = 0;
+    state.modelHolder.traverse((object) => {
+      const mesh = object as THREE.Mesh;
+      if (mesh.isMesh !== true) return;
+      const positions = mesh.geometry.getAttribute('position');
+      for (let index = 0; index < positions.count; index++) {
+        mesh.getVertexPosition(index, vertex).applyMatrix4(mesh.matrixWorld);
+        top = Math.max(top, vertex.y);
+        bodyReach = Math.max(bodyReach, Math.hypot(vertex.x - feet.x, vertex.z - feet.z));
+      }
+    });
+    return { headHeight: Math.max(top - feet.y, 0), bodyReach };
   }
 
   removeEntity(entityId: string): void {
@@ -2174,7 +2193,8 @@ export class WorldScene implements WorldRenderSurface {
       state.modelHolder.add(placeholder);
       state.isPlaceholder = true;
       state.mixer = undefined;
-      state.headHeight = this.measureHeadHeight(state);
+      state.headHeight = this.measureBody(state).headHeight;
+      state.bodyReach = 0;
       state.headBone = undefined;
       state.grassBones = [];
       return;
@@ -2187,13 +2207,13 @@ export class WorldScene implements WorldRenderSurface {
     // Posed first: until a clip plays, a model's bones rest wherever its file left them, which need not be a pose at all.
     this.applyPose('idle', state);
     state.mixer.update(0);
-    state.headHeight = this.measureHeadHeight(state);
+    ({ headHeight: state.headHeight, bodyReach: state.bodyReach } = this.measureBody(state));
     this.findHeadBone(state, model);
     state.grassBones = GRASS_BONES.flatMap(({ name, foot }) => {
       const bone = model.getObjectByName(name);
       return bone === undefined ? [] : [{ bone, foot }];
     });
-    // After the head is measured, so a raised blade does not count toward the body's height.
+    // After the body is measured, so a raised blade counts toward neither its height nor its reach.
     this.hangHeldProps(state);
     if (state.condition === 'fallen') this.playOneShot(state, 'fallen');
   }
@@ -3092,10 +3112,10 @@ interface GrassReach {
   radius: number;
 }
 
-/** The model's reach, measured the first time its base asks and kept in `reaches` after. */
-function measuredReach(reaches: Map<string, GrassReach | undefined>, baseId: string, model: THREE.Object3D): GrassReach | undefined {
-  if (!reaches.has(baseId)) reaches.set(baseId, grassReach(model));
-  return reaches.get(baseId);
+/** The model's reach, measured the first time its key asks and kept in `reaches` after. */
+function measuredReach(reaches: Map<string, GrassReach | undefined>, key: string, model: THREE.Object3D): GrassReach | undefined {
+  if (!reaches.has(key)) reaches.set(key, grassReach(model));
+  return reaches.get(key);
 }
 
 function grassReach(model: THREE.Object3D): GrassReach | undefined {

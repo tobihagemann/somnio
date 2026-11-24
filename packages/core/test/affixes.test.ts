@@ -11,7 +11,7 @@ const AFFIX_IDS = Object.keys(AFFIXES) as AffixId[];
 const SAMPLES_PER_BASE = 200;
 
 /** The tiers nightmares drop. */
-const DROPPED_TIERS = [1, 3] as const satisfies readonly Tier[];
+const DROPPED_TIERS = [1, 2, 3] as const satisfies readonly Tier[];
 
 /** Every rarity of every base that rolls, rolled at the tier from one seed. */
 function sample(tier: Tier): Item[] {
@@ -70,11 +70,16 @@ describe.each(DROPPED_TIERS)('rollItem at tier %i', (tier) => {
 });
 
 describe('AFFIXES', () => {
-  it('rolls every line higher at tier 3 than at tier 1', () => {
+  it('rolls every line higher at each dropped tier than at the one before', () => {
     for (const affixId of AFFIX_IDS) {
-      const [least1, most1] = affix(affixId).tiers[1]!;
-      const [least3, most3] = affix(affixId).tiers[3]!;
-      expect([least3 > least1, most3 > most1], affixId).toEqual([true, true]);
+      for (const [lower, higher] of [
+        [1, 2],
+        [2, 3],
+      ] as const) {
+        const [leastLower, mostLower] = affix(affixId).tiers[lower]!;
+        const [leastHigher, mostHigher] = affix(affixId).tiers[higher]!;
+        expect([leastHigher > leastLower, mostHigher > mostLower], `${affixId} ${lower}-${higher}`).toEqual([true, true]);
+      }
     }
   });
 });
@@ -116,6 +121,6 @@ describe('itemNameKeys', () => {
   });
 
   it('passes over a line with no range at the item tier', () => {
-    expect(itemNameKeys(trousers(2, [{ affixId: 'health', value: 8 }]))).toEqual({ labelKey: 'Leather trousers' });
+    expect(itemNameKeys(trousers(4, [{ affixId: 'health', value: 8 }]))).toEqual({ labelKey: 'Leather trousers' });
   });
 });

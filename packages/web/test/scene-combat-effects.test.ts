@@ -81,6 +81,7 @@ function combatScene(
     reducedMotion?: boolean;
     clipless?: readonly number[];
     ground?: () => THREE.Object3D;
+    trophy?: () => THREE.Object3D;
     hand?: (baseId: string) => THREE.Object3D;
     registry?: ModelRegistry;
   } = {},
@@ -101,6 +102,7 @@ function combatScene(
     },
     hand: (baseId) => options.hand?.(baseId),
     ground: () => options.ground?.(),
+    trophy: () => options.trophy?.(),
     object: () => undefined,
     clipsFor: (root) => (options.clipless?.includes(models.indexOf(root)) === true ? CLIPS.slice(0, 1) : CLIPS),
     prototypeMeshes: () => undefined,
@@ -2760,16 +2762,23 @@ describe('the pools and the programs', () => {
     expect(lights()).toBe(before);
   });
 
-  it("compiles the programs a nightmare's body and a drop, its name and light with it, fade with in the prewarm, once the models are cached", async () => {
+  it("compiles the programs a nightmare's body and a drop or a trophy, its name and light with it, fade with in the prewarm, once the models are cached", async () => {
     const lying = (): THREE.Object3D => new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshLambertMaterial());
-    const { scene, models } = combatScene({ ground: lying, registry: { ...TEST_REGISTRY, groundModels: [{ id: 'cap', stem: 'Cap' }] } });
+    const trophy = (): THREE.Object3D => new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshToonMaterial());
+    const { scene, models } = combatScene({
+      ground: lying,
+      trophy,
+      registry: { ...TEST_REGISTRY, groundModels: [{ id: 'cap', stem: 'Cap' }], trophyModels: [{ id: 'ghost', stem: 'GroundGhostlyWisp' }] },
+    });
     const { compileAsync, uncompiled } = recordingCompiler();
     await scene.prewarm({ compileAsync });
 
     place(scene, 'monster:1', { x: 10, z: 10 });
     scene.fadeEntity('monster:1');
     for (const rarity of RARITIES) scene.showLoot({ lootId: `loot-${rarity}`, x: 12, z: 10, contents: { kind: 'item', baseId: 'cap', rarity } });
+    scene.showLoot({ lootId: 'wisp', x: 14, z: 10, contents: { kind: 'trophy', monsterKind: 'ghost' } });
     for (const rarity of RARITIES) scene.removeLoot(`loot-${rarity}`, false);
+    scene.removeLoot('wisp', false);
     scene.tick(0.01);
     const loot = scene.scene.getObjectByName(LOOT_MARKERS_NAME)!;
     expect(uncompiled(models.at(-1)!, loot)).toEqual([]);

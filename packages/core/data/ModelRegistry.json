@@ -64,6 +64,7 @@
       "model": {
         "expectedClips": [
           "Flying_Idle",
+          "Fast_Flying",
           "Death",
           "HitReact",
           "Punch"
@@ -72,11 +73,54 @@
       }
     },
     {
+      "id": "wolf",
+      "model": {
+        "expectedClips": [
+          "Idle",
+          "Walking_A",
+          "Running_A",
+          "Punch",
+          "HitReact",
+          "Death"
+        ],
+        "stem": "ForestWolf"
+      }
+    },
+    {
+      "id": "boar",
+      "model": {
+        "expectedClips": [
+          "Idle",
+          "Walking_A",
+          "Running_A",
+          "Punch",
+          "HitReact",
+          "Death"
+        ],
+        "stem": "ForestBoar"
+      }
+    },
+    {
+      "id": "bogey",
+      "model": {
+        "expectedClips": [
+          "Idle",
+          "Walking_A",
+          "Running_A",
+          "Punch",
+          "HitReact",
+          "Death"
+        ],
+        "stem": "ForestBogey"
+      }
+    },
+    {
       "id": "skeleton-warrior",
       "model": {
         "expectedClips": [
           "Idle",
           "Walking_A",
+          "Running_A",
           "Death_A",
           "Hit_A",
           "Melee_1H_Attack_Slice_Horizontal"
@@ -90,6 +134,7 @@
         "expectedClips": [
           "Idle",
           "Walking_A",
+          "Running_A",
           "Death_A",
           "Hit_A",
           "Melee_1H_Attack_Slice_Horizontal"
@@ -103,6 +148,7 @@
         "expectedClips": [
           "Idle",
           "Walking_A",
+          "Running_A",
           "Death_A",
           "Hit_A",
           "Melee_1H_Attack_Slice_Horizontal",
@@ -150,6 +196,12 @@
     { "id": "boots", "stem": "GroundBoots" },
     { "id": "amulet", "stem": "GroundAmulet" },
     { "id": "ring", "stem": "GroundRing" }
+  ],
+  "trophyModels": [
+    { "id": "ghost", "stem": "GroundGhostlyWisp" },
+    { "id": "skeleton-minion", "stem": "GroundOldBone" },
+    { "id": "skeleton-warrior", "stem": "GroundCrackedSkull" },
+    { "id": "necromancer", "stem": "GroundNecromancerSigil" }
   ],
   "objectModels": [
     {

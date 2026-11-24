@@ -5,13 +5,14 @@ import { SOMNIO_CONSTANTS } from '../src/constants.ts';
 import { EFFECTS } from '../src/effects.ts';
 import { MOVE_ALLOWANCE_SECONDS, gaitMetresPerSecond } from '../src/gait.ts';
 import { AFFIXES, rollItem } from '../src/affixes.ts';
+import { BOUNTY_KINDS } from '../src/bounties.ts';
 import { hashString, seededSequence } from '../src/hash.ts';
 import { BASE_ITEMS } from '../src/items.ts';
 import { FIRST_TEACHING, TEACHINGS, TEACHING_IDS, TRIAL_QUESTS, isTeachingId, teaching } from '../src/lucidity.ts';
 import { BOSS_MOVES, ELITE_TRAITS, ELITE_TRAIT_IDS, MONSTER_KINDS, MONSTER_KIND_IDS, bossMoves, isEliteTraitId, monsterKind } from '../src/monsterKinds.ts';
 import { LISTENER_ROLES, QUEST_STANDINGS } from '../src/npcDialog.ts';
 import { PEOPLES } from '../src/people.ts';
-import { QUESTS } from '../src/quests.ts';
+import { QUESTS, TROPHIES } from '../src/quests.ts';
 import { SPEECH, SPEECH_PACE } from '../src/speech.ts';
 
 /**
@@ -57,41 +58,47 @@ describe('literal sets', () => {
         worth: 5,
         nameKey: '%@ of Vigour',
         slots: ['offHand', 'head', 'chest', 'hands', 'legs', 'feet'],
-        tiers: { 1: [3, 8], 3: [10, 18] },
+        tiers: { 1: [3, 8], 2: [6, 13], 3: [10, 18] },
       },
       balance: {
         stat: 'balanceMax',
         worth: 5,
         nameKey: '%@ of Poise',
         slots: ['mainHand', 'head', 'chest', 'hands', 'legs', 'feet'],
-        tiers: { 1: [3, 8], 3: [10, 18] },
+        tiers: { 1: [3, 8], 2: [6, 13], 3: [10, 18] },
       },
-      spirit: { stat: 'spiritMax', worth: 5, nameKey: '%@ of Reverie', slots: ['offHand', 'neck', 'ring'], tiers: { 1: [3, 8], 3: [10, 18] } },
-      damage: { stat: 'damage', worth: 13, nameKey: '%@ of Might', slots: ['mainHand', 'hands', 'neck', 'ring'], tiers: { 1: [1, 3], 3: [4, 7] } },
+      spirit: { stat: 'spiritMax', worth: 5, nameKey: '%@ of Reverie', slots: ['offHand', 'neck', 'ring'], tiers: { 1: [3, 8], 2: [6, 13], 3: [10, 18] } },
+      damage: { stat: 'damage', worth: 13, nameKey: '%@ of Might', slots: ['mainHand', 'hands', 'neck', 'ring'], tiers: { 1: [1, 3], 2: [2, 5], 3: [4, 7] } },
       guard: {
         stat: 'guard',
         worth: 13,
         nameKey: '%@ of the Bulwark',
         slots: ['offHand', 'head', 'chest', 'hands', 'legs', 'feet'],
-        tiers: { 1: [1, 3], 3: [4, 7] },
+        tiers: { 1: [1, 3], 2: [2, 5], 3: [4, 7] },
       },
-      'swing-speed': { stat: 'swingSpeed', worth: 5, nameKey: '%@ of Haste', slots: ['mainHand', 'hands'], tiers: { 1: [3, 8], 3: [9, 14] } },
+      'swing-speed': { stat: 'swingSpeed', worth: 5, nameKey: '%@ of Haste', slots: ['mainHand', 'hands'], tiers: { 1: [3, 8], 2: [6, 11], 3: [9, 14] } },
       'balance-recovery': {
         stat: 'balanceRecovery',
         worth: 3,
         nameKey: '%@ of Steadiness',
         slots: ['mainHand', 'head', 'chest', 'legs', 'feet', 'neck', 'ring'],
-        tiers: { 1: [5, 15], 3: [16, 30] },
+        tiers: { 1: [5, 15], 2: [10, 22], 3: [16, 30] },
       },
       'spirit-recovery': {
         stat: 'spiritRecovery',
         worth: 3,
         nameKey: '%@ of Stillness',
         slots: ['offHand', 'neck', 'ring'],
-        tiers: { 1: [5, 15], 3: [16, 30] },
+        tiers: { 1: [5, 15], 2: [10, 22], 3: [16, 30] },
       },
-      'mend-depth': { stat: 'mendDepth', worth: 13, nameKey: '%@ of Mending', slots: ['offHand', 'neck', 'ring'], tiers: { 1: [1, 3], 3: [4, 7] } },
-      'ward-strength': { stat: 'wardStrength', worth: 3, nameKey: '%@ of Warding', slots: ['offHand', 'neck', 'ring'], tiers: { 1: [5, 15], 3: [16, 30] } },
+      'mend-depth': { stat: 'mendDepth', worth: 13, nameKey: '%@ of Mending', slots: ['offHand', 'neck', 'ring'], tiers: { 1: [1, 3], 2: [2, 5], 3: [4, 7] } },
+      'ward-strength': {
+        stat: 'wardStrength',
+        worth: 3,
+        nameKey: '%@ of Warding',
+        slots: ['offHand', 'neck', 'ring'],
+        tiers: { 1: [5, 15], 2: [10, 22], 3: [16, 30] },
+      },
     });
   });
 
@@ -103,14 +110,15 @@ describe('literal sets', () => {
   });
 
   it('pins the monster kinds', () => {
-    expect(MONSTER_KIND_IDS).toEqual(['ghost', 'skeleton-minion', 'skeleton-warrior', 'necromancer']);
+    expect(MONSTER_KIND_IDS).toEqual(['ghost', 'wolf', 'boar', 'bogey', 'skeleton-minion', 'skeleton-warrior', 'necromancer']);
     expect(MONSTER_KINDS).toEqual({
       ghost: {
         name: 'Ghost',
         tier: 1,
         characterModelId: 'ghost',
         radius: 0.3,
-        metresPerSecond: 2.4,
+        chaseMetresPerSecond: 2.4,
+        strollMetresPerSecond: 1.2,
         aggroRadius: 3.84,
         leashMetres: 12,
         respawnSeconds: 60,
@@ -121,12 +129,64 @@ describe('literal sets', () => {
         balanceDamage: 5,
         bounty: 12,
       },
+      wolf: {
+        name: 'Wolf',
+        tier: 2,
+        characterModelId: 'wolf',
+        radius: 0.3,
+        chaseMetresPerSecond: 2.8,
+        strollMetresPerSecond: 1.4,
+        aggroRadius: 4.2,
+        leashMetres: 14,
+        respawnSeconds: 50,
+        health: 55,
+        strikeSeconds: 1.1,
+        hitChance: 0.6,
+        damage: 10,
+        balanceDamage: 4,
+        bounty: 13,
+      },
+      boar: {
+        name: 'Boar',
+        tier: 2,
+        characterModelId: 'boar',
+        radius: 0.35,
+        chaseMetresPerSecond: 2.3,
+        strollMetresPerSecond: 1.15,
+        aggroRadius: 3.6,
+        leashMetres: 13,
+        respawnSeconds: 70,
+        health: 130,
+        strikeSeconds: 1.7,
+        hitChance: 0.62,
+        damage: 15,
+        balanceDamage: 12,
+        bounty: 24,
+      },
+      bogey: {
+        name: 'Bogey',
+        tier: 2,
+        characterModelId: 'bogey',
+        radius: 0.4,
+        chaseMetresPerSecond: 1.9,
+        strollMetresPerSecond: 0.95,
+        aggroRadius: 4.5,
+        leashMetres: 12,
+        respawnSeconds: 240,
+        health: 260,
+        strikeSeconds: 2.2,
+        hitChance: 0.65,
+        damage: 20,
+        balanceDamage: 9,
+        bounty: 45,
+      },
       'skeleton-minion': {
         name: 'Skeleton',
         tier: 3,
         characterModelId: 'skeleton-minion',
         radius: 0.3,
-        metresPerSecond: 2.6,
+        chaseMetresPerSecond: 2.6,
+        strollMetresPerSecond: 1.3,
         aggroRadius: 4.5,
         leashMetres: 15,
         respawnSeconds: 45,
@@ -142,7 +202,8 @@ describe('literal sets', () => {
         tier: 3,
         characterModelId: 'skeleton-warrior',
         radius: 0.3,
-        metresPerSecond: 2.2,
+        chaseMetresPerSecond: 2.2,
+        strollMetresPerSecond: 1.1,
         aggroRadius: 4.5,
         leashMetres: 15,
         respawnSeconds: 75,
@@ -158,7 +219,8 @@ describe('literal sets', () => {
         tier: 3,
         characterModelId: 'necromancer',
         radius: 0.3,
-        metresPerSecond: 2,
+        chaseMetresPerSecond: 2,
+        strollMetresPerSecond: 1,
         aggroRadius: 6,
         leashMetres: 0,
         respawnSeconds: 600,
@@ -173,6 +235,38 @@ describe('literal sets', () => {
     expect(monsterKind('ghost')).toBe(MONSTER_KINDS.ghost);
   });
 
+  it('holds every kind to the speed rules', () => {
+    for (const id of MONSTER_KIND_IDS) {
+      const { chaseMetresPerSecond, strollMetresPerSecond } = monsterKind(id);
+      expect(chaseMetresPerSecond, id).toBeLessThan(gaitMetresPerSecond('run'));
+      expect(strollMetresPerSecond, id).toBeGreaterThan(0);
+      expect(strollMetresPerSecond, id).toBeLessThan(chaseMetresPerSecond);
+    }
+    expect(monsterKind('wolf').chaseMetresPerSecond).toBeGreaterThan(monsterKind('boar').chaseMetresPerSecond);
+    expect(monsterKind('boar').chaseMetresPerSecond).toBeGreaterThan(monsterKind('bogey').chaseMetresPerSecond);
+  });
+
+  /** A trophy's name and a bounty's lines are catalog keys the client renders, so a line swapped with another kind's would name the wrong nightmare. */
+  it('pins the trophy and the bounty lines of each kind', () => {
+    expect(TROPHIES).toEqual({
+      ghost: 'Ghostly wisp',
+      wolf: "Wolf's fang",
+      boar: "Boar's tusk",
+      bogey: "Bogey's knot",
+      'skeleton-minion': 'Old bone',
+      'skeleton-warrior': 'Cracked skull',
+      necromancer: "Necromancer's sigil",
+    });
+    expect(BOUNTY_KINDS).toEqual({
+      ghost: { driveOff: 'Drive off %@ Ghosts there.', collect: 'Gather %@ ghostly wisps from Ghosts.' },
+      wolf: { driveOff: 'Drive off %@ Wolves there.', collect: "Gather %@ wolf's fangs from Wolves." },
+      boar: { driveOff: 'Drive off %@ Boars there.', collect: "Gather %@ boar's tusks from Boars." },
+      bogey: { driveOff: 'Drive off %@ Bogeys there.', collect: "Gather %@ bogey's knots from Bogeys." },
+      'skeleton-minion': { driveOff: 'Drive off %@ Skeletons there.', collect: 'Gather %@ old bones from Skeletons.' },
+      'skeleton-warrior': { driveOff: 'Drive off %@ Skeleton Warriors there.', collect: 'Gather %@ cracked skulls from Skeleton Warriors.' },
+    });
+  });
+
   /** A spawn of a boss's kind spawns a boss, so a kind renamed out of this table would come back as an ordinary nightmare. */
   it('pins the bosses', () => {
     expect(Object.keys(BOSS_MOVES)).toEqual(['necromancer']);
@@ -184,11 +278,28 @@ describe('literal sets', () => {
   it('pins the elite traits', () => {
     expect(ELITE_TRAIT_IDS).toEqual(['stony', 'shielded']);
     expect(ELITE_TRAITS).toEqual({
-      stony: { effectId: 'stony', names: { ghost: 'Stony Ghost', 'skeleton-minion': 'Stony Skeleton', 'skeleton-warrior': 'Stony Skeleton Warrior' } },
+      stony: {
+        effectId: 'stony',
+        names: {
+          ghost: 'Stony Ghost',
+          wolf: 'Stony Wolf',
+          boar: 'Stony Boar',
+          bogey: 'Stony Bogey',
+          'skeleton-minion': 'Stony Skeleton',
+          'skeleton-warrior': 'Stony Skeleton Warrior',
+        },
+      },
       shielded: {
         effectId: 'shielded',
         renewSeconds: 8,
-        names: { ghost: 'Shielded Ghost', 'skeleton-minion': 'Shielded Skeleton', 'skeleton-warrior': 'Shielded Skeleton Warrior' },
+        names: {
+          ghost: 'Shielded Ghost',
+          wolf: 'Shielded Wolf',
+          boar: 'Shielded Boar',
+          bogey: 'Shielded Bogey',
+          'skeleton-minion': 'Shielded Skeleton',
+          'skeleton-warrior': 'Shielded Skeleton Warrior',
+        },
       },
     });
     expect(isEliteTraitId('stony')).toBe(true);

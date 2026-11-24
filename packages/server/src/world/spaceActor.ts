@@ -368,6 +368,8 @@ interface MonsterRuntime {
    */
   area: Rect;
   phase: MonsterPhase;
+  /** The gait of the last step it took, a walk before its first: a walk on a wander, a run otherwise. */
+  gait: MonsterGait;
   /** When it may next pick a point of its area to wander to. */
   wanderAt: number;
   /**
@@ -400,9 +402,12 @@ interface MonsterRuntime {
   answerDue: Set<string>;
 }
 
+/** The gaits a nightmare moves at: a walk at its stroll speed, a run at its chase speed. */
+type MonsterGait = Extract<Gait, 'walk' | 'run'>;
+
 /**
- * What a nightmare is about. At `rest` it stands, noticing. On a `wander` it walks at half speed to
- * a point of its area, noticing. On a `follow` it is aware of a leader that set off, still until
+ * What a nightmare is about. At `rest` it stands, noticing. On a `wander` it walks at its stroll
+ * speed to a point of its area, noticing. On a `follow` it is aware of a leader that set off, still until
  * `from` and then following it, and `alerted` once it has stirred its own neighbours. In a `fight`
  * it chases, leashed to `from`, where the fight began, unless confined. On a `return` it walks back
  * to its `home`, `evading` everything after a give-up until stalled outside its area, and nothing
@@ -540,7 +545,7 @@ export interface PlayerHandOver {
   transient: PlayerTransient;
 }
 
-/** What a joining player and every NPC and monster start at; a player's own gait arrives with their first move. */
+/** What a joining player and every NPC start at; a player's own gait arrives with their first move. */
 const DEFAULT_GAIT: Gait = 'jog';
 /**
  * A player's movement budget accrues on the server's clock at running speed with a quarter to
@@ -1976,6 +1981,7 @@ export class SpaceActor {
       lyingUntil: undefined,
       area,
       phase: { at: 'rest' },
+      gait: 'walk',
       wanderAt: this.nextWanderAt(),
       home: position,
       steerSide: 1,
@@ -2143,7 +2149,7 @@ export class SpaceActor {
       if (this.monsters.get(monster.id) !== monster || (monster.position === position && monster.facing === facing)) continue;
       this.moved.set(monster.id, {
         sector: monster.sector,
-        move: { id: monster.id, x: monster.position.x, z: monster.position.z, facing: monster.facing, gait: DEFAULT_GAIT },
+        move: { id: monster.id, x: monster.position.x, z: monster.position.z, facing: monster.facing, gait: monster.gait },
       });
     }
   }
@@ -2164,7 +2170,7 @@ export class SpaceActor {
    *
    * A follower stays still until its awareness comes, then follows its leader while its chain of
    * leaders leads to a fight (`leadsToFight`), and otherwise walks back to its home. At rest, one
-   * that is not confined now and then wanders to a point of its area at half speed while some dreamer
+   * that is not confined now and then wanders to a point of its area at its stroll speed while some dreamer
    * sees its sector. With no one seeing it, it stands still.
    *
    * In a fight, on its own rhythm it strikes the dreamer it chases once it has reached them.
@@ -2237,8 +2243,7 @@ export class SpaceActor {
         break;
       case 'wander': {
         if (rooted(monster)) break;
-        const speed = monster.kind.metresPerSecond * NIGHTMARE_WANDER.speedShare;
-        if (!this.inView(monster.sector) || !this.stepToward(monster, phase.to, elapsedSeconds, 0, false, speed)) this.settle(monster);
+        if (!this.inView(monster.sector) || !this.stepToward(monster, phase.to, elapsedSeconds, 0, false, 'walk')) this.settle(monster);
         break;
       }
       case 'rest': {
@@ -2586,7 +2591,8 @@ export class SpaceActor {
    * one, and one wandering, keeps to its area. It steps round every body, the fallen too. A step that
    * leaves its overlap with the bodies no deeper is never refused for them. At its area's edge or
    * corner, though, every candidate can still deepen it, and then it stays. It faces its bearing to
-   * `goal` even when blocked, except within `stopWithin` of it, where it does not turn.
+   * `goal` even when blocked, except within `stopWithin` of it, where it does not turn. It walks at
+   * its kind's stroll speed and runs at its chase speed, and a step it takes records its `gait`.
    */
   private stepToward(
     monster: MonsterRuntime,
@@ -2594,13 +2600,14 @@ export class SpaceActor {
     elapsedSeconds: number,
     stopWithin: number,
     straightOnly: boolean,
-    metresPerSecond = monster.kind.metresPerSecond,
+    gait: MonsterGait = 'run',
   ): boolean {
     const from = monster.position;
     const away = distance(from, goal);
     if (away <= stopWithin) return false;
     const bearing = headingFromVector(goal.x - from.x, goal.z - from.z);
     monster.facing = bearing;
+    const metresPerSecond = gait === 'walk' ? monster.kind.strollMetresPerSecond : monster.kind.chaseMetresPerSecond;
     const stride = Math.min(metresPerSecond * elapsedSeconds, away - Math.max(0, stopWithin - STOP_SLACK));
     if (stride <= 0) return false;
     const radius = monster.kind.radius;
@@ -2628,6 +2635,7 @@ export class SpaceActor {
     if (end === undefined) return false;
     const previous = monster.sector;
     monster.position = end;
+    monster.gait = gait;
     monster.sector = sectorAt(this.space, end)!.name;
     if (monster.sector !== previous) this.entityChangedSector(this.monsterEntity(monster), previous, monster.sector);
     return true;
@@ -3636,7 +3644,7 @@ export class SpaceActor {
       x: monster.position.x,
       z: monster.position.z,
       facing: monster.facing,
-      gait: DEFAULT_GAIT,
+      gait: monster.gait,
       condition: monster.condition,
       ...(rank === undefined ? {} : { rank }),
       ...(monster.trait === undefined ? {} : { trait: monster.trait }),
