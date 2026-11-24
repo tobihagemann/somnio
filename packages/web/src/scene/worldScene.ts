@@ -816,7 +816,8 @@ export class WorldScene implements WorldRenderSurface {
     const placements = sector.placements.map((placement) => this.buildPlacement(placement, sector.kind));
     const emitters = placements.flatMap((placed) => placed.emitter ?? []);
     for (const [index, emitter] of emitters.entries()) emitter.phase = flamePhase(index, emitters.length);
-    group.add(...placements.map((placed) => placed.node));
+    // three logs an error for an `add()` with nothing to add.
+    if (placements.length > 0) group.add(...placements.map((placed) => placed.node));
     const fixtures = sector.fixtures.flatMap((fixture): DrawnFixture[] => {
       const node = placements.find((placed) => placed.placement.id === fixture.placement)?.node;
       if (node === undefined) return [];

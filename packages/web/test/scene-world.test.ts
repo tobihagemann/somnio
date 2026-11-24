@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import * as THREE from 'three';
 import { WorldScene, configureWorldRenderer, sizeWorldRenderer, watchViewport } from '@/scene/worldScene';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
@@ -350,6 +350,17 @@ describe('sectors', () => {
     expect(planeSize(groundMeshes(scene)[0]!)).toEqual({ width: 20, height: 20 });
     expect(groundMeshes(scene)[0]!.getWorldPosition(new THREE.Vector3())).toEqual(new THREE.Vector3(10, 0, 10));
     expect(scene._placeholderObjectCount()).toBe(2);
+  });
+
+  it('draws a sector with no placements without handing three nothing to add', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    onTestFinished(() => error.mockRestore());
+    const scene = makeScene();
+
+    scene.addSector(sector({ placements: [] }));
+
+    expect(groundMeshes(scene)).toHaveLength(1);
+    expect(error).not.toHaveBeenCalled();
   });
 
   it('stands a sector at its origin and a placement at its own position, yaw, and elevation within it', () => {
