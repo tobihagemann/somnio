@@ -3043,6 +3043,7 @@ describe('movement poses', () => {
 describe('blows, falls, and raises', () => {
   const CLIP_SECONDS = 1;
   const SLICE = 'Melee_1H_Attack_Slice_Horizontal';
+  const BLADE_LANDS = CLIP_SECONDS * STRIKE_AT[SLICE]!;
 
   afterEach(() => vi.restoreAllMocks());
 
@@ -3089,16 +3090,15 @@ describe('blows, falls, and raises', () => {
     scene.placeEntity(player());
     scene.placeEntity(player({ id: 'monster:1', kind: 'monster', position: { x: 11, z: 10 } }));
     scene.tick(0.016);
-    const bladeLands = CLIP_SECONDS * STRIKE_AT[SLICE]!;
 
     scene.showBlow('self', 'monster:1', true);
     expect(started().at(-1)).toBe(SLICE);
-    run(scene, bladeLands);
+    run(scene, BLADE_LANDS);
     expect(started().slice(-2)).toEqual([SLICE, 'Hit_A']);
 
     scene.showBlow('self', 'monster:1', false);
     expect(started().at(-1)).toBe(SLICE);
-    run(scene, bladeLands);
+    run(scene, BLADE_LANDS);
     expect(started().at(-1)).toBe(SLICE);
   });
 
@@ -3136,6 +3136,23 @@ describe('blows, falls, and raises', () => {
     expect(idle.isRunning()).toBe(false);
     run(scene, CLIP_SECONDS * 2);
     expect(started()).toEqual(['Idle', 'Death_A']);
+  });
+
+  it('drops a body whose model is swapped while its fall waits for the blow as the blow lands, and only once', () => {
+    const { scene, started } = fightingScene();
+    const monster = player({ id: 'monster:1', kind: 'monster', position: { x: 11, z: 10 } });
+    scene.placeEntity(player());
+    scene.placeEntity(monster);
+    scene.tick(0.016);
+
+    scene.showBlow('self', 'monster:1', true);
+    scene.updateCondition('monster:1', 'fallen');
+    scene.placeEntity({ ...monster, characterModelId: 'skeleton-minion', condition: 'fallen' });
+    scene.tick(0.016);
+    expect(started()).not.toContain('Death_A');
+
+    run(scene, BLADE_LANDS);
+    expect(started().filter((name) => name === 'Death_A')).toHaveLength(1);
   });
 
   it('keeps the pose of a model that carries none of the clips', () => {
