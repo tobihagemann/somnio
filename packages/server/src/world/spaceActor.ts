@@ -332,8 +332,8 @@ interface NPCRuntime {
   lastSaidTo: string | undefined;
   /** Whether the dreamer it talks to asked for the next step early. */
   skipAsked: boolean;
-  /** 0-based cursor into the dialog's steps. */
-  scriptStepIndex: number;
+  /** Where the search for the next step that fits begins: just past the step last said, and 0 as a conversation starts. */
+  stepIndex: number;
   /** The dreamers within speaking distance it has taken note of, so each is greeted once per approach. */
   near: Set<string>;
   /** When it last greeted each dreamer in the space. */
@@ -471,8 +471,8 @@ interface Voice {
   entityId: string;
   name: string;
   kind: SpeechKind;
-  /** A dreamer's words as said, or a line an NPC says to a dreamer, greeting or step, which each listener hears in their own language. */
-  line: { words: string } | { step: string; targetName: string };
+  /** A dreamer's words as said, or a line an NPC says to a dreamer, greeting or step. Each listener hears an NPC's line in their own language. */
+  line: { words: string } | { text: string; targetName: string };
 }
 
 /**
@@ -943,7 +943,7 @@ export class SpaceActor {
           lastSaidAt: 0,
           lastSaidTo: undefined,
           skipAsked: false,
-          scriptStepIndex: 0,
+          stepIndex: 0,
         });
       }
       for (const fixture of placedFixtures(sector)) this.fixtures.set(fixture.id, fixture);
@@ -1313,16 +1313,16 @@ export class SpaceActor {
     const clarity = speechClarity(voice.kind, metres);
     if (clarity === undefined) return;
     const { line } = voice;
-    const said = 'words' in line ? line.words : localizedDialogLine(line.step, listener.locale, line.targetName);
+    const said = 'words' in line ? line.words : localizedDialogLine(line.text, listener.locale, line.targetName);
     let next = 0;
-    const text = crumble(said, clarity, () => {
+    const heard = crumble(said, clarity, () => {
       if (next === rolls.length) rolls.push(randomUnit(this.speechRandom));
       return rolls[next++]!;
     });
     listener.outbox.sendEncoded(
       {
         tag: 'serverSay',
-        payload: { entityId: voice.entityId, name: voice.name, kind: voice.kind, text, clarity, x: source.x, z: source.z },
+        payload: { entityId: voice.entityId, name: voice.name, kind: voice.kind, text: heard, clarity, x: source.x, z: source.z },
       },
       this.logger,
     );
@@ -2095,13 +2095,13 @@ export class SpaceActor {
       return;
     }
     const fits = (step: DialogStep) => dialogStepFits(step.when, target.character, service);
-    const index = dialog.findIndex((step, at) => at >= npc.scriptStepIndex && fits(step));
+    const index = dialog.findIndex((step, at) => at >= npc.stepIndex && fits(step));
     if (index === -1) {
       this.resetTargeting(npc);
       return;
     }
     this.speakAs(npc, dialog[index]!.text, target);
-    npc.scriptStepIndex = index + 1;
+    npc.stepIndex = index + 1;
     if (!dialog.slice(index + 1).some(fits)) this.resetTargeting(npc);
   }
 
@@ -2117,24 +2117,24 @@ export class SpaceActor {
   }
 
   /**
-   * An NPC talks like a dreamer: whoever it addresses stands within speaking distance and hears it
-   * whole, and bystanders by their distance, each the line meant for `to`. Saying it holds the NPC's
-   * next line for the reading time of the line's longest translation.
+   * Says `text`, greeting or step, as a dreamer says a line. `to`, whom every caller holds within
+   * speaking distance, hears it whole, and each bystander hears the line meant for `to` by their
+   * distance. Saying it holds the NPC's next line for the reading time of its longest translation.
    */
-  private speakAs(npc: NPCRuntime, step: string, to: PlayerSlot): void {
+  private speakAs(npc: NPCRuntime, text: string, to: PlayerSlot): void {
     const targetName = to.character.name;
-    this.speak({ voice: { entityId: npc.id, name: npc.definition.name, kind: 'say', line: { step, targetName } }, rolls: [] }, npc.position);
+    this.speak({ voice: { entityId: npc.id, name: npc.definition.name, kind: 'say', line: { text, targetName } }, rolls: [] }, npc.position);
     const now = this.now();
     npc.lastSaidAt = now;
     npc.lastSaidTo = to.character.id;
-    npc.readyAt = now + npcReadSeconds(step, targetName) * 1000;
+    npc.readyAt = now + npcReadSeconds(text, targetName) * 1000;
     npc.skipAsked = false;
   }
 
   /** Ends the conversation. The last line's reading deadline stands. */
   private resetTargeting(npc: NPCRuntime): void {
     npc.targetingEntity = undefined;
-    npc.scriptStepIndex = 0;
+    npc.stepIndex = 0;
     npc.skipAsked = false;
   }
 

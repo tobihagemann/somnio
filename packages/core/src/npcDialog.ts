@@ -61,25 +61,25 @@ export function dialogStepFits(when: DialogCondition | undefined, listener: Pick
   }
 }
 
-/** The line a step becomes when spoken to `targetName`. */
-export function dialogLine(step: string, targetName: string): string {
+/** What `text`, greeting or step, becomes when spoken to `targetName`. */
+export function dialogLine(text: string, targetName: string): string {
   // A replacer function, so a `$&` in the name is inserted as written rather than expanded.
-  return step.replaceAll(NAME_TOKEN, () => targetName);
+  return text.replaceAll(NAME_TOKEN, () => targetName);
 }
 
-/** The line a step becomes when spoken to `targetName` in `locale`. A step the dialog catalog does not hold is said as written. */
-export function localizedDialogLine(step: string, locale: Locale, targetName: string): string {
-  return dialogLine(lookupIn(DIALOG, locale, step, []), targetName);
+/** What `text`, greeting or step, becomes when spoken to `targetName` in `locale`. A line the dialog catalog does not hold is said as written. */
+export function localizedDialogLine(text: string, locale: Locale, targetName: string): string {
+  return dialogLine(lookupIn(DIALOG, locale, text, []), targetName);
 }
 
 /**
- * Whether every line the step can become fits the say cap, which a client refuses a line past:
- * the worst case is each `$name` replaced by a name at the identifier cap, the longest character
- * name the server accepts.
+ * Whether `text`, greeting or step, fits the say cap whatever name it is said to, since a client
+ * refuses a line past the cap. The worst case is each `$name` replaced by a name at the identifier
+ * cap, the longest character name the server accepts.
  */
-export function dialogLineFits(step: string): boolean {
-  const names = step.split(NAME_TOKEN).length - 1;
-  const longest = utf8ByteLength(step) + names * (SOMNIO_PROTOCOL_CONSTANTS.maxIdentifierUTF8Bytes - utf8ByteLength(NAME_TOKEN));
+export function dialogLineFits(text: string): boolean {
+  const names = text.split(NAME_TOKEN).length - 1;
+  const longest = utf8ByteLength(text) + names * (SOMNIO_PROTOCOL_CONSTANTS.maxIdentifierUTF8Bytes - utf8ByteLength(NAME_TOKEN));
   return longest <= SOMNIO_PROTOCOL_CONSTANTS.maxSayUTF8Bytes;
 }
 
@@ -90,7 +90,7 @@ export function dialogLineInBudget(text: string): boolean {
   return graphemes <= SOMNIO_CONSTANTS.npcDialogLineGraphemes;
 }
 
-/** How long an NPC holds its next line after saying `step` to `targetName`: the reading time of its longest translation. */
-export function npcReadSeconds(step: string, targetName: string): number {
-  return Math.max(...LOCALES.map((locale) => speechReadSeconds(localizedDialogLine(step, locale, targetName))));
+/** How long an NPC holds its next line after saying `text` to `targetName`: the reading time of its longest translation. */
+export function npcReadSeconds(text: string, targetName: string): number {
+  return Math.max(...LOCALES.map((locale) => speechReadSeconds(localizedDialogLine(text, locale, targetName))));
 }
