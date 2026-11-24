@@ -2065,7 +2065,31 @@ export class WorldScene implements WorldRenderSurface {
    * of its clips keeps its pose, and nothing interrupts a held fall.
    */
   private playOneShot(state: EntityRenderState, oneShot: OneShot, landsIn?: number): THREE.AnimationClip | undefined {
-    if (state.mixer === undefined || state.oneShot?.held === true) return undefined;
+    if (state.oneShot?.held === true) return undefined;
+    const next = this.oneShotAction(state, oneShot);
+    if (next === undefined) return undefined;
+    this.fadeTo(state, next);
+    const clip = next.getClip();
+    if (landsIn !== undefined) next.time = Math.max(0, strikeDelay(clip) - landsIn);
+    state.oneShot = { action: next, held: oneShot === 'fallen' };
+    return clip;
+  }
+
+  /**
+   * Lays a body that lay fallen before its model was put in at the fall's last frame, held, so it is
+   * never seen falling. It cuts from the pose it was measured in, since that pose was never seen.
+   */
+  private layFallen(state: EntityRenderState): void {
+    const fall = this.oneShotAction(state, 'fallen');
+    if (fall === undefined) return;
+    this.cutTo(state, fall);
+    fall.time = fall.getClip().duration;
+    state.oneShot = { action: fall, held: true };
+  }
+
+  /** The action that plays a one-shot once and holds its last frame, or `undefined` for a model that carries none of its clips. */
+  private oneShotAction(state: EntityRenderState, oneShot: OneShot): THREE.AnimationAction | undefined {
+    if (state.mixer === undefined) return undefined;
     const clips = this.assets.clipsFor(state.modelHolder.children[0] ?? state.modelHolder);
     const name = resolveOneShotClipName(
       oneShot,
@@ -2073,13 +2097,10 @@ export class WorldScene implements WorldRenderSurface {
     );
     const clip = clips.find((candidate) => candidate.name === name);
     if (clip === undefined) return undefined;
-    const next = state.mixer.clipAction(clip);
-    next.setLoop(THREE.LoopOnce, 1);
-    next.clampWhenFinished = true;
-    this.fadeTo(state, next);
-    if (landsIn !== undefined) next.time = Math.max(0, strikeDelay(clip) - landsIn);
-    state.oneShot = { action: next, held: oneShot === 'fallen' };
-    return clip;
+    const action = state.mixer.clipAction(clip);
+    action.setLoop(THREE.LoopOnce, 1);
+    action.clampWhenFinished = true;
+    return action;
   }
 
   /** Starts an action from its beginning, fading over from the one the entity was playing. */
@@ -2087,6 +2108,13 @@ export class WorldScene implements WorldRenderSurface {
     next.reset();
     if (state.action !== undefined && state.action !== next) next.crossFadeFrom(state.action, CLIP_TRANSITION_DURATION, false);
     next.play();
+    state.action = next;
+  }
+
+  /** Starts an action from its beginning in place of the one the entity was playing, with no fade. */
+  private cutTo(state: EntityRenderState, next: THREE.AnimationAction): void {
+    if (state.action !== next) state.action?.stop();
+    next.reset().play();
     state.action = next;
   }
 
@@ -2215,7 +2243,8 @@ export class WorldScene implements WorldRenderSurface {
     });
     // After the body is measured, so a raised blade counts toward neither its height nor its reach.
     this.hangHeldProps(state);
-    if (state.condition === 'fallen') this.playOneShot(state, 'fallen');
+    // A fall still waiting for its blow plays from the start once the blow lands (`fallsAt`).
+    if (state.condition === 'fallen' && state.fallsAt === undefined) this.layFallen(state);
   }
 
   /**

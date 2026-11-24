@@ -3039,12 +3039,12 @@ describe('blows, falls, and raises', () => {
   function fightingScene(
     names = ['Idle', SLICE, 'Hit_A', 'Death_A'],
     now?: () => number,
-  ): { scene: WorldScene; started: () => string[]; last: () => THREE.AnimationAction } {
+  ): { scene: WorldScene; actions: () => THREE.AnimationAction[]; started: () => string[]; last: () => THREE.AnimationAction } {
     const clips = names.map((name) => new THREE.AnimationClip(name, CLIP_SECONDS, []));
     const scene = makeScene({ ...emptyAssets(), character: () => new THREE.Object3D(), clipsFor: () => clips }, now);
     const play = vi.spyOn(THREE.AnimationAction.prototype, 'play');
     const actions = (): THREE.AnimationAction[] => play.mock.contexts as THREE.AnimationAction[];
-    return { scene, started: () => actions().map((action) => action.getClip().name), last: () => actions().at(-1)! };
+    return { scene, actions, started: () => actions().map((action) => action.getClip().name), last: () => actions().at(-1)! };
   }
 
   /** Runs the scene for `seconds`, in steps under the tick's own clamp. */
@@ -3096,9 +3096,14 @@ describe('blows, falls, and raises', () => {
     scene.placeEntity(player({ id: 'peer', kind: 'peer' }));
     scene.tick(0.016);
 
+    const idle = last();
     scene.updateCondition('peer', 'fallen');
     expect(started()).toEqual(['Idle', 'Death_A']);
     expect(last().clampWhenFinished).toBe(true);
+    // It falls from the clip's start, fading over from the pose it stood in.
+    expect(last().time).toBe(0);
+    scene.tick(CLIP_TRANSITION_DURATION / 2);
+    expect(idle.getEffectiveWeight()).toBeCloseTo(0.5, 6);
     run(scene, CLIP_SECONDS * 3);
     scene.showBlow('monster:1', 'peer', true);
     expect(started()).toEqual(['Idle', 'Death_A']);
@@ -3108,11 +3113,17 @@ describe('blows, falls, and raises', () => {
     expect(started()).toEqual(['Idle', 'Death_A', 'Idle']);
   });
 
-  it('lays down an entity that comes into view already fallen', () => {
-    const { scene, started } = fightingScene();
+  it("lays down an entity that comes into view already fallen, at its fall's last frame and without falling again", () => {
+    const { scene, actions, started } = fightingScene();
     scene.placeEntity(player({ id: 'peer', kind: 'peer', condition: 'fallen' }));
     scene.tick(0.016);
     // Posed once to be measured standing, then down.
+    expect(started()).toEqual(['Idle', 'Death_A']);
+    const [idle, fall] = actions() as [THREE.AnimationAction, THREE.AnimationAction];
+    expect(fall.time).toBe(CLIP_SECONDS);
+    expect(fall.getEffectiveWeight()).toBe(1);
+    expect(idle.isRunning()).toBe(false);
+    run(scene, CLIP_SECONDS * 2);
     expect(started()).toEqual(['Idle', 'Death_A']);
   });
 
