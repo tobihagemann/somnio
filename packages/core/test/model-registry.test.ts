@@ -15,7 +15,7 @@ import {
   trophyModelStem,
 } from '../src/modelRegistry.ts';
 import { BASE_ITEMS } from '../src/items.ts';
-import { MONSTER_KINDS } from '../src/monsterKinds.ts';
+import { MONSTER_KIND_IDS, MONSTER_KINDS } from '../src/monsterKinds.ts';
 import registryJSON from '../data/ModelRegistry.json' with { type: 'json' };
 import { loadSectorFixtures } from './support/sectorFixture.ts';
 
@@ -103,16 +103,18 @@ describe('the committed registry parses', () => {
     expect(groundModelStem(registry, 'cap')).toBe('GroundCap');
   });
 
-  /** A trophy with no ground model draws its name alone. */
-  it("lays each of the Graveyard's and the meadows' trophies as its own ground model", () => {
+  /** A nightmare kind added without a trophy model would drop its trophy as a bare name. */
+  it("lays every nightmare's trophy as its own ground model", () => {
     expect(registry.trophyModels).toEqual([
       { id: 'ghost', stem: 'GroundGhostlyWisp' },
+      { id: 'wolf', stem: 'GroundWolfFang' },
+      { id: 'boar', stem: 'GroundBoarTusk' },
+      { id: 'bogey', stem: 'GroundBogeyKnot' },
       { id: 'skeleton-minion', stem: 'GroundOldBone' },
       { id: 'skeleton-warrior', stem: 'GroundCrackedSkull' },
       { id: 'necromancer', stem: 'GroundNecromancerSigil' },
     ]);
-    expect(trophyModelStem(registry, 'skeleton-warrior')).toBe('GroundCrackedSkull');
-    expect(trophyModelStem(registry, 'wolf')).toBeUndefined();
+    for (const kind of MONSTER_KIND_IDS) expect(trophyModelStem(registry, kind), kind).toBeDefined();
   });
 
   it('lists every model once, character models before object models', () => {

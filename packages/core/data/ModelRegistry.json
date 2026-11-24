@@ -221,6 +221,9 @@
   ],
   "trophyModels": [
     { "id": "ghost", "stem": "GroundGhostlyWisp" },
+    { "id": "wolf", "stem": "GroundWolfFang" },
+    { "id": "boar", "stem": "GroundBoarTusk" },
+    { "id": "bogey", "stem": "GroundBogeyKnot" },
     { "id": "skeleton-minion", "stem": "GroundOldBone" },
     { "id": "skeleton-warrior", "stem": "GroundCrackedSkull" },
     { "id": "necromancer", "stem": "GroundNecromancerSigil" }
