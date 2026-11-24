@@ -33,10 +33,12 @@ const boundaryRules = PACKAGES.map((name) => ({
 }));
 
 export default tseslint.config(
-  // Only the npm workspace is linted. The standalone `.mjs` scripts sit outside every tsconfig,
-  // so the type-checked preset cannot resolve them; skills and docs carry no source.
+  // Only the npm workspace is linted: every top-level entry is ignored except the packages and
+  // the workspace's own config files, so a new root directory (an asset pack, another session's
+  // worktree under `.claude`) stays out without an entry of its own. The standalone `.mjs`
+  // scripts sit outside every tsconfig, so the type-checked preset cannot resolve them.
   {
-    ignores: ['**/dist', '**/node_modules', 'coverage', 'packages/web/public', 'packages/*/scripts/*.mjs', 'Scripts', '.husky', 'Skills', 'Docs', '.turbo'],
+    ignores: ['*', '!packages/', '!eslint.config.js', '!vitest.config.ts', '**/dist', '**/node_modules', 'packages/web/public', 'packages/*/scripts/*.mjs'],
   },
   js.configs.recommended,
   tseslint.configs.recommendedTypeChecked,
