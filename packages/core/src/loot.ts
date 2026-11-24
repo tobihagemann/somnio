@@ -7,7 +7,7 @@ import { handAllows } from './combat.ts';
 import { SOMNIO_CONSTANTS } from './constants.ts';
 import type { HandNeed } from './combat.ts';
 import type { Inventory } from './domain/inventory.ts';
-import { distance } from './geometry.ts';
+import { EDGE_TOLERANCE, distance } from './geometry.ts';
 import type { Point } from './geometry.ts';
 import { headingRadians } from './heading.ts';
 import type { Heading } from './heading.ts';
@@ -42,8 +42,12 @@ export function withinPickupReach(dreamer: Point, loot: Point): boolean {
   return distance(dreamer, loot) <= PICKUP_REACH;
 }
 
-/** How far from a dreamer's centre an item they drop is thrown: clear of their body, and within their pickup reach where they stand. */
-export const THROW_DISTANCE = 1;
+/**
+ * How far from a dreamer's centre an item they drop is thrown: clear of their body, and within their
+ * pickup reach where they stand. It lies just inside that reach rather than on its edge, where
+ * rounding in the landing's coordinates would put about half of all throws a hair beyond it.
+ */
+export const THROW_DISTANCE = PICKUP_REACH - EDGE_TOLERANCE;
 
 /** How far the drops a nightmare leaves burst out from where it stood, at least and at most: clear of the bodies fighting over it, as Diablo's loot flies. */
 export const SCATTER_DISTANCE = { min: 1, max: 2 } as const;

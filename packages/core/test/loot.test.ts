@@ -12,18 +12,21 @@ import {
   PICKUP_REACH,
   QUEST_GEAR_RARITIES,
   SCATTER_DISTANCE,
+  THROW_DISTANCE,
   droppableBases,
   rollDrops,
   rollQuestGear,
   scatterLandings,
   throwLanding,
   usableBy,
+  withinPickupReach,
 } from '../src/loot.ts';
 import { MONSTER_KINDS } from '../src/monsterKinds.ts';
 import { PATHFINDING } from '../src/pathfinding.ts';
 import { TEST_REGISTRY, outdoorSector } from './support/worldFixture.ts';
 
 const SAMPLES = 20_000;
+const OPEN_FIELD = buildSpaceCollision({ id: 'outdoors', sectors: [outdoorSector('Field', { x: 0, z: 0 })] }, TEST_REGISTRY);
 
 describe.each(['nightmare', 'elite', 'boss'] as const)('rollDrops for a foe of rank %s', (rank) => {
   const odds = DROP_ODDS[rank];
@@ -160,6 +163,15 @@ describe('throwLanding', () => {
     TEST_REGISTRY,
   );
 
+  it('lands a throw on open ground within pickup reach of where the thrower stands, whatever the heading', () => {
+    const from = { x: 10, z: 10 };
+    for (let heading = 0; heading < 360; heading += 1) {
+      const landing = throwLanding(OPEN_FIELD, from, heading, THROW_DISTANCE, []);
+      expect(distance(from, landing), `heading ${heading}`).toBeCloseTo(THROW_DISTANCE, 9);
+      expect(withinPickupReach(from, landing), `heading ${heading}`).toBe(true);
+    }
+  });
+
   it('throws through a gap no body passes only as far as the thrower can come within pickup reach of it', () => {
     // Thrown further than the game throws, so the gap rather than the distance stops it.
     const from = { x: 5, z: 10 };
@@ -174,12 +186,11 @@ describe('throwLanding', () => {
 describe('scatterLandings', () => {
   const FROM = { x: 10, z: 10 };
   const random = seededSequence(hashString('scatter'));
-  const open = buildSpaceCollision({ id: 'outdoors', sectors: [outdoorSector('Field', { x: 0, z: 0 })] }, TEST_REGISTRY);
 
   it('fans the drops out round where the nightmare stood, no two on one heading, each the scatter distance out in open ground', () => {
     for (let count = 1; count <= 6; count += 1) {
       for (let sample = 0; sample < 200; sample += 1) {
-        const landings = scatterLandings(open, FROM, count, [], random);
+        const landings = scatterLandings(OPEN_FIELD, FROM, count, [], random);
         expect(landings).toHaveLength(count);
         for (const landing of landings) {
           expect(distance(FROM, landing)).toBeGreaterThanOrEqual(SCATTER_DISTANCE.min - 1e-9);
