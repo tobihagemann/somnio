@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { hashPassword, verifyAccountPassword, verifyPassword } from '../src/auth/passwordHasher.ts';
 
+async function elapsed(run: () => Promise<unknown>): Promise<number> {
+  const start = performance.now();
+  await run();
+  return performance.now() - start;
+}
+
 describe('password hasher', () => {
   it('hashes and verifies a round trip', async () => {
     const encoded = await hashPassword('hunter2');
@@ -39,18 +45,20 @@ describe('password hasher', () => {
 
   it('pays comparable Argon2 cost for an unknown account', async () => {
     // The unknown-account branch exists to equalize timing; a regression that early-returns
-    // `false` would turn `verifyAccountPassword` back into a username-existence oracle. Wall-time
-    // assertions are jittery, so the sentinel is "a non-trivial fraction of the hash branch".
-    await hashPassword('warm-up');
-    const hashStart = performance.now();
-    await hashPassword('baseline');
-    const hashElapsed = performance.now() - hashStart;
+    // `false` would turn `verifyAccountPassword` back into a username-existence oracle, telling an
+    // unknown account from a known one given the wrong password. Wall-time assertions are jittery,
+    // so the sentinel is "a non-trivial fraction of the known account's cost", taken on each
+    // branch's fastest of several interleaved samples. Load on a busy machine only ever adds time,
+    // so the minimum is the closest a sample gets to the branch's own cost.
+    const encoded = await hashPassword('hunter2');
+    expect(await verifyAccountPassword('anything', undefined)).toBe(false);
+    const knownSamples: number[] = [];
+    const unknownSamples: number[] = [];
+    for (let sample = 0; sample < 5; sample += 1) {
+      knownSamples.push(await elapsed(() => verifyAccountPassword('wrong', encoded)));
+      unknownSamples.push(await elapsed(() => verifyAccountPassword('anything', undefined)));
+    }
 
-    const unknownStart = performance.now();
-    const result = await verifyAccountPassword('anything', undefined);
-    const unknownElapsed = performance.now() - unknownStart;
-
-    expect(result).toBe(false);
-    expect(unknownElapsed).toBeGreaterThanOrEqual(hashElapsed / 2);
+    expect(Math.min(...unknownSamples)).toBeGreaterThanOrEqual(Math.min(...knownSamples) / 2);
   });
 });
