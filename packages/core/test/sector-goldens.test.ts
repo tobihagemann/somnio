@@ -105,7 +105,7 @@ describe('the committed world', () => {
         backgroundMaterialId: 'wood-warm',
         counts: { placements: 58, blockers: 0, doors: 1, npcs: 1, monsterSpawns: 0, marks: 0 },
         doors: { exit: 'EdariaSquare/to-edariahealerhall' },
-        npcs: { sana: 'merchant' },
+        npcs: { sana: 'healer-master' },
       },
       EdariaInn: {
         kind: 'interior',
@@ -132,7 +132,7 @@ describe('the committed world', () => {
         backgroundMaterialId: 'stone-arena',
         counts: { placements: 36, blockers: 0, doors: 1, npcs: 1, monsterSpawns: 0, marks: 0 },
         doors: { exit: 'EdariaSquare/to-edariamystictower' },
-        npcs: { tacita: 'libus' },
+        npcs: { tacita: 'mystic-master' },
       },
       EdariaShop: {
         kind: 'interior',

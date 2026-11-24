@@ -60,6 +60,28 @@
       }
     },
     {
+      "id": "healer-master",
+      "model": {
+        "expectedClips": [
+          "Idle",
+          "Walking_A",
+          "Running_A"
+        ],
+        "stem": "HealerMaster"
+      }
+    },
+    {
+      "id": "mystic-master",
+      "model": {
+        "expectedClips": [
+          "Idle",
+          "Walking_A",
+          "Running_A"
+        ],
+        "stem": "MysticMaster"
+      }
+    },
+    {
       "id": "ghost",
       "model": {
         "expectedClips": [

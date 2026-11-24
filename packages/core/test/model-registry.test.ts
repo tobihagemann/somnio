@@ -43,6 +43,8 @@ describe('the committed registry parses', () => {
     expect(modelForCharacter(registry, 'libus')?.stem).toBe('Libus');
     expect(modelForCharacter(registry, 'merchant')?.stem).toBe('Merchant');
     expect(modelForCharacter(registry, 'fighter-master')?.stem).toBe('FighterMaster');
+    expect(modelForCharacter(registry, 'healer-master')?.stem).toBe('HealerMaster');
+    expect(modelForCharacter(registry, 'mystic-master')?.stem).toBe('MysticMaster');
     expect(modelForCharacter(registry, 'ghost')?.stem).toBe('Ghost');
     expect(modelForCharacter(registry, 'wolf')?.stem).toBe('ForestWolf');
     expect(modelForCharacter(registry, 'boar')?.stem).toBe('ForestBoar');

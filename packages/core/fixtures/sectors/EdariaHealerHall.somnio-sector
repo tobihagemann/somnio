@@ -17,7 +17,7 @@
   "kind": "interior",
   "npcs": [
     {
-      "characterModelId": "merchant",
+      "characterModelId": "healer-master",
       "dialog": [
         {
           "text": "Whoever would heal first walks into the North Wood and comes back without striking a blow.",

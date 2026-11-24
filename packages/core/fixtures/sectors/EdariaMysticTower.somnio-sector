@@ -17,7 +17,7 @@
   "kind": "interior",
   "npcs": [
     {
-      "characterModelId": "libus",
+      "characterModelId": "mystic-master",
       "dialog": [
         {
           "text": "Whoever would learn from me first finds three places the dream keeps to itself.",
