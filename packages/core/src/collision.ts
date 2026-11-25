@@ -1,6 +1,8 @@
 import { SOMNIO_CONSTANTS } from './constants.ts';
 import { EDGE_TOLERANCE, clamp, closestOnRect, closestOnSegment, distance, distanceToRect, modelToWorld, rectContains, worldToModel } from './geometry.ts';
 import type { Point, Rect, Segment, Transform } from './geometry.ts';
+import { buildModelGrid, someModelNear } from './modelGrid.ts';
+import type { ModelGrid } from './modelGrid.ts';
 import { objectModel } from './modelRegistry.ts';
 import type { ModelRegistry, ObjectModelRule, WalkSurface } from './modelRegistry.ts';
 import { sectorOrigin, sectorPointInSpace, sectorRect } from './sector.ts';
@@ -61,6 +63,8 @@ export interface SpaceCollision {
   edges: Segment[];
   blockers: Rect[];
   models: PlacedModel[];
+  /** `models` filed by where they reach, built with them, so a check visits only the models near it. */
+  modelGrid: ModelGrid<PlacedModel>;
   /** What the space's content gets wrong; none of it stops the space from loading. */
   issues: WorldIssue[];
 }
@@ -102,10 +106,12 @@ export function buildSpaceCollision(space: Space, registry: ModelRegistry): Spac
     }
   }
   // Each placement is reported once, naming the first it overlaps, so the issues grow with the placements and not with their pairs.
+  // Only models with walk surfaces can overlap, and few have any, so only those are paired.
   const reported = new Set<PlacedModel>();
-  models.forEach((model, index) => {
-    for (let next = index + 1; next < models.length; next += 1) {
-      const other = models[next]!;
+  const standable = models.filter((model) => model.walkSurfaces.length > 0);
+  standable.forEach((model, index) => {
+    for (let next = index + 1; next < standable.length; next += 1) {
+      const other = standable[next]!;
       if ((reported.has(model) && reported.has(other)) || !walkSurfacesOverlap(model, other)) continue;
       for (const [placed, overlapped] of [
         [model, other],
@@ -117,7 +123,7 @@ export function buildSpaceCollision(space: Space, registry: ModelRegistry): Spac
       }
     }
   });
-  return { sectors, edges: sectors.flatMap((rect) => openEdges(rect, sectors, () => true)), blockers, models, issues };
+  return { sectors, edges: sectors.flatMap((rect) => openEdges(rect, sectors, () => true)), blockers, models, modelGrid: buildModelGrid(models), issues };
 }
 
 function placementIssue(sector: string, id: string, message: string): WorldIssue {
@@ -206,7 +212,7 @@ function uncovered(from: number, to: number, covers: readonly [number, number][]
 
 /** Walk surfaces of two placements sharing ground. Oriented rects, so the test is a separating-axis one. */
 function walkSurfacesOverlap(a: PlacedModel, b: PlacedModel): boolean {
-  if (a.walkSurfaces.length === 0 || b.walkSurfaces.length === 0 || distance(a.transform, b.transform) > a.reach + b.reach) return false;
+  if (distance(a.transform, b.transform) > a.reach + b.reach) return false;
   const quads = (model: PlacedModel): Point[][] => model.walkSurfaces.map((surface) => corners(surface).map((corner) => modelToWorld(model.transform, corner)));
   const others = quads(b);
   return quads(a).some((quad) => others.some((other) => quadsOverlap(quad, other)));
@@ -304,8 +310,8 @@ function someFeatureTouched(collision: SpaceCollision, point: Point, radius: num
   for (const rect of collision.blockers) {
     if (distanceToRect(point, rect) < reach && visit(rectFeature(rect))) return true;
   }
-  for (const model of collision.models) {
-    if (distance(point, model.transform) > model.reach + radius) continue;
+  return someModelNear(collision.modelGrid, pointRect(point), radius, (model) => {
+    if (distance(point, model.transform) > model.reach + radius) return false;
     const local = worldToModel(model.transform, point);
     for (const rect of model.colliders) {
       if (distanceToRect(local, rect) < reach && visit(inModel(model.transform, rectFeature(rect)))) return true;
@@ -313,8 +319,12 @@ function someFeatureTouched(collision: SpaceCollision, point: Point, radius: num
     for (const ledge of model.ledges) {
       if (distanceToSegment(local, ledge) < reach && visit(inModel(model.transform, segmentFeature(ledge)))) return true;
     }
-  }
-  return false;
+    return false;
+  });
+}
+
+function pointRect(point: Point): Rect {
+  return { x: point.x, z: point.z, width: 0, depth: 0 };
 }
 
 /**
@@ -324,11 +334,17 @@ function someFeatureTouched(collision: SpaceCollision, point: Point, radius: num
 export function collisionNear(collision: SpaceCollision, rect: Rect, reach: number): SpaceCollision {
   const near = (minX: number, minZ: number, maxX: number, maxZ: number): boolean =>
     minX <= rect.x + rect.width + reach && maxX >= rect.x - reach && minZ <= rect.z + rect.depth + reach && maxZ >= rect.z - reach;
+  const models: PlacedModel[] = [];
+  someModelNear(collision.modelGrid, rect, reach, (model) => {
+    if (distanceToRect(model.transform, rect) <= model.reach + reach) models.push(model);
+    return false;
+  });
   return {
     sectors: collision.sectors,
     edges: collision.edges.filter(({ a, b }) => near(Math.min(a.x, b.x), Math.min(a.z, b.z), Math.max(a.x, b.x), Math.max(a.z, b.z))),
     blockers: collision.blockers.filter((blocker) => near(blocker.x, blocker.z, blocker.x + blocker.width, blocker.z + blocker.depth)),
-    models: collision.models.filter((model) => distanceToRect(model.transform, rect) <= model.reach + reach),
+    models,
+    modelGrid: buildModelGrid(models),
     issues: [],
   };
 }
@@ -344,13 +360,14 @@ export function isClear(collision: SpaceCollision, point: Point, radius: number)
  */
 export function groundHeightAt(collision: SpaceCollision, point: Point): number {
   let height = 0;
-  for (const model of collision.models) {
-    if (model.walkSurfaces.length === 0 || distance(point, model.transform) > model.reach + EDGE_TOLERANCE) continue;
+  someModelNear(collision.modelGrid, pointRect(point), EDGE_TOLERANCE, (model) => {
+    if (model.walkSurfaces.length === 0 || distance(point, model.transform) > model.reach + EDGE_TOLERANCE) return false;
     const local = worldToModel(model.transform, point);
     for (const surface of model.walkSurfaces) {
       if (surface.height > height && rectContains(surface, local, EDGE_TOLERANCE)) height = surface.height;
     }
-  }
+    return false;
+  });
   return height;
 }
 
@@ -456,11 +473,12 @@ export interface ResolvedMove {
  * substep where it is legal, else a glide along what refused it, else a slide along one axis,
  * else a stop. `bodies` are the other players and monsters at the positions the client draws them.
  *
- * The glide removes from the substep the part that pushes into each face refusing it, so a body
- * follows a face at any yaw and rounds a corner or a round body. It never leans into any of
- * those faces, so in a corner there is no glide unless the step runs along one face away from the
- * other. A face first counts as the run it makes with the faces in line with it, which keeps a body
- * flush along a wall of pieces. Where that glide is refused, each feature counts as it lies.
+ * The glide runs along one face refusing the substep, by exactly the substep's share along it, so a
+ * body follows a face at any yaw and rounds a corner or a round body. Of those faces it takes the
+ * one that lets the body go furthest toward where it pushed. It never leans into any of them, so in
+ * a corner the body glides only where its glide along one face leans into none of the others. A face
+ * first counts as the run it makes with the faces in line with it, which keeps a body flush along a
+ * wall of pieces. Where that glide is refused, each feature counts as it lies.
  */
 export function resolveMove(collision: SpaceCollision, from: Point, to: Point, radius: number, npcs: readonly Body[], bodies: readonly Body[]): ResolvedMove {
   const substeps = Math.max(1, Math.ceil(distance(from, to) / MOVE_SUBSTEP));
@@ -490,18 +508,36 @@ export function resolveMove(collision: SpaceCollision, from: Point, to: Point, r
 }
 
 /**
- * The step less its push into each normal, or `undefined` where what is left still leans into
- * one of them (a wedge), turns back against the step, or is too short to count.
+ * The glide along the one face that lets the step go furthest, or `undefined` where none qualifies
+ * (a wedge) or the longest is too short to count. Each candidate is the step less its push into one
+ * normal it pushes into, and qualifies only where it leans into none of the normals. A tie goes to
+ * the larger `x`, then the larger `z`, so the order of the normals never matters. A step less its
+ * push into one normal makes with the step the square of its own length, so a glide long enough to
+ * count heads forward. `WEDGE_TOLERANCE` judges only the glides: a step that grazes a face by less
+ * was refused all the same, and its glide along that face is the one to take.
  */
 function glideAlong(step: Point, normals: readonly Point[]): Point | undefined {
-  let glide = step;
+  let best: Glide | undefined;
   for (const normal of normals) {
-    const push = Math.min(dot(glide, normal), 0);
-    glide = { x: glide.x - push * normal.x, z: glide.z - push * normal.z };
+    const push = dot(step, normal);
+    if (push >= 0) continue;
+    const glide = { x: step.x - push * normal.x, z: step.z - push * normal.z };
+    if (normals.some((other) => dot(glide, other) < -WEDGE_TOLERANCE)) continue;
+    const candidate = { glide, length: Math.hypot(glide.x, glide.z) };
+    if (best === undefined || outranks(candidate, best)) best = candidate;
   }
-  if (normals.some((normal) => dot(glide, normal) < -WEDGE_TOLERANCE)) return undefined;
-  if (dot(glide, step) <= 0 || Math.hypot(glide.x, glide.z) < NEGLIGIBLE_GLIDE) return undefined;
-  return glide;
+  return best === undefined || best.length < NEGLIGIBLE_GLIDE ? undefined : best.glide;
+}
+
+interface Glide {
+  glide: Point;
+  length: number;
+}
+
+function outranks(candidate: Glide, best: Glide): boolean {
+  if (candidate.length !== best.length) return candidate.length > best.length;
+  if (candidate.glide.x !== best.glide.x) return candidate.glide.x > best.glide.x;
+  return candidate.glide.z > best.glide.z;
 }
 
 /**

@@ -6,6 +6,7 @@ import {
   bodiesBlockLine,
   buildSpaceCollision,
   canStand,
+  collisionNear,
   groundHeightAt,
   isClear,
   isLegalMove,
@@ -15,8 +16,8 @@ import {
 } from '../src/collision.ts';
 import type { Body, SpaceCollision } from '../src/collision.ts';
 import { SOMNIO_CONSTANTS } from '../src/constants.ts';
-import { distance, modelToWorld, worldToModel } from '../src/geometry.ts';
-import type { Point, Segment } from '../src/geometry.ts';
+import { distance, distanceToRect, modelToWorld, worldToModel } from '../src/geometry.ts';
+import type { Point, Rect, Segment } from '../src/geometry.ts';
 import { hashString, seededSequence } from '../src/hash.ts';
 import { bundledModelRegistry, objectModel } from '../src/modelRegistry.ts';
 import { sectorRect } from '../src/sector.ts';
@@ -122,6 +123,49 @@ describe('the world edge', () => {
   });
 });
 
+describe('the collision near a rect', () => {
+  /** The indexes of the models the part near the rect keeps. */
+  const kept = (collision: SpaceCollision, rect: Rect, reach: number): number[] =>
+    collisionNear(collision, rect, reach)
+      .models.map((model) => collision.models.indexOf(model))
+      .sort((a, b) => a - b);
+
+  it('keeps every model of the committed outdoor world that reaches within the reach of the rect', () => {
+    const space = buildWorld(loadSectorFixtures(), BUNDLED).spaces.get('outdoors')!;
+    const collision = buildSpaceCollision(space, BUNDLED);
+    const bounds = space.sectors.map(sectorRect);
+    const minX = Math.min(...bounds.map((rect) => rect.x));
+    const minZ = Math.min(...bounds.map((rect) => rect.z));
+    const maxX = Math.max(...bounds.map((rect) => rect.x + rect.width));
+    const maxZ = Math.max(...bounds.map((rect) => rect.z + rect.depth));
+    const random = seededSequence(hashString('the collision near a rect'));
+    const rects: Rect[] = [{ x: minX + random() * (maxX - minX - 512), z: (minZ + maxZ) / 2, width: 512, depth: 16 }];
+    for (let index = 0; index < 300; index += 1) {
+      rects.push({ x: minX + random() * (maxX - minX), z: minZ + random() * (maxZ - minZ), width: random() * 8, depth: random() * 8 });
+    }
+    for (const rect of rects) {
+      const reach = random() * 2;
+      const expected = collision.models.flatMap((model, index) => (distanceToRect(model.transform, rect) <= model.reach + reach ? [index] : []));
+      expect(kept(collision, rect, reach), JSON.stringify(rect)).toEqual(expected);
+    }
+  });
+
+  it('keeps a model whose reach ends a rounding error short of the cell the reach of the rect starts in', () => {
+    // The post's reach ends at x 1.9999999999999998, a cell short of where the rect's reach starts at x 2, yet 4 + 0.9999999999999998 rounds to 5, the distance between them.
+    const box = objectModel(TEST_REGISTRY, 'box')!;
+    const registry = {
+      ...TEST_REGISTRY,
+      objectModels: [...TEST_REGISTRY.objectModels, { ...box, id: 'post', colliders: [{ x: 0, z: 0, width: 0.9999999999999998, depth: 1e-9 }] }],
+    };
+    const collision = buildSpaceCollision(
+      { id: 'outdoors', sectors: [outdoorSector('Field', { x: 0, z: 0 }, { placements: [placement('post-1', 'post', 1, 10)] })] },
+      registry,
+    );
+    expect(collision.models[0]!.reach).toBe(0.9999999999999998);
+    expect(kept(collision, { x: 6, z: 10, width: 0, depth: 0 }, 4)).toEqual([0]);
+  });
+});
+
 describe('the slide', () => {
   it('follows a wall along the free axis and reports the step as blocked', () => {
     const collision = field([], [blocker('wall', 10, 0, 1, 20)]);
@@ -184,6 +228,15 @@ describe('the slide', () => {
     expect(displacement.x * tangent.x + displacement.z * tangent.z).toBeCloseTo(into, 12);
   });
 
+  it('glides along a turned face it grazes, though the step pushes into it by less than rounding', () => {
+    const box = placement('box-1', 'box', 10, 10, 30);
+    const tangent = modelToWorld({ x: 0, z: 0, yaw: box.yaw }, { x: 1, z: 0 });
+    const from = modelToWorld(box, { x: 0, z: 0.7999990001 });
+    const moved = resolveMove(field([box]), from, modelToWorld(box, { x: 0.04, z: 0.7999989997 }), RADIUS, [], []).position;
+    expect((moved.x - from.x) * tangent.x + (moved.z - from.z) * tangent.z).toBeCloseTo(0.04, 9);
+    expect(worldToModel(box, moved).z).toBeCloseTo(0.799999, 9);
+  });
+
   it('stops in the inside corner of two walls', () => {
     const collision = field([], [blocker('east', 10, 0, 1, 20), blocker('south', 0, 10, 10, 1)]);
     const from = { x: 9.7, z: 9.7 };
@@ -212,6 +265,13 @@ describe('the slide', () => {
     const collision = field([placement('box-1', 'box', 10.4, 9.30717967697245, 330)], [blocker('wall', 0, wallZ, 20, 1)]);
     const from = { x: 10, z: 10 };
     expect(resolveMove(collision, from, { x: 10, z: 9.951 }, RADIUS, [], []).position).toEqual(from);
+  });
+
+  it('stops where a push near head-on meets the obtuse corner of a wall and a turned box', () => {
+    // The step heads almost straight into the box's face, so its glide along that face is 0.058 mm, too short to count, and its glide along the wall leans into the box.
+    const collision = field([placement('box-1', 'box', 10, 9.63807, 39.416)], [blocker('wall', 0, 9, 20, 1)]);
+    const from = { x: 10.454565, z: 10.3 };
+    expect(resolveMove(collision, from, { x: from.x - 0.0258, z: from.z - 0.0313 }, RADIUS, [], []).position).toEqual(from);
   });
 
   it('does not creep along a face it meets head-on', () => {
@@ -260,7 +320,7 @@ describe('the slide', () => {
     const collision = field([], [blocker('west', 1, 9, 9, 1), blocker('east', 10, 9, 9, 1)]);
     const from = { x: 9.83, z: 10.3 };
     const moved = resolveMove(collision, from, { x: 9.87, z: 10.27 }, RADIUS, npcs, bodies).position;
-    expect(distance(from, moved)).toBeGreaterThan(0.03);
+    expect(distance(from, moved)).toBeGreaterThan(0.015);
   });
 
   it('glides along a face beside a drawn player it overlaps and steps away from', () => {
@@ -331,7 +391,7 @@ describe('the slide', () => {
       const collision = field([], [blocker('west', 1, 8, 9, 1), blocker('east', 10, 7, 9, 1.98)]);
       const path = walk(collision, { x: 9.8, z: 9.3 }, { x: Math.cos(Math.PI / 6), z: -Math.sin(Math.PI / 6) }, 12);
       // Joined as one run, the two faces would hold the body at z 9.3.
-      expect(path.at(-1)!.z).toBeCloseTo(9.29806, 5);
+      expect(path.at(-1)!.z).toBeCloseTo(9.298534, 5);
       expect(path.at(-1)!.x).toBeGreaterThan(10.2);
     });
 
@@ -418,7 +478,7 @@ describe('the slide', () => {
     const collision = field([placement('box-1', 'box', 9.913175911166535, 9.497596123493896, 10)], [blocker('wall', 0, 9, 20, 1)]);
     const from = { x: 10, z: 10.3 };
     const moved = resolveMove(collision, from, { x: 9.965, z: 10.265 }, RADIUS, [], []).position;
-    expect(distance(from, moved)).toBeGreaterThan(0.03);
+    expect(distance(from, moved)).toBeGreaterThan(0.025);
   });
 
   it('glides round a corner near a wall, though the wall is nearer', () => {
@@ -426,7 +486,7 @@ describe('the slide', () => {
     const collision = field([placement('box-1', 'box', 9.79, 8.6, 120)], [blocker('wall', 8.688, 0, 1, 20)]);
     const from = { x: 10, z: 10 };
     const moved = resolveMove(collision, from, { x: 9.983, z: 9.953 }, RADIUS, [], []).position;
-    expect(distance(from, moved)).toBeGreaterThan(0.02);
+    expect(distance(from, moved)).toBeGreaterThan(0.005);
   });
 
   it('glides round the corner of a turned face beside a wall, though the corner lies inside the wall', () => {
@@ -437,7 +497,7 @@ describe('the slide', () => {
     expect(distance(from, moved)).toBeGreaterThan(0.045);
   });
 
-  it('falls back to an axis slide where the glide would turn back against the step', () => {
+  it("keeps the blocked x and takes the free z along the townhall's face", () => {
     const collision = bundledField([placement('townhall-1', 'building-townhall', 10, 10, 270)]);
     const from = { x: 9.66, z: 12.7 };
     const step = { x: 0.0315138, z: 0.0055567 };
@@ -471,6 +531,18 @@ describe('the slide', () => {
       const moved = resolveMove(field(placements), from, to, RADIUS, [], []).position;
       expect((moved.x - from.x) * tangent.x + (moved.z - from.z) * tangent.z).toBeGreaterThan(0.015);
     }
+  });
+
+  it('resolves a step the same whichever of two touching placements is listed first', () => {
+    const boxes = [placement('box-1', 'box', 10, 10, 33), placement('box-2', 'box', 10.95, 9.47, 20)];
+    const from = { x: 10.38, z: 8.79 };
+    const heading = (75 * Math.PI) / 180;
+    const to = { x: from.x + 0.04 * Math.cos(heading), z: from.z + 0.04 * Math.sin(heading) };
+    const [listed, reversed] = [boxes, boxes.toReversed()].map((placements) => resolveMove(field(placements), from, to, RADIUS, [], []).position);
+    expect(reversed).toEqual(listed);
+    // The glide west along the face; the slide east along x would be legal too.
+    expect(listed!.x).toBeCloseTo(10.376724, 6);
+    expect(listed!.z).toBeCloseTo(8.791192, 6);
   });
 
   /**

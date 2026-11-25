@@ -142,7 +142,16 @@ describe('worker jobs', () => {
   it('rasterizes where a body can walk in the walk worker', async () => {
     workerScope();
     await import('@/client/walkRaster.worker');
-    const sector = outdoorSector('Field', { x: 0, z: 0 });
+    const boxes = [
+      { x: 4, z: 5, yaw: 0 },
+      { x: 10, z: 11, yaw: 30 },
+      { x: 15.5, z: 3, yaw: 90 },
+    ];
+    const sector = outdoorSector(
+      'Field',
+      { x: 0, z: 0 },
+      { placements: boxes.map((box, index) => ({ id: `box-${index}`, modelId: 'box', elevation: 0, ...box })) },
+    );
     const inputs = walkRasterInputs(buildSpaceCollision({ id: 'outdoors', sectors: [sector] }, TEST_REGISTRY), sector);
     const rasters: WalkRaster[] = [];
 
