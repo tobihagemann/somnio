@@ -23,10 +23,12 @@ import { reseeded } from './inspectorDraft';
  * Text fields follow the draft lifecycle (`inspectorDraft.ts`): commit on Return or blur,
  * never per keystroke, so each committed edit is exactly one undo step and one scene
  * reconcile; an unparseable draft reverts, as does one the document refuses, and an equal value
- * skips the commit. Rows are rebuilt only when the selection identity changes — on a document
- * change with the same selection, each field refreshes through the reseed rule so a focused edit
- * is never lost. An NPC's dialog is the one field whose own rows follow the document, rebuilt as
- * its step count, or the roles its steps may be for, change.
+ * skips the commit. Rows are rebuilt only when the selection identity changes. A rename of the
+ * shown record keeps them, since each field finds its record through the rows' holder, which the
+ * rename moves (`followRename`). On a document change with the same selection, each field
+ * refreshes through the reseed rule so a focused edit is never lost. An NPC's dialog is the one
+ * field whose own rows follow the document, rebuilt as its step count, or the roles its steps may
+ * be for, change.
  */
 
 export interface InspectorCallbacks {
@@ -69,6 +71,11 @@ interface UnaddedStep {
 /** Finds the record a field edits in whichever body it is handed: the live one to read, a commit's copy to write. */
 type Find<R> = (sector: Sector) => R | undefined;
 
+/** The single record a set of rows edits. A rename puts the renamed selection in its place, so the rows read the id as they run. */
+interface RecordHolder {
+  record: EditorSelection;
+}
+
 const POSITION_FIELDS = [
   ['X', 'x'],
   ['Z', 'z'],
@@ -89,6 +96,11 @@ const LISTENER_ROLE_LABELS: Record<ListenerRole, string> = {
   own: 'Own role',
   other: 'Another role',
 };
+
+/** The identity of the rows a selection shows, which the rows are rebuilt on a change of. */
+function rowsKey(selection: readonly EditorSelection[]): string {
+  return selection.length === 0 ? 'sector' : selection.map(selectionKey).sort().join(',');
+}
 
 function idOptions(ids: readonly string[]): PickerOption[] {
   return ids.map((id) => ({ value: id, label: id }));
@@ -111,6 +123,8 @@ export class InspectorPanel {
   private shown!: Sector;
   /** Selection identity of the currently built rows, so a reseed never hits foreign fields. */
   private renderedKey = '';
+  /** What the rows edit while one record is shown. */
+  private holder: RecordHolder | undefined;
   /**
    * Each NPC's New step box as last left, by the NPC's id, so selecting another loses no line. An
    * entry follows its NPC's renames (`followRename`) and goes with the NPC and with the document
@@ -139,8 +153,16 @@ export class InspectorPanel {
     if (focused instanceof HTMLElement && this.body.contains(focused)) focused.blur();
   }
 
-  /** Carries an NPC's unadded step along with a rename of the NPC: a commit's, an undo's, or a redo's. */
+  /**
+   * Carries the rows, and an NPC's unadded step, along with a rename of their record: a commit's,
+   * an undo's, or a redo's. The next render keeps the rows, so a press whose blur committed the
+   * rename still lands on the control it was aimed at.
+   */
   followRename(rename: RecordRename): void {
+    if (this.holder !== undefined && selectionKey(this.holder.record) === selectionKey(rename.from)) {
+      this.holder.record = rename.to;
+      this.renderedKey = rowsKey([rename.to]);
+    }
     if (rename.from.kind !== 'npc') return;
     const kept = this.unaddedSteps.get(rename.from.id);
     if (kept === undefined) return;
@@ -156,7 +178,7 @@ export class InspectorPanel {
   render(sector: Sector, selection: readonly EditorSelection[], isUninitialized: boolean): void {
     this.shown = sector;
     for (const id of this.unaddedSteps.keys()) if (!sector.npcs.some((npc) => npc.id === id)) this.unaddedSteps.delete(id);
-    const key = selection.length === 0 ? 'sector' : selection.map(selectionKey).sort().join(',');
+    const key = rowsKey(selection);
     if (key !== this.renderedKey || selection.length === 0) this.rebuild(sector, selection, isUninitialized, key);
     // Rows just built are seeded here too: nothing in them is focused, so the reseed rule fills
     // each field with its committed rendering.
@@ -166,6 +188,7 @@ export class InspectorPanel {
   private rebuild(sector: Sector, selection: readonly EditorSelection[], isUninitialized: boolean, key: string): void {
     this.renderedKey = key;
     this.fields = [];
+    this.holder = undefined;
     if (selection.length === 0) {
       this.title.textContent = 'Sector';
       this.renderSectorSummary(sector, isUninitialized);
@@ -181,30 +204,32 @@ export class InspectorPanel {
       replaceChildren(this.body, []);
       return;
     }
+    const holder: RecordHolder = { record: selected };
+    this.holder = holder;
     switch (selected.kind) {
       case 'placement':
         this.title.textContent = 'Model';
-        this.renderPlacement(selected);
+        this.renderPlacement(holder);
         break;
       case 'blocker':
         this.title.textContent = 'Blocker';
-        this.setRows([this.idField(selected), ...this.numberFields(RECT_FIELDS, (s) => byId(s.blockers, selected.id), 'Edit blocker')]);
+        this.setRows([this.idField(holder), ...this.numberFields(RECT_FIELDS, (s) => byId(s.blockers, holder.record.id), 'Edit blocker')]);
         break;
       case 'door':
         this.title.textContent = 'Door';
-        this.renderDoor(selected);
+        this.renderDoor(holder);
         break;
       case 'npc':
         this.title.textContent = 'NPC';
-        this.renderNPC(selected);
+        this.renderNPC(holder);
         break;
       case 'monsterSpawn':
         this.title.textContent = 'Monster spawn';
-        this.renderMonsterSpawn(selected);
+        this.renderMonsterSpawn(holder);
         break;
       case 'mark':
         this.title.textContent = 'Ground mark';
-        this.renderMark(selected);
+        this.renderMark(holder);
         break;
       case 'spawn':
         this.title.textContent = 'Spawn point';
@@ -235,28 +260,28 @@ export class InspectorPanel {
     ]);
   }
 
-  private renderPlacement(selection: EditorSelection): void {
+  private renderPlacement(holder: RecordHolder): void {
     const actionName = 'Edit model';
-    const placement: Find<Sector['placements'][number]> = (s) => byId(s.placements, selection.id);
+    const placement: Find<Sector['placements'][number]> = (s) => byId(s.placements, holder.record.id);
     this.setRows([
-      this.idField(selection),
+      this.idField(holder),
       this.picker('Model', () => idOptions(this.registry.objectModels.map((rule) => rule.id)), placement, 'modelId', actionName),
       ...this.numberFields(POSITION_FIELDS, placement, actionName),
       this.numberField('Yaw', placement, 'yaw', actionName, heading),
       this.numberField('Elevation', placement, 'elevation', actionName),
-      this.doorList(selection.id),
+      this.doorList(holder),
       this.servicePicker(
-        (s) => s.fixtures.find((fixture) => fixture.placement === selection.id)?.service,
+        (s) => s.fixtures.find((fixture) => fixture.placement === holder.record.id)?.service,
         actionName,
-        (draft, service) => setFixtureService(draft, selection.id, service),
+        (draft, service) => setFixtureService(draft, holder.record.id, service),
       ),
-      this.issueLines(selection),
+      this.issueLines(holder),
     ]);
   }
 
-  private renderDoor(selection: EditorSelection): void {
+  private renderDoor(holder: RecordHolder): void {
     const actionName = 'Edit door';
-    const door: Find<Sector['doors'][number]> = (s) => byId(s.doors, selection.id);
+    const door: Find<Sector['doors'][number]> = (s) => byId(s.doors, holder.record.id);
     const target: Find<Sector['doors'][number]['target']> = (s) => door(s)?.target;
     const anchors = (s: Sector): string[] => {
       const placement = byId(s.placements, door(s)?.placement ?? '');
@@ -267,7 +292,7 @@ export class InspectorPanel {
       return (targetSector?.doors ?? []).map((candidate) => candidate.id);
     };
     this.setRows([
-      this.idField(selection),
+      this.idField(holder),
       this.picker('Anchor', (s) => idOptions(anchors(s)), door, 'anchor', actionName),
       this.picker(
         'Target sector',
@@ -278,15 +303,15 @@ export class InspectorPanel {
       ),
       this.picker('Target door', (s) => idOptions(targetDoors(s)), target, 'door', actionName),
       this.nightOnlyToggle(door, actionName),
-      this.issueLines(selection),
+      this.issueLines(holder),
     ]);
   }
 
-  private renderNPC(selection: EditorSelection): void {
+  private renderNPC(holder: RecordHolder): void {
     const actionName = 'Edit NPC';
-    const npc: Find<Sector['npcs'][number]> = (s) => byId(s.npcs, selection.id);
+    const npc: Find<Sector['npcs'][number]> = (s) => byId(s.npcs, holder.record.id);
     this.setRows([
-      this.idField(selection),
+      this.idField(holder),
       this.textField('Name', npc, 'name', actionName),
       this.picker('Character', () => idOptions(this.registry.characterModels.map((rule) => rule.id)), npc, 'characterModelId', actionName),
       ...this.numberFields(POSITION_FIELDS, npc, actionName),
@@ -301,16 +326,16 @@ export class InspectorPanel {
           else record.service = service;
         },
       ),
-      this.greetingField(selection.id, npc, actionName),
-      this.dialogField(selection.id, npc, actionName),
+      this.greetingField(npc, actionName),
+      this.dialogField(holder, npc, actionName),
     ]);
   }
 
-  private renderMonsterSpawn(selection: EditorSelection): void {
+  private renderMonsterSpawn(holder: RecordHolder): void {
     const actionName = 'Edit monster spawn';
-    const spawn: Find<Sector['monsterSpawns'][number]> = (s) => byId(s.monsterSpawns, selection.id);
+    const spawn: Find<Sector['monsterSpawns'][number]> = (s) => byId(s.monsterSpawns, holder.record.id);
     this.setRows([
-      this.idField(selection),
+      this.idField(holder),
       this.picker('Kind', () => idOptions(MONSTER_KIND_IDS), spawn, 'kind', actionName),
       ...this.numberFields(RECT_FIELDS, spawn, actionName),
       this.numberField('Max alive', spawn, 'maxAlive', actionName, (value) => value),
@@ -323,15 +348,15 @@ export class InspectorPanel {
    * edited, and its points never move here, so a stroke's radius is capped where its points still
    * lie inside the bound the codec holds them to.
    */
-  private renderMark(selection: EditorSelection): void {
+  private renderMark(holder: RecordHolder): void {
     const actionName = 'Edit ground mark';
-    const mark: Find<Sector['ground']['marks'][number]> = (s) => byId(s.ground.marks, selection.id);
+    const mark: Find<Sector['ground']['marks'][number]> = (s) => byId(s.ground.marks, holder.record.id);
     const stroke: Find<{ radius: number }> = (s) => {
       const shape = mark(s)?.shape;
       return shape?.kind === 'stroke' ? shape : undefined;
     };
     this.setRows([
-      this.idField(selection),
+      this.idField(holder),
       this.picker('Material', () => idOptions(GROUND_MATERIAL_IDS), mark, 'materialId', actionName),
       this.numberField('Opacity', mark, 'opacity', actionName, unitShare),
       ...(stroke(this.shown) === undefined
@@ -508,12 +533,12 @@ export class InspectorPanel {
   }
 
   /** The record's id, held to the rule the sector codec applies. A rename changes the selection's identity, so it goes through its own callback. */
-  private idField(selection: EditorSelection): DraftField {
+  private idField(holder: RecordHolder): DraftField {
     return this.draftField(
       'Id',
-      () => selection.id,
+      () => holder.record.id,
       (text) => (isValidId(text.trim()) ? text.trim() : undefined),
-      (rendered) => this.callbacks.rename(selection, rendered),
+      (rendered) => this.callbacks.rename(holder.record, rendered),
     );
   }
 
@@ -521,14 +546,14 @@ export class InspectorPanel {
    * The doors in a placement's wall: one button per door to select it, and one per free anchor
    * of its model to put a door there.
    */
-  private doorList(placementId: string): DraftField {
+  private doorList(holder: RecordHolder): DraftField {
     const row = element('div', { className: 'editor-door-list' });
     let listed = '';
     return {
       row,
       refresh: (sector) => {
-        const doors = sector.doors.filter((door) => door.placement === placementId);
-        const free = (objectModel(this.registry, byId(sector.placements, placementId)?.modelId ?? '')?.doors ?? [])
+        const doors = sector.doors.filter((door) => door.placement === holder.record.id);
+        const free = (objectModel(this.registry, byId(sector.placements, holder.record.id)?.modelId ?? '')?.doors ?? [])
           .map((anchor) => anchor.id)
           .filter((anchor) => !doors.some((door) => door.anchor === anchor));
         const list = JSON.stringify([doors.map((door) => door.id), free]);
@@ -536,19 +561,19 @@ export class InspectorPanel {
         listed = list;
         replaceChildren(row, [
           ...doors.map((door) => button(`Door ${door.id}`, () => this.callbacks.onSelect({ kind: 'door', id: door.id }))),
-          ...free.map((anchor) => button(`Add door at ${anchor}`, () => this.callbacks.onAddDoor(placementId, anchor))),
+          ...free.map((anchor) => button(`Add door at ${anchor}`, () => this.callbacks.onAddDoor(holder.record.id, anchor))),
         ]);
       },
     };
   }
 
   /** What the world reports about the selected record, kept current as the document changes. */
-  private issueLines(selection: EditorSelection): DraftField {
+  private issueLines(holder: RecordHolder): DraftField {
     const row = element('div');
     return {
       row,
       refresh: () => {
-        const issues = this.callbacks.issues().records.filter((issue) => issue.record === selection.kind && issue.id === selection.id);
+        const issues = this.callbacks.issues().records.filter((issue) => issue.record === holder.record.kind && issue.id === holder.record.id);
         replaceChildren(
           row,
           issues.map((issue) => issueLine(issue.message)),
@@ -558,10 +583,10 @@ export class InspectorPanel {
   }
 
   /** What an NPC says to whoever comes near. Cleared to blank, it removes the greeting. */
-  private greetingField(npcId: string, find: Find<Sector['npcs'][number]>, actionName: string): DraftField {
+  private greetingField(find: Find<Sector['npcs'][number]>, actionName: string): DraftField {
     return this.lineArea(
       'Greeting',
-      `somnio-editor-greeting-${npcId}`,
+      'somnio-editor-greeting',
       (sector) => find(sector)?.greeting ?? '',
       (text) => (text.trim() === '' ? '' : text),
       (rendered) =>
@@ -583,16 +608,16 @@ export class InspectorPanel {
    * line the document refuses stays in the box, and its For goes back to Everyone once the NPC's
    * service no longer offers it.
    */
-  private dialogField(npcId: string, find: Find<Sector['npcs'][number]>, actionName: string): DraftField {
+  private dialogField(holder: RecordHolder, find: Find<Sector['npcs'][number]>, actionName: string): DraftField {
     const list = element('div');
     let rows: DraftField[] = [];
     let options: ListenerOption[] = [];
     let shape: string | undefined;
-    const textarea = lineTextarea(`somnio-editor-step-${npcId}-new`);
-    textarea.value = this.unaddedSteps.get(npcId)?.text ?? '';
+    const textarea = lineTextarea('somnio-editor-step-new');
+    textarea.value = this.unaddedSteps.get(holder.record.id)?.text ?? '';
     const listener = select('For new step', []);
     const keep = (): void => {
-      this.unaddedSteps.set(npcId, { text: textarea.value, listener: listener.input.value });
+      this.unaddedSteps.set(holder.record.id, { text: textarea.value, listener: listener.input.value });
     };
     textarea.addEventListener('input', keep);
     listener.input.addEventListener('change', keep);
@@ -601,7 +626,7 @@ export class InspectorPanel {
       const step: DialogStep = { text: textarea.value };
       setListener(step, options.find((option) => option.value === listener.input.value)?.choice);
       if (!this.callbacks.mutate(actionName, (mutable) => find(mutable)?.dialog.push(step)).accepted) return;
-      this.unaddedSteps.delete(npcId);
+      this.unaddedSteps.delete(holder.record.id);
       textarea.value = '';
       listener.input.value = '';
       textarea.focus();
@@ -625,20 +650,20 @@ export class InspectorPanel {
     return {
       row,
       refresh: (sector) => {
-        const npc = find(sector);
-        const steps = npc?.dialog ?? [];
-        const next = `${steps.length} ${listenerRolesFor(npc?.service).join(',')}`;
+        const record = find(sector);
+        const steps = record?.dialog ?? [];
+        const next = `${steps.length} ${listenerRolesFor(record?.service).join(',')}`;
         if (next === shape) {
           for (const entry of rows) entry.refresh(sector);
           return;
         }
         shape = next;
-        options = listenerOptions(npc?.service);
-        const chosen = this.unaddedSteps.get(npcId)?.listener ?? '';
+        options = listenerOptions(record?.service);
+        const chosen = this.unaddedSteps.get(holder.record.id)?.listener ?? '';
         setOptions(listener.input, options);
         listener.input.value = options.some((option) => option.value === chosen) ? chosen : '';
         if (listener.input.value !== chosen) keep();
-        rows = steps.map((_, index) => this.dialogStepRow(npcId, find, index, options, actionName));
+        rows = steps.map((_, index) => this.dialogStepRow(find, index, options, actionName));
         replaceChildren(
           list,
           rows.map((entry) => entry.row),
@@ -649,11 +674,11 @@ export class InspectorPanel {
   }
 
   /** One step of an NPC's dialog: its text, whom it is for, and Remove. */
-  private dialogStepRow(npcId: string, find: Find<Sector['npcs'][number]>, index: number, options: readonly ListenerOption[], actionName: string): DraftField {
+  private dialogStepRow(find: Find<Sector['npcs'][number]>, index: number, options: readonly ListenerOption[], actionName: string): DraftField {
     const step = (sector: Sector) => find(sector)?.dialog[index];
     const text = this.lineArea(
       `Step ${index + 1}`,
-      `somnio-editor-step-${npcId}-${index}`,
+      `somnio-editor-step-${index}`,
       (sector) => step(sector)?.text ?? '',
       (typed) => typed,
       (rendered) =>
@@ -736,15 +761,11 @@ function draft(
   let lastRendered = '';
   const commit = (): void => {
     const parsed = parse(control.value);
-    const committed = lastRendered;
-    // Recorded before the commit runs: a rename has the rows replaced while it is still running,
-    // Chromium blurs the focused input it removes, and that blur must find nothing left to commit.
-    if (parsed !== undefined) lastRendered = parsed;
-    if (parsed === undefined || (parsed !== committed && !commitRendered(parsed))) {
-      lastRendered = committed;
-      control.value = committed;
+    if (parsed === undefined || (parsed !== lastRendered && !commitRendered(parsed))) {
+      control.value = lastRendered;
       return;
     }
+    lastRendered = parsed;
     control.value = parsed;
   };
   control.addEventListener('blur', commit);

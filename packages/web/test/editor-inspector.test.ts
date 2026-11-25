@@ -146,6 +146,15 @@ function choose(picker: HTMLSelectElement, value: string): void {
   picker.dispatchEvent(new Event('change'));
 }
 
+/** Types a new Id and presses the button as a pointer does: focus moves to the button first, so the Id's blur commits the rename before the click. */
+function renameByPress(h: Harness, id: string, button: HTMLButtonElement): void {
+  const field = h.input('Id');
+  field.focus();
+  field.value = id;
+  button.focus();
+  button.click();
+}
+
 afterEach(() => {
   document.body.replaceChildren();
 });
@@ -547,6 +556,17 @@ describe("an NPC's lines", () => {
     expect(shown()).toEqual(['And running is forbidden in here!', 'role:none']);
   });
 
+  it('adds the new step to an NPC whose new Id the press on Add step commits', () => {
+    const h = harness();
+    h.select([{ kind: 'npc', id: 'libus' }]);
+    const add = buttonNamed(h, 'Add step')[0]!;
+    compose(h, 'And running is forbidden in here!');
+    renameByPress(h, 'libus-elder', add);
+    expect(add.isConnected).toBe(true);
+    expect(libus(h)).toMatchObject({ id: 'libus-elder', dialog: [{ text: 'Servus' }, { text: 'And running is forbidden in here!' }] });
+    expect(textarea(h, 'New step').value).toBe('');
+  });
+
   it('keeps the new step of an NPC through a rename of another kind of record that shares its id', () => {
     const h = harness();
     h.document.mutate('Seed blocker', (sector) => {
@@ -680,6 +700,19 @@ describe('ids', () => {
     expect(h.input('Id').value).toBe('gate');
   });
 
+  it('keeps the rows through a rename and back through its undo, editing the record under each id', () => {
+    const h = harness();
+    h.select([{ kind: 'blocker', id: 'wall' }]);
+    const field = h.input('Id');
+    h.type('Id', 'north-wall');
+    expect(h.input('Id')).toBe(field);
+    h.document.undo();
+    expect(h.input('Id')).toBe(field);
+    expect(field.value).toBe('wall');
+    h.type('X', '5');
+    expect(h.document.sector.blockers[0]).toMatchObject({ id: 'wall', x: 5 });
+  });
+
   it.each([
     ['one the codec does not allow', 'North Wall'],
     ['one another record of the kind carries', 'fence'],
@@ -718,6 +751,18 @@ describe('doors', () => {
     // A model with no anchors offers nothing.
     h.select([{ kind: 'placement', id: 'box-1' }]);
     expect(buttons()).toEqual([]);
+  });
+
+  it('adds a door to a placement whose new Id the press on Add door commits', () => {
+    const h = harness();
+    h.document.mutate('Remove door', (sector) => {
+      sector.doors = [];
+    });
+    h.select([{ kind: 'placement', id: 'door-1' }]);
+    const add = h.panel.root.querySelector<HTMLButtonElement>('.editor-door-list button')!;
+    renameByPress(h, 'gate', add);
+    expect(add.isConnected).toBe(true);
+    expect(h.events).toEqual(['add door gate main']);
   });
 
   it('picks the target among the other sectors and their doors', () => {

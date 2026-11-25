@@ -9,7 +9,7 @@ import { SUN_SHADOW } from '@/scene/dayNightSun';
 import { documentIssues, issueMessages, neighbours } from '@/editor/surroundings';
 import { SECTOR_FIXTURE_NAMES, loadSectorFixtures, readSectorFixture } from '../../core/test/support/sectorFixture.ts';
 import type { SectorFixtureName } from '../../core/test/support/sectorFixture.ts';
-import { SETTINGS, blurOnRemoval, headlessShell, labelled, shellWithDocument } from './helpers/editorFixture';
+import { SETTINGS, headlessShell, labelled, shellWithDocument } from './helpers/editorFixture';
 
 /**
  * The editor among the other sectors (which neighbours it draws, what the world would report
@@ -492,24 +492,19 @@ describe('commands', () => {
     field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }));
   }
 
-  it.each([
-    ['fires no blur on removal', false],
-    ['blurs an input it removes', true],
-  ])('keeps a record selected under the id it is renamed to, in one undo step, where the engine %s', (_engine, blursOnRemoval) => {
-    if (blursOnRemoval) blurOnRemoval();
+  it('keeps a record selected under the id it is renamed to, and its rows, in one undo step', () => {
     const shell = withRecords();
     shell.selection = [{ kind: 'blocker', id: 'blocker-1' }];
     shell.inspector.render(shell.document.sector, shell.selection, false);
-    // The rename has the rows replaced, the Id field among them, while the field is committing.
     const mutate = vi.spyOn(shell.document, 'mutate');
     const depth = shell.document.undoDepth;
     const field = labelled(shell.inspector.root, 'Id');
     typeId(shell, 'north-wall');
-    expect(field.isConnected).toBe(false);
+    expect(field.isConnected).toBe(true);
     expect(mutate).toHaveBeenCalledTimes(1);
     expect(shell.document.sector.blockers.map((blocker) => blocker.id)).toEqual(['north-wall']);
     expect(shell.selection).toEqual([{ kind: 'blocker', id: 'north-wall' }]);
-    expect(labelled(shell.inspector.root, 'Id').value).toBe('north-wall');
+    expect(field.value).toBe('north-wall');
     expect(shell.document.undoDepth).toBe(depth + 1);
   });
 
