@@ -4,10 +4,10 @@
  * floor-material ids, which every picker reads.
  */
 
-type GroundPattern = 'meadow' | 'forest' | 'dirt' | 'cobble' | 'flagstone' | 'planks';
+type GroundPattern = 'meadow' | 'forest' | 'litter' | 'dirt' | 'cobble' | 'flagstone' | 'planks';
 
 /** The floor-material ids, in the order the ground's weight channels carry them. */
-export const GROUND_MATERIAL_IDS = ['grass-meadow', 'forest-floor', 'dirt-path', 'cobble-town', 'stone-arena', 'wood-warm'] as const;
+export const GROUND_MATERIAL_IDS = ['grass-meadow', 'forest-floor', 'dirt-path', 'cobble-town', 'stone-arena', 'wood-warm', 'leaf-litter'] as const;
 export type GroundMaterialId = (typeof GROUND_MATERIAL_IDS)[number];
 
 /** The most floor materials a ground carries: the weights ride two RGBA textures. */
@@ -26,6 +26,7 @@ export const GROUND_RECIPES: Readonly<Record<GroundMaterialId, GroundRecipe>> = 
   'cobble-town': { pattern: 'cobble', palette: [0xaaa398, 0x6f6a63, 0xc8c2b6] },
   'stone-arena': { pattern: 'flagstone', palette: [0x9c958a, 0x5f5b55, 0xbab3a6] },
   'wood-warm': { pattern: 'planks', palette: [0xb07d4c, 0x8c5d37, 0x4a3020] },
+  'leaf-litter': { pattern: 'litter', palette: [0x8a5530, 0x4e3524, 0xc4863c] },
 };
 
 /** The channel a floor material is drawn in, or `undefined` for an id with no recipe. */
@@ -51,6 +52,15 @@ float groundFleck(vec2 p, float cells, float chance, float seed) {
   float r = 0.18 + 0.14 * groundHash(c + seed + 4.0);
   return step(1.0 - chance, groundHash(c + seed + 9.0)) * (1.0 - smoothstep(r * 0.55, r, length(f - centre)));
 }
+// A leaf at a random angle in a fraction of the cells of a jittered grid: x is its coverage, y a hash to pick its hue by.
+vec2 groundLeaf(vec2 p, float cells, float chance, float seed) {
+  vec2 c = floor(p * cells), f = fract(p * cells);
+  vec2 d = f - (0.3 + 0.4 * groundHash2(c + seed));
+  float a = groundHash(c + seed + 2.0) * 6.2832;
+  d = vec2(cos(a) * d.x + sin(a) * d.y, cos(a) * d.y - sin(a) * d.x);
+  float r = length(d / vec2(0.27, 0.13));
+  return vec2(step(1.0 - chance, groundHash(c + seed + 9.0)) * (1.0 - smoothstep(0.7, 1.0, r)), groundHash(c + seed + 5.0));
+}
 // Stones of a Voronoi cell pattern, mortar between them.
 vec3 groundStones(vec2 p, float cells, vec3 a, vec3 b, vec3 mortar) {
   vec2 cp = p * cells, ci = floor(cp), cf = fract(cp);
@@ -73,6 +83,17 @@ vec3 groundForest(vec2 p, vec3 base, vec3 dark, vec3 light, float lo, float mid)
   c = mix(c, light, smoothstep(0.6, 0.85, mid) * 0.35);
   c = mix(c, dark * 0.8, groundFleck(p, 8.0, 0.18, 5.0) * 0.45);
   return mix(c, light, groundFleck(p, 5.0, 0.05, 6.0) * 0.4);
+}
+// A recipe has three palette colours, so rust, which has none of its own, is the base lifted toward red.
+// The big leaves are rust or the light's ochre, the small ones rust or a deeper dark.
+vec3 groundLitter(vec2 p, vec3 base, vec3 dark, vec3 light, float lo, float mid) {
+  vec3 c = mix(base, dark, smoothstep(0.3, 0.7, lo));
+  c = mix(c, light, smoothstep(0.6, 0.85, mid) * 0.25);
+  vec3 rust = base * vec3(1.3, 0.9, 0.8);
+  vec2 big = groundLeaf(p, 3.5, 0.3, 11.0);
+  c = mix(c, mix(rust, light, step(0.5, big.y)), big.x * 0.8);
+  vec2 small = groundLeaf(p, 5.5, 0.25, 13.0);
+  return mix(c, mix(dark * 0.8, rust, step(0.55, small.y)), small.x * 0.6);
 }
 vec3 groundDirt(vec2 p, vec3 base, vec3 dark, vec3 light, float lo, float mid) {
   vec3 c = mix(base, dark, smoothstep(0.3, 0.75, groundFbm(p * 0.6 + 9.0)));
@@ -106,6 +127,7 @@ const GROUND_LOOKUP_WOBBLE_METRES = 0.18;
 const PATTERN_FUNCTIONS: Record<GroundPattern, string> = {
   meadow: 'groundMeadow',
   forest: 'groundForest',
+  litter: 'groundLitter',
   dirt: 'groundDirt',
   cobble: 'groundCobble',
   flagstone: 'groundFlagstone',

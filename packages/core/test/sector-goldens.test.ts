@@ -75,7 +75,7 @@ describe('the committed world', () => {
         kind: 'outdoor',
         size: { width: 40.96, depth: 40.96 },
         origin: { x: 40.96, z: 0 },
-        backgroundMaterialId: 'forest-floor',
+        backgroundMaterialId: 'leaf-litter',
         counts: { placements: 170, blockers: 0, doors: 0, npcs: 0, monsterSpawns: 3, marks: 4 },
         doors: {},
         npcs: {},

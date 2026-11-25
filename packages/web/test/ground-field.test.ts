@@ -270,7 +270,7 @@ describe('an interior', () => {
 
 describe('the committed world', () => {
   it('pins the floor-material ids, within the channels a field carries', () => {
-    expect(GROUND_MATERIAL_IDS).toEqual(['grass-meadow', 'forest-floor', 'dirt-path', 'cobble-town', 'stone-arena', 'wood-warm']);
+    expect(GROUND_MATERIAL_IDS).toEqual(['grass-meadow', 'forest-floor', 'dirt-path', 'cobble-town', 'stone-arena', 'wood-warm', 'leaf-litter']);
     expect(GROUND_MATERIAL_IDS.length).toBeLessThanOrEqual(MAX_GROUND_MATERIALS);
     expect(groundMaterialChannel('forest-floor')).toBe(1);
     expect(groundMaterialChannel('lava')).toBeUndefined();

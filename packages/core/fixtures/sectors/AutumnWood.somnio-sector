@@ -1,6 +1,6 @@
 {
   "ground": {
-    "backgroundMaterialId": "forest-floor",
+    "backgroundMaterialId": "leaf-litter",
     "marks": [
       {
         "id": "gen-road-east",

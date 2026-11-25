@@ -82,6 +82,7 @@ export function scatterSector(inputs: ScatterInputs): Scatter {
   const channel = (id: GroundMaterialId): number => GROUND_MATERIAL_IDS.indexOf(id);
   const grass = channel('grass-meadow');
   const forest = channel('forest-floor');
+  const litter = channel('leaf-litter');
   const dirt = channel('dirt-path');
   const hard = (['cobble-town', 'stone-arena', 'wood-warm'] as const).map(channel);
   // The footprint is centred on the transform, so half its diagonal reaches every corner at any yaw.
@@ -126,11 +127,13 @@ export function scatterSector(inputs: ScatterInputs): Scatter {
       const open = Math.max(0, 1 - paved) ** 3;
       const clump = 0.35 + 1.3 * fbm(point.x * 0.35, point.z * 0.35, seed + 1);
       const yaw = roll(3) * 360;
+      // Leaf litter grows no grass: the tufts are green, and its floor carries the autumn colour.
       if (roll(2) < SCATTER_DENSITY * 0.5 * (weights[grass]! + 0.75 * weights[forest]!) * open * clump) {
         scatter.tufts.push({ modelId: GRASS_MODEL_IDS[Math.floor(roll(4) * GRASS_MODEL_IDS.length)]!, ...point, yaw });
       }
       const onPathEdge = weights[dirt]! > 0.12;
-      if ((onPathEdge && roll(5) < SCATTER_DENSITY * 0.22) || (weights[forest]! > 0.6 && roll(5) < SCATTER_DENSITY * 0.03)) {
+      const underTrees = weights[forest]! + weights[litter]! > 0.6;
+      if ((onPathEdge && roll(5) < SCATTER_DENSITY * 0.22) || (underTrees && roll(5) < SCATTER_DENSITY * 0.03)) {
         scatter.pebbles.push({ modelId: PEBBLE_MODEL_ID, ...point, yaw });
       }
       if (weights[grass]! > 0.75 && open > 0.8 && roll(6) < SCATTER_DENSITY * 0.035 * clump) {

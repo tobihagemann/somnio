@@ -3,6 +3,7 @@ import { SECTOR_BORDER_SUPPORT_METRES, SOMNIO_CONSTANTS, bundledModelRegistry, o
 import type { SectorView } from '@somnio/protocol';
 import { rasterizeGround, sampleGroundField } from '@/scene/groundField';
 import { GROUND_MATERIAL_IDS } from '@/scene/groundMaterials';
+import type { GroundMaterialId } from '@/scene/groundMaterials';
 import { scatterSector } from '@/scene/scatter';
 import type { Scatter } from '@/scene/scatter';
 import { outdoorSector } from '../../core/test/support/worldFixture.ts';
@@ -61,13 +62,13 @@ const meadow = (): SectorView =>
       ],
     },
   );
-const wood = (): SectorView =>
+const wood = (backgroundMaterialId: GroundMaterialId = 'forest-floor'): SectorView =>
   outdoorSector(
     'Wood',
     { x: 20, z: 0 },
     {
       size: { width: 20, depth: 20 },
-      ground: { backgroundMaterialId: 'forest-floor', marks: [] },
+      ground: { backgroundMaterialId, marks: [] },
       placements: [{ id: 'oak', modelId: 'tree-1-c', x: 0.4, z: 15, yaw: 0, elevation: 0 }],
     },
   );
@@ -104,6 +105,15 @@ describe('scatter', () => {
     expect(first.flowers.length).toBeGreaterThan(0);
     expect(first.pebbles.length).toBeGreaterThan(0);
     expect(grow(meadow(), [wood()])).toEqual(first);
+  });
+
+  it('grows no tufts on leaf litter, where forest floor grows them, and the same pebbles', () => {
+    const forest = grow(wood(), []);
+    const litter = grow(wood('leaf-litter'), []);
+    expect(forest.tufts.length).toBeGreaterThan(0);
+    expect(litter.tufts).toEqual([]);
+    expect(litter.pebbles.length).toBeGreaterThan(0);
+    expect(litter.pebbles).toEqual(forest.pebbles);
   });
 
   it('changes only near the border when a neighbour leaves', () => {
