@@ -24,6 +24,8 @@ Run these container commands with the sandbox disabled. Sandboxed, they fail wit
 
 The container can exit silently between sessions (podman machine hiccups). A server started against the dead container fails at startup with a connection error from the readiness probe — that signature means "start the container", not a code bug and not a reason to re-create the container.
 
+A running machine can still break its containers while its own network works. The signatures are an image build whose `npm ci` fails with `getaddrinfo EAI_AGAIN`, or a `docker run` refused by an overlay mount `input/output error`, while `podman machine ssh getent hosts registry.npmjs.org` resolves. Restart the machine (`podman machine stop`, then `podman machine start`), run `docker start somnio-pg`, and retry the build or run that failed. Ask first: the restart stops every container in the machine, the dev database other sessions may be using included.
+
 The migrator refuses a database carrying an earlier schema (`LegacyDatabaseError`): the Swift-era one or an earlier TypeScript one, whose `kysely_migration` table holds a `0001_initial` or `0001_metric_world` row. Reset one with `docker exec somnio-pg psql -U postgres -c 'DROP DATABASE somnio' -c 'CREATE DATABASE somnio'`; that drops the dev account and its characters, so the next login shows "Bad credentials" until you register again.
 
 On teardown use `docker stop somnio-pg` — keep the container; `docker rm`-ing it drops the dev account and its characters the same way.
