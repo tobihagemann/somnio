@@ -35,7 +35,7 @@ export function groundMaterialChannel(id: string): number | undefined {
   return channel === -1 ? undefined : channel;
 }
 
-/** Noise and cell patterns every recipe shares, as GLSL. Hashes are of world position, so two sectors' grounds meet without a seam. */
+/** Noise and cell helpers, and one colour function per ground pattern, as GLSL. Hashes are of world position, so two sectors' grounds meet without a seam. */
 const GROUND_GLSL_FUNCTIONS = /* glsl */ `
 float groundHash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 vec2 groundHash2(vec2 p) { return vec2(groundHash(p), groundHash(p + 19.19)); }
