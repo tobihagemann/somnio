@@ -68,8 +68,8 @@ export function withoutItem(inventory: Inventory, itemId: string): Inventory {
 /**
  * Wears an item the dreamer has in `slot`, one its base fits, or else in the slot `equipSlot`
  * chooses. From the bag, whatever the slot wore takes the item's place there. Worn in the other
- * ring slot, the two rings change slots. `undefined` when the dreamer has no such item or the base
- * does not fit the slot.
+ * bracelet slot, the two bracelets change slots. `undefined` when the dreamer has no such item or
+ * the base does not fit the slot.
  */
 export function equipItem(inventory: Inventory, itemId: string, slot?: EquipSlot): Inventory | undefined {
   const bagged = inventory.bag.find(({ item }) => item.id === itemId);

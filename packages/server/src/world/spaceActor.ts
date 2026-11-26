@@ -1,4 +1,4 @@
-import { HANDS, SOMNIO_PROTOCOL_CONSTANTS, encodeSomnioMessage } from '@somnio/protocol';
+import { EQUIP_SLOTS, HANDS, SOMNIO_PROTOCOL_CONSTANTS, encodeSomnioMessage, sameOutfit } from '@somnio/protocol';
 import type {
   AbilityPhase,
   ClientSayMessage,
@@ -9,12 +9,12 @@ import type {
   EntityMove,
   EquipSlot,
   Gait,
-  Held,
   Locale,
   LootContentsMessage,
   LucidityMessage,
   MoveMessage,
   NightmareRank,
+  Outfit,
   QuestShareOutcome,
   RaisingState,
   Service,
@@ -250,8 +250,8 @@ interface PlayerSlot {
   /** Nightmares leave the dreamer alone until this moment. */
   graceUntil: number;
   condition: Condition;
-  /** What everyone who sees the dreamer was last shown in their hands. */
-  held: Held;
+  /** What everyone who sees the dreamer was last shown of what they wear and hold. */
+  outfit: Outfit;
   /** The raise this fallen dreamer is being given, by every Healer holding on. */
   raise: Raise | undefined;
   /** The quest another dreamer here shared with this one, awaiting their answer. */
@@ -686,16 +686,19 @@ export function offerIds(): () => number {
 
 type NPCDialogAction = { kind: 'wait' } | { kind: 'resetTargeting' } | { kind: 'emit'; target: PlayerSlot };
 
-/** The bases of what the dreamer's hands hold, which everyone who sees them is shown. */
-function heldOf({ equipped: { mainHand, offHand } }: Inventory): Held {
-  return { ...(mainHand === undefined ? {} : { mainHand: mainHand.baseId }), ...(offHand === undefined ? {} : { offHand: offHand.baseId }) };
+/** The base and tier of everything the dreamer wears and holds, in slot order, which everyone who sees them is shown. */
+function outfitOf({ equipped }: Inventory): Outfit {
+  return EQUIP_SLOTS.flatMap((slot) => {
+    const item = equipped[slot];
+    return item === undefined ? [] : [{ slot, baseId: item.baseId, tier: item.tier }];
+  });
 }
 
-/** What a drop's viewers are shown of it: an item's base and rarity, never its stat lines, or a trophy's kind. */
+/** What a drop's viewers are shown of it: an item's base, tier, and rarity, never its stat lines, or a trophy's kind. */
 function lootContentsMessage(contents: LootContents): LootContentsMessage {
   switch (contents.kind) {
     case 'item':
-      return { kind: 'item', baseId: contents.item.baseId, rarity: contents.item.rarity };
+      return { kind: 'item', baseId: contents.item.baseId, tier: contents.item.tier, rarity: contents.item.rarity };
     case 'trophy':
       return contents;
   }
@@ -868,7 +871,6 @@ function healthOf(entity: PlayerSlot | MonsterRuntime): [current: number, max: n
 export class SpaceActor {
   private readonly space: Space<Sector>;
   private readonly collision: SpaceCollision;
-  private readonly playerModel: string;
   /** Per sector, the names of the sectors a player standing in it is sent: itself, then its neighbours. */
   private readonly interest = new Map<string, ReadonlySet<string>>();
   /** Per sector, the ids of its doors that open to the outdoors, which its `sector` frame names. */
@@ -910,7 +912,6 @@ export class SpaceActor {
   constructor(world: LoadedWorld, spaceId: string, options: SpaceActorOptions) {
     this.space = world.spaces.get(spaceId)!;
     this.collision = buildSpaceCollision(this.space, world.registry);
-    this.playerModel = world.registry.playerModel;
     this.logger = options.logger;
     this.random = options.random ?? systemRandom;
     this.speechRandom = options.speechRandom ?? systemRandom;
@@ -1001,7 +1002,7 @@ export class SpaceActor {
       mendReadyAt: now + transient.mendSeconds * 1000,
       graceUntil: 0,
       condition: conditionOf(energy.healthCurrent, energy.healthMax),
-      held: heldOf(inventory),
+      outfit: outfitOf(inventory),
       raise: undefined,
       questOffer: undefined,
       target: undefined,
@@ -1330,9 +1331,9 @@ export class SpaceActor {
 
   /**
    * Wears an item the dreamer has in a slot its base fits, as `equipItem` chooses it: from the bag,
-   * whatever that slot wore takes the item's place there, and a worn ring changes ring slots. The
-   * inventory goes back to the player alone; everyone who sees them is shown only what their hands
-   * now hold.
+   * whatever that slot wore takes the item's place there, and a worn bracelet changes bracelet slots. The
+   * inventory goes back to the player alone; everyone who sees them is shown only the base and tier
+   * of what they now wear and hold.
    */
   handleEquip(itemId: string, slot: EquipSlot | undefined, entityId: string): void {
     const player = this.players.get(entityId);
@@ -1354,7 +1355,7 @@ export class SpaceActor {
   /**
    * Throws an item the dreamer carries or wears to the ground along `heading`, whole, for anyone to
    * pick up, where `throwLanding` lands it. A worn item leaves its slot as it goes, so it needs no
-   * room in the bag. The thrown `loot` goes out before the `held` that empties the hand, so viewers
+   * room in the bag. The thrown `loot` goes out before the `outfit` that empties the hand, so viewers
    * see the item leave the hand as the throw lets go. The checkpoint goes to `requestDropSave` at
    * once, so the item leaves the thrower's rows ahead of the next periodic pass.
    */
@@ -3293,19 +3294,19 @@ export class SpaceActor {
     this.sendInventory(slot);
   }
 
-  /** Every change to what a dreamer carries goes out here. Their pool maxima follow what they wear, and what others see in their hands follows the hands. */
+  /** Every change to what a dreamer carries goes out here. Their pool maxima follow what they wear, and what others see on them follows it too. */
   private sendInventory(slot: PlayerSlot, change?: InventoryChange): void {
     slot.outbox.sendEncoded({ tag: 'inventory', payload: inventoryMessage(slot.inventory, change, slot.soldToShop) }, this.logger);
     this.settleMaxima(slot);
-    this.setHeld(slot);
+    this.setOutfit(slot);
   }
 
-  /** Shows everyone who sees the dreamer what their hands hold, when that changed. */
-  private setHeld(slot: PlayerSlot): void {
-    const held = heldOf(slot.inventory);
-    if (held.mainHand === slot.held.mainHand && held.offHand === slot.held.offHand) return;
-    slot.held = held;
-    this.broadcast({ tag: 'held', payload: { entityId: slot.character.id, held } }, slot.sector);
+  /** Shows everyone who sees the dreamer what they wear and hold, when a slot's base or tier changed. */
+  private setOutfit(slot: PlayerSlot): void {
+    const outfit = outfitOf(slot.inventory);
+    if (sameOutfit(outfit, slot.outfit)) return;
+    slot.outfit = outfit;
+    this.broadcast({ tag: 'outfit', payload: { entityId: slot.character.id, outfit } }, slot.sector);
   }
 
   /** The NPC or the fixture of the space by its carrier id: where it stands, and the service its record names. */
@@ -3508,7 +3509,7 @@ export class SpaceActor {
     const bought = plainInstance(baseId);
     this.addCoins(asked.player, -coins);
     asked.player.inventory = withItem(asked.player.inventory, bought);
-    this.sendInventory(asked.player, { trade: { kind: 'bought', baseId, rarity: bought.rarity, coins } });
+    this.sendInventory(asked.player, { trade: { kind: 'bought', baseId, tier: bought.tier, rarity: bought.rarity, coins } });
   }
 
   /**
@@ -3523,7 +3524,7 @@ export class SpaceActor {
     asked.player.inventory = withoutItem(asked.player.inventory, sold.id);
     asked.player.soldToShop = soldToShopAfterSale(asked.player.soldToShop, sold);
     this.addCoins(asked.player, coins);
-    this.sendInventory(asked.player, { trade: { kind: 'sold', baseId: sold.baseId, rarity: sold.rarity, coins } });
+    this.sendInventory(asked.player, { trade: { kind: 'sold', baseId: sold.baseId, tier: sold.tier, rarity: sold.rarity, coins } });
   }
 
   /**
@@ -3538,7 +3539,7 @@ export class SpaceActor {
     asked.player.soldToShop = asked.player.soldToShop.filter((sold) => sold !== item);
     this.addCoins(asked.player, -coins);
     asked.player.inventory = withItem(asked.player.inventory, item);
-    this.sendInventory(asked.player, { trade: { kind: 'boughtBack', baseId: item.baseId, rarity: item.rarity, coins } });
+    this.sendInventory(asked.player, { trade: { kind: 'boughtBack', baseId: item.baseId, tier: item.tier, rarity: item.rarity, coins } });
   }
 
   /** One snapshot per player, bumping `lastSeen` so the `last_seen` guard can order it against a racing snapshot of theirs. */
@@ -3605,7 +3606,7 @@ export class SpaceActor {
     return {
       id: slot.character.id,
       kind: 'player',
-      characterModelId: this.playerModel,
+      people: slot.character.people,
       name: slot.character.name,
       radius: SOMNIO_CONSTANTS.playerRadius,
       x: slot.character.position.x,
@@ -3613,7 +3614,7 @@ export class SpaceActor {
       facing: slot.character.facing,
       gait: slot.gait,
       condition: slot.condition,
-      held: slot.held,
+      outfit: slot.outfit,
     };
   }
 

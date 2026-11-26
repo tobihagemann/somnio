@@ -6,8 +6,8 @@ import * as THREE from 'three';
 import { AppShell, FallenNotice, Overlays, ServicePanel, UPRIGHT_PHONE_QUERY, element, field } from '@/ui';
 import { setLocale } from '@/i18n';
 import { makeDebugAPI } from '@/debugApi';
-import { PEOPLE_SIGILS } from '@/ui/hudIcons';
-import { ITEM_ICONS } from '@/ui/itemIcons';
+import { ITEM_ICONS, WARDROBE_ICONS } from '@/ui/itemIcons';
+import { HttpModelAssets } from '@/scene/modelAssets';
 import { PRE_LOGIN_CARD, WORDMARK_BAND_INSET } from '@/splash/reel';
 import { committedNPCNames } from '@/splash/sectors';
 import type { RegistrationForm } from '@/client';
@@ -28,7 +28,7 @@ import {
   quest as questOf,
 } from '@somnio/core';
 import { SOMNIO_PROTOCOL_CONSTANTS, decodeSomnioMessage, encodeSomnioMessage } from '@somnio/protocol';
-import type { CharacterSummaryMessage, LucidityMessage, Service, SomnioMessage } from '@somnio/protocol';
+import type { CharacterSummaryMessage, EntityMessage, LucidityMessage, Outfit, Service, SomnioMessage } from '@somnio/protocol';
 import type { Bounty, Inventory, ItemInstance, QuestId, QuestLog, Sector } from '@somnio/core';
 import { fakeSocketFactory } from './helpers/fakeSocket';
 import { tabTo } from './helpers/visibility';
@@ -733,8 +733,8 @@ describe('the login overlay across an authentication attempt', () => {
     expect(scrollback.scrollTop).toBe(scrollback.scrollHeight - scrollback.clientHeight);
   });
 
-  /** A resume skips the card, so the join itself names the people the own frame draws, whatever this browser stored. */
-  it("draws the player's people sigil on their own frame after a resume in a browser that never listed the dreamer", () => {
+  /** A resume skips the card, so the join itself names the people the own frame says, whatever this browser stored. */
+  it("names the player's people on their own frame after a resume in a browser that never listed the dreamer", () => {
     localStorage.clear();
     localStorage.setItem('somnio.sessionToken', JSON.stringify({ token: 'tok', expiresAt: Date.now() + 60_000 }));
     try {
@@ -747,9 +747,7 @@ describe('the login overlay across an authentication attempt', () => {
       deliver(sectorFrame(outdoorSector('Meadow', { x: 0, z: 0 })));
       deliver(entityFrame());
 
-      expect(container.querySelector<HTMLElement>('.hud-unit--self .hud-sigil .hud-glyph')?.style.getPropertyValue('--hud-glyph')).toBe(
-        PEOPLE_SIGILS.umbrae.image,
-      );
+      expect(container.querySelector('.hud-unit--self .hud-unit__traits')?.textContent).toBe('Umbrae · No role yet');
     } finally {
       localStorage.removeItem('somnio.sessionToken');
     }
@@ -1933,12 +1931,13 @@ describe('the service panel', () => {
         'shield',
         'wand',
         'cap',
+        'shoulders',
         'tunic',
         'gloves',
         'trousers',
         'boots',
         'amulet',
-        'ring',
+        'bracelet',
       ]);
       expect(ware(p.panel, 'dagger')).toContain('6 damage, 10 balance a swing');
       expect(ware(p.panel, 'dagger')).not.toContain('more.');
@@ -1951,7 +1950,7 @@ describe('the service panel', () => {
       expect(sold(p.panel)).toEqual([]);
       expect(p.buttons().filter((label) => !label.startsWith('Buy'))).toEqual(['Close']);
       // Two wares can share a price, so each trade button's accessible name says which item it trades.
-      expect(p.panel.root.querySelector('[data-ware="gloves"] button')?.getAttribute('aria-label')).toBe('Buy Leather gloves for 25c');
+      expect(p.panel.root.querySelector('[data-ware="gloves"] button')?.getAttribute('aria-label')).toBe('Buy Dispatch gloves for 25c');
       p.press('Buy for 60c');
       expect(p.calls).toEqual(['buy:dagger']);
     });
@@ -1961,10 +1960,10 @@ describe('the service panel', () => {
       p.render(mercus(), { ranks: [] }, carrying({ coins: 100 }), false, { buyBack: [rare, item('cudgel')] });
       expect(headings(p.panel)).toEqual(['For sale', 'Buy back']);
       expect(sold(p.panel)).toEqual(['amulet-rare', 'cudgel-1']);
-      expect(sale(p.panel, 'amulet-rare')).toBe('Amulet of ReverieRare+11 SpiritBuy back for 50c');
+      expect(sale(p.panel, 'amulet-rare')).toBe('Wheat-ear pendant of ReverieRare+11 SpiritBuy back for 50c');
       expect(p.panel.root.querySelector('[data-item="amulet-rare"] .ware-name')?.classList.contains('hud-rarity--rare')).toBe(true);
       expect(sale(p.panel, 'cudgel-1')).toBe('Cudgel8 damage, 18 balance a swingBuy back for 15c');
-      expect(p.panel.root.querySelector('[data-item="amulet-rare"] button')?.getAttribute('aria-label')).toBe('Buy back Amulet of Reverie for 50c');
+      expect(p.panel.root.querySelector('[data-item="amulet-rare"] button')?.getAttribute('aria-label')).toBe('Buy back Wheat-ear pendant of Reverie for 50c');
       p.press('Buy back for 50c');
       expect(p.calls).toEqual(['buyBack:amulet-rare']);
     });
@@ -1973,13 +1972,13 @@ describe('the service panel', () => {
       const p = mount();
       p.render(mercus(), { ranks: [] }, carrying({ coins: 20 }), false, { buyBack: [rare, item('cudgel')] });
       expect([sale(p.panel, 'amulet-rare'), p.buttons()]).toEqual([
-        'Amulet of ReverieRare+11 SpiritYou need 30c more.Buy back for 50c',
+        'Wheat-ear pendant of ReverieRare+11 SpiritYou need 30c more.Buy back for 50c',
         expect.arrayContaining(['Buy back for 50c (disabled)', 'Buy back for 15c']),
       ]);
       const fullBag = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxBagItems }, (_, index) => item('cap', `cap-${index}`));
       p.render(mercus(), { ranks: [] }, carrying({ coins: 500, bag: fullBag }), false, { buyBack: [rare] });
       expect([sale(p.panel, 'amulet-rare'), p.buttons()]).toEqual([
-        'Amulet of ReverieRare+11 SpiritYour bag is full.Buy back for 50c',
+        'Wheat-ear pendant of ReverieRare+11 SpiritYour bag is full.Buy back for 50c',
         expect.arrayContaining(['Buy back for 50c (disabled)']),
       ]);
     });
@@ -2000,7 +1999,7 @@ describe('the service panel', () => {
 
     it("draws each ware's and each item's to buy back as its icon, edged in its rarity's colour", () => {
       const p = mount();
-      p.render(mercus(), { ranks: [] }, carrying({ coins: 100 }), false, { buyBack: [rare] });
+      p.render(mercus(), { ranks: [] }, carrying({ coins: 100 }), false, { buyBack: [rare, { ...item('tunic'), tier: 3 }] });
       const icon = (row: string) => {
         const node = p.panel.root.querySelector<HTMLImageElement>(`${row} .ware-head > img`);
         return [
@@ -2011,7 +2010,9 @@ describe('the service panel', () => {
         ];
       };
       expect(icon('[data-ware="sword"]')).toEqual([ITEM_ICONS.sword, '', true, 'hud-rarity--plain']);
-      expect(icon('[data-item="amulet-rare"]')).toEqual([ITEM_ICONS.amulet, '', true, 'hud-rarity--rare']);
+      expect(icon('[data-ware="tunic"]')).toEqual([WARDROBE_ICONS.tunic[1], '', true, 'hud-rarity--plain']);
+      expect(icon('[data-item="amulet-rare"]')).toEqual([WARDROBE_ICONS.amulet[1], '', true, 'hud-rarity--rare']);
+      expect(icon('[data-item="tunic-1"]')).toEqual(['/assets/UI/Items/tunic-t3.png', '', true, 'hud-rarity--plain']);
     });
 
     it('sells nothing into a full bag, and says so', () => {
@@ -2078,7 +2079,7 @@ describe('the service panel', () => {
       p.render(mercus(), { ranks: [] }, carrying({ coins: 100 }), false, { buyBack: [cap] });
       expect(headings(p.panel)).toEqual(['Im Angebot', 'Zurückkaufen']);
       expect(ware(p.panel, 'sword')).toContain('Kurzschwert');
-      expect(sale(p.panel, 'cap-1')).toBe('Lederkappe des BollwerksMagisch+2 Deckung+5 % Erholung des GeistesFür 25c zurückkaufen');
+      expect(sale(p.panel, 'cap-1')).toBe('Boten-Strohhut des BollwerksMagisch+2 Deckung+5 % Erholung des GeistesFür 25c zurückkaufen');
     });
   });
 });
@@ -2175,7 +2176,7 @@ describe('the play field and the panels through the shell', () => {
   });
 
   /** A player in the world beside Pugnax, with another dreamer near, and every frame the client has sent since. */
-  function playing(meadow: Sector = outdoorSector('Meadow', { x: 0, z: 0 })) {
+  function playing(meadow: Sector = outdoorSector('Meadow', { x: 0, z: 0 }), self: Partial<EntityMessage> = {}) {
     const { factory, latest } = fakeSocketFactory();
     const shell = new AppShell({ container, capabilities: { hasWebGL: true }, startRendering: false, socketFactory: factory });
     shell.overlays.loginEmail.value = 'tester@example.com';
@@ -2188,7 +2189,7 @@ describe('the play field and the panels through the shell', () => {
     deliver({ tag: 'loginResult', payload: { result: 'ok' } });
     deliver(enterSpaceFrame());
     deliver(sectorFrame(meadow));
-    deliver(entityFrame());
+    deliver(entityFrame(self));
     deliver(entityFrame({ id: PUGNAX, kind: 'npc', name: 'Pugnax', x: 10, z: 9, service: 'fighterMaster' }));
     deliver(entityFrame({ id: 'bren', name: 'Bren', x: 11, z: 10 }));
     deliver({ tag: 'energy', payload: fullPools(NO_STATS) });
@@ -3662,7 +3663,9 @@ describe('the play field and the panels through the shell', () => {
 
     p.press('Buy for 60c');
     expect(action('cudgel').disabled).toBe(true);
-    p.deliver(inventoryFrame(carrying({ coins: 40, bag: [cudgel, dagger] }), { trade: { kind: 'bought', baseId: 'dagger', rarity: 'plain', coins: 60 } }));
+    p.deliver(
+      inventoryFrame(carrying({ coins: 40, bag: [cudgel, dagger] }), { trade: { kind: 'bought', baseId: 'dagger', tier: 1, rarity: 'plain', coins: 60 } }),
+    );
     clock += 600;
     p.shell.session.runTick(clock);
     expect(action('cudgel').disabled).toBe(false);
@@ -3670,7 +3673,9 @@ describe('the play field and the panels through the shell', () => {
     const bagged = container.querySelector('.hud-window--character [data-item="cudgel-1"]')!;
     bagged.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, pointerType: 'mouse', button: 2 }));
     bagged.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
-    p.deliver(inventoryFrame(carrying({ coins: 55, bag: [dagger] }), { trade: { kind: 'sold', baseId: 'cudgel', rarity: 'plain', coins: 15 } }, [cudgel]));
+    p.deliver(
+      inventoryFrame(carrying({ coins: 55, bag: [dagger] }), { trade: { kind: 'sold', baseId: 'cudgel', tier: 1, rarity: 'plain', coins: 15 } }, [cudgel]),
+    );
     clock += 600;
     p.shell.session.runTick(clock);
     p.press('Buy back for 15c');
@@ -3850,6 +3855,247 @@ describe('the play field and the panels through the shell', () => {
     expect(p.tags()).toEqual([]);
     p.press('Wake there');
     expect(p.sent()).toEqual([{ tag: 'wake', payload: {} }]);
+  });
+
+  describe('the loading cover', () => {
+    const TUNIC: Outfit = [{ slot: 'chest', baseId: 'tunic', tier: 1 }];
+
+    /** A body as the pack's, a region skinned to a bone, so it has a skeleton to dress; a worn piece is one too. */
+    function skinnedModel(): THREE.Object3D {
+      const root = new THREE.Object3D();
+      const hips = Object.assign(new THREE.Bone(), { name: 'hips' });
+      const geometry = new THREE.BoxGeometry(0.4, 0.7, 0.3);
+      const count = geometry.getAttribute('position').count;
+      geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(Array<number>(count * 4).fill(0), 4));
+      geometry.setAttribute('skinWeight', new THREE.Float32BufferAttribute(Array.from({ length: count }, () => [1, 0, 0, 0]).flat(), 4));
+      const mesh = Object.assign(new THREE.SkinnedMesh(geometry, new THREE.MeshStandardMaterial()), { name: 'Torso' });
+      root.add(hips, mesh);
+      root.updateMatrixWorld(true);
+      mesh.bind(new THREE.Skeleton([hips]));
+      return root;
+    }
+
+    /** Runs one of the shell's frames. */
+    function frame(shell: AppShell): void {
+      (shell as unknown as { onFrame(timestamp: number): void }).onFrame(performance.now());
+    }
+
+    /** Every dreamer drawn in a body with a skeleton, and every worn piece's load held until the answer lets it come and the shell's frames dress what wears it. */
+    function slowWardrobe() {
+      vi.spyOn(HttpModelAssets.prototype, 'character').mockImplementation(() => skinnedModel());
+      let release!: () => void;
+      vi.spyOn(HttpModelAssets.prototype, 'wear').mockReturnValue(new Promise((resolve) => (release = () => resolve(skinnedModel()))));
+      return async (shell: AppShell): Promise<void> => {
+        release();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        for (let count = 0; count < 10; count++) frame(shell);
+      };
+    }
+
+    function door(p: ReturnType<typeof playing>, self: Partial<EntityMessage>): void {
+      p.deliver(enterSpaceFrame('inn'));
+      p.deliver(sectorFrame(outdoorSector('Meadow', { x: 0, z: 0 })));
+      p.deliver(entityFrame(self));
+    }
+
+    const cover = (): HTMLElement => container.querySelector<HTMLElement>('.loading-cover')!;
+    const covering = (): boolean => cover().closest('.hidden') === null;
+
+    it('hides an entry until the outfit is drawn, holding the world and the chat, and keeps the windows', async () => {
+      const arrive = slowWardrobe();
+      const p = playing();
+      const pointer = onCanvas(p);
+      p.shell.hud.openWindow('character');
+      p.shell.hud.openChat();
+      p.shell.hud.chatInput.value = 'hello';
+      expect(covering()).toBe(false);
+
+      door(p, { outfit: TUNIC });
+      expect([covering(), document.activeElement, p.shell.hud.root.inert]).toEqual([true, cover(), true]);
+
+      const ground = p.shell.pagePointOfGround({ x: 12, z: 10 })!;
+      p.canvas.dispatchEvent(pointer('pointerdown', ground, { pointerType: 'mouse' }));
+      window.dispatchEvent(pointer('pointerup', ground, { pointerType: 'mouse' }));
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'r', code: 'KeyR' }));
+      document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      expect([p.shell.session.predictor.walk, p.shell.session.running, p.sent()]).toEqual([undefined, false, []]);
+
+      await arrive(p.shell);
+
+      // The frames report the player standing where they were placed: nothing pressed or typed under the cover went out.
+      expect([covering(), p.shell.hud.root.inert, p.sent()]).toEqual([false, false, [{ tag: 'move', payload: { x: 10, z: 10, facing: 0, gait: 'jog' } }]]);
+      expect([p.shell.hud.isWindowOpen('character'), p.shell.hud.chatOpen, p.shell.hud.chatInput.value]).toEqual([true, true, 'hello']);
+      expect(document.activeElement).toBe(p.shell.hud.chatInput);
+
+      // A piece put on in play pops in as anyone's does.
+      p.deliver({ tag: 'outfit', payload: { entityId: 'self', outfit: [{ slot: 'head', baseId: 'cap', tier: 1 }, ...TUNIC] } });
+      p.shell.render();
+      expect(covering()).toBe(false);
+    });
+
+    it('opens the game menu over the cover on Escape, leaving what it hides as it is', () => {
+      slowWardrobe();
+      const p = playing();
+      p.shell.hud.openWindow('character');
+      p.shell.hud.openChat();
+      door(p, { outfit: TUNIC });
+
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      expect([p.shell.controller.presentedOverlay, p.shell.hud.chatOpen, p.shell.hud.isWindowOpen('character')]).toEqual([{ kind: 'gameMenu' }, true, true]);
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      expect([p.shell.controller.presentedOverlay, covering(), p.shell.hud.chatOpen]).toEqual([undefined, true, true]);
+    });
+
+    it('rises in the first frame after the models are warm for a body placed before them, as a resume places it', async () => {
+      const arrive = slowWardrobe();
+      const character = vi.spyOn(HttpModelAssets.prototype, 'character').mockReturnValue(undefined);
+      vi.spyOn(HttpModelAssets.prototype, 'prewarm').mockResolvedValue();
+      const p = playing(undefined, { outfit: TUNIC });
+      expect(covering()).toBe(false);
+
+      character.mockImplementation(() => skinnedModel());
+      await p.shell.scene!.prewarm();
+      frame(p.shell);
+
+      expect([covering(), p.shell.hud.root.inert]).toEqual([true, true]);
+      await arrive(p.shell);
+      expect(covering()).toBe(false);
+    });
+
+    it('says the gear is still loading after 3 s, and Try Again loads again what is still loading', () => {
+      let clock = 1000;
+      vi.spyOn(performance, 'now').mockImplementation(() => clock);
+      slowWardrobe();
+      const retryWear = vi.spyOn(HttpModelAssets.prototype, 'retryWear').mockImplementation(() => {});
+      const p = playing();
+      door(p, { outfit: TUNIC });
+      const stalled = (): boolean => !container.querySelector('.loading-cover__card')!.classList.contains('hidden');
+
+      clock += 2999;
+      frame(p.shell);
+      expect(stalled()).toBe(false);
+      clock += 1;
+      frame(p.shell);
+      expect(stalled()).toBe(true);
+
+      p.press('Try Again');
+      expect(retryWear).toHaveBeenCalledWith(['WearTunicT1']);
+    });
+
+    it('lets go of a press held as it rises, and a right press under it changes nothing', () => {
+      slowWardrobe();
+      const p = playing();
+      const pointer = onCanvas(p);
+      const ground = p.shell.pagePointOfGround({ x: 12, z: 10 })!;
+      p.canvas.dispatchEvent(pointer('pointerdown', ground, { pointerType: 'mouse', buttons: 1 }));
+      expect(p.shell.session.groundPressHeld).toBe(true);
+
+      door(p, { outfit: TUNIC });
+      expect(p.shell.session.groundPressHeld).toBe(false);
+      p.deliver(entityFrame({ id: 'bren', name: 'Bren', x: 11, z: 10 }));
+      p.shell.session.selectEntity('bren');
+      const before = p.sent().length;
+      p.canvas.dispatchEvent(pointer('pointerdown', ground, { button: 2, buttons: 2, pointerType: 'mouse' }));
+      window.dispatchEvent(pointer('pointerup', ground, { button: 2, pointerType: 'mouse' }));
+
+      expect([p.shell.session.target, p.sent().slice(before)]).toEqual(['bren', []]);
+    });
+
+    it('leaves the keyboard off the chat as it lowers under the game menu, so Enter sends no draft', async () => {
+      const arrive = slowWardrobe();
+      const p = playing();
+      p.shell.hud.openChat();
+      p.shell.hud.chatInput.value = 'hello';
+      door(p, { outfit: TUNIC });
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+
+      await arrive(p.shell);
+      expect([covering(), p.shell.controller.presentedOverlay]).toEqual([false, { kind: 'gameMenu' }]);
+      expect(document.activeElement).not.toBe(p.shell.hud.chatInput);
+      document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+      expect(p.sent().filter(({ tag }) => tag !== 'move')).toEqual([]);
+    });
+
+    it('gives the keyboard back to the chat as it lowers once the game menu opened over it is closed again', async () => {
+      const arrive = slowWardrobe();
+      const p = playing();
+      p.shell.hud.openChat();
+      p.shell.hud.chatInput.value = 'hello';
+      door(p, { outfit: TUNIC });
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      expect([p.shell.controller.presentedOverlay, covering()]).toEqual([undefined, true]);
+
+      await arrive(p.shell);
+
+      expect([covering(), document.activeElement]).toEqual([false, p.shell.hud.chatInput]);
+    });
+
+    it('leaves the keyboard off the chat as it lowers behind the card asking an upright phone to turn, so Enter sends no draft', async () => {
+      const arrive = slowWardrobe();
+      const p = playing();
+      p.shell.hud.openChat();
+      p.shell.hud.chatInput.value = 'hello';
+      door(p, { outfit: TUNIC });
+      Object.defineProperty(window.navigator, 'maxTouchPoints', { value: 1, configurable: true });
+      const { innerWidth, innerHeight } = window;
+      layOut(390, 844);
+      try {
+        expect([p.shell.notices.standing, p.shell.controller.presentedOverlay, covering()]).toEqual([true, undefined, true]);
+
+        await arrive(p.shell);
+        expect(covering()).toBe(false);
+        expect(document.activeElement).not.toBe(p.shell.hud.chatInput);
+        // No key behind the card reaches the world either: Enter opens no chat to send the draft from, and R does not run.
+        // On the page, as a browser drops the focus of a hidden cover there.
+        for (const key of ['Enter', 'Enter', 'r'])
+          document.body.dispatchEvent(new KeyboardEvent('keydown', { key, code: key === 'r' ? 'KeyR' : 'Enter', bubbles: true }));
+        expect([document.activeElement === p.shell.hud.chatInput, p.shell.session.running]).toEqual([false, false]);
+        expect(p.sent().filter(({ tag }) => tag !== 'move')).toEqual([]);
+      } finally {
+        Object.defineProperty(window.navigator, 'maxTouchPoints', { value: 0, configurable: true });
+        layOut(innerWidth, innerHeight);
+      }
+
+      // Turned sideways, the card goes and the keys reach the world again: Enter opens the chat with its draft, and sends it.
+      expect(p.shell.notices.standing).toBe(false);
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      expect(document.activeElement).toBe(p.shell.hud.chatInput);
+      p.shell.hud.chatInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      expect(p.sent()).toContainEqual({ tag: 'clientSay', payload: { text: 'hello', kind: 'say' } });
+    });
+
+    it("holds the world's keys while the models load, as a resume places the player before they are warm", async () => {
+      let warm!: () => void;
+      vi.spyOn(HttpModelAssets.prototype, 'prewarm').mockReturnValue(new Promise((resolve) => (warm = resolve)));
+      const p = playing();
+      const warming = p.shell.scene!.prewarm();
+      // The shell's frames hide and show the HUD as the models start and finish warming, with nothing else to repaint for.
+      frame(p.shell);
+
+      // No key reaches the HUD behind the loading notice either, since it does not show.
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'r', code: 'KeyR' }));
+      expect([p.shell.session.running, p.shell.hud.root.classList.contains('hidden')]).toEqual([false, true]);
+
+      warm();
+      await warming;
+      frame(p.shell);
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'r', code: 'KeyR' }));
+      expect([p.shell.session.running, p.shell.hud.root.classList.contains('hidden')]).toEqual([true, false]);
+    });
+
+    it('shows no cover for an entry whose outfit is drawn already', async () => {
+      const arrive = slowWardrobe();
+      const p = playing(undefined, { outfit: TUNIC });
+      expect(covering()).toBe(true);
+      await arrive(p.shell);
+      expect(covering()).toBe(false);
+
+      door(p, { outfit: TUNIC });
+
+      expect([covering(), p.shell.hud.root.inert]).toEqual([false, false]);
+    });
   });
 
   describe('a quest shared with the player', () => {

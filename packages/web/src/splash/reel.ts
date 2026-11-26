@@ -8,10 +8,11 @@ import {
   monsterKind,
   npcEntityId,
   outdoorDoorIds,
+  peopleBody,
   sectorPointInSpace,
 } from '@somnio/core';
-import type { Heading, ModelRegistry, Point, Sector } from '@somnio/core';
-import type { Condition, Gait, SpeechKind } from '@somnio/protocol';
+import type { Heading, ModelRegistry, People, Point, Sector } from '@somnio/core';
+import type { Condition, Gait, Outfit, SpeechKind } from '@somnio/protocol';
 import type { RaiseProgress } from '@/client/renderSurface';
 import { currentLocale, t } from '@/i18n';
 import { ORTHO_RIG, clampedScale, worldMovement } from '@/scene/cameraRig';
@@ -40,11 +41,13 @@ export interface Viewport {
   height: number;
 }
 
-/** A dreamer the reel invents, drawn as a player with their name on the plate. */
+/** A dreamer the reel invents, drawn as a player in their people's body and what they wear, with their name on the plate. */
 interface PeerActor {
   kind: 'peer';
   id: string;
   name: string;
+  people: People;
+  outfit: Outfit;
   at: Point;
   facing: Heading;
   gait: Gait;
@@ -116,6 +119,9 @@ export interface StagedActor {
   id: string;
   kind: 'peer' | 'npc' | 'monster';
   characterModelId: string;
+  /** A dreamer's people and what they wear; an NPC or a nightmare has neither. */
+  people: People | undefined;
+  outfit: Outfit | undefined;
   name: string;
   radius: number;
   metresPerSecond: number;
@@ -151,6 +157,45 @@ const QUIETA = 'npc:EdariaInn/quieta';
 const WOLF = 'monster:splash-1';
 const NORTH_WOOD_SPAWN = { sector: 'NorthWood', id: 'spawn-1' };
 
+// The outfits below are what each dreamer wears in every shot they are in: neutral pieces of the tiers their land
+// drops, the town's first and the North Wood's second.
+const TAMO_OUTFIT: Outfit = [
+  { slot: 'head', baseId: 'cap', tier: 1 },
+  { slot: 'chest', baseId: 'tunic', tier: 1 },
+  { slot: 'legs', baseId: 'trousers', tier: 1 },
+  { slot: 'feet', baseId: 'boots', tier: 1 },
+];
+const LINNEA_OUTFIT: Outfit = [
+  { slot: 'chest', baseId: 'tunic', tier: 1 },
+  { slot: 'hands', baseId: 'gloves', tier: 1 },
+  { slot: 'legs', baseId: 'trousers', tier: 1 },
+  { slot: 'feet', baseId: 'boots', tier: 1 },
+  { slot: 'neck', baseId: 'amulet', tier: 1 },
+];
+const ODO_OUTFIT: Outfit = [
+  { slot: 'shoulders', baseId: 'shoulders', tier: 1 },
+  { slot: 'chest', baseId: 'tunic', tier: 1 },
+  { slot: 'legs', baseId: 'trousers', tier: 1 },
+  { slot: 'feet', baseId: 'boots', tier: 1 },
+  { slot: 'bracelet1', baseId: 'bracelet', tier: 1 },
+];
+const AUREL_OUTFIT: Outfit = [
+  { slot: 'head', baseId: 'cap', tier: 2 },
+  { slot: 'shoulders', baseId: 'shoulders', tier: 2 },
+  { slot: 'chest', baseId: 'tunic', tier: 2 },
+  { slot: 'hands', baseId: 'gloves', tier: 2 },
+  { slot: 'legs', baseId: 'trousers', tier: 2 },
+  { slot: 'feet', baseId: 'boots', tier: 1 },
+];
+const MIRA_OUTFIT: Outfit = [
+  { slot: 'chest', baseId: 'tunic', tier: 2 },
+  { slot: 'legs', baseId: 'trousers', tier: 2 },
+  { slot: 'feet', baseId: 'boots', tier: 2 },
+  { slot: 'neck', baseId: 'amulet', tier: 2 },
+  { slot: 'bracelet1', baseId: 'bracelet', tier: 2 },
+  { slot: 'bracelet2', baseId: 'bracelet', tier: 2 },
+];
+
 /** The reel in the order it plays. Every scripted path is a straight run between points the reel test proves legal. */
 export const SPLASH_REEL: readonly SplashShot[] = [
   {
@@ -164,6 +209,8 @@ export const SPLASH_REEL: readonly SplashShot[] = [
         kind: 'peer',
         id: TAMO,
         name: 'Tamo',
+        people: 'sopors',
+        outfit: TAMO_OUTFIT,
         at: { x: 9, z: 20.5 },
         facing: 90,
         gait: 'jog',
@@ -177,6 +224,8 @@ export const SPLASH_REEL: readonly SplashShot[] = [
         kind: 'peer',
         id: LINNEA,
         name: 'Linnea',
+        people: 'lumina',
+        outfit: LINNEA_OUTFIT,
         at: { x: 23.5, z: 14 },
         facing: 0,
         gait: 'jog',
@@ -190,6 +239,8 @@ export const SPLASH_REEL: readonly SplashShot[] = [
         kind: 'peer',
         id: ODO,
         name: 'Odo',
+        people: 'umbrae',
+        outfit: ODO_OUTFIT,
         at: { x: 29.5, z: 22.6 },
         facing: 270,
         gait: 'run',
@@ -213,6 +264,8 @@ export const SPLASH_REEL: readonly SplashShot[] = [
         kind: 'peer',
         id: AUREL,
         name: 'Aurel',
+        people: 'vigils',
+        outfit: AUREL_OUTFIT,
         at: { x: 22.5, z: 19 },
         facing: 180,
         gait: 'jog',
@@ -232,7 +285,18 @@ export const SPLASH_REEL: readonly SplashShot[] = [
     camera: { kind: 'subject', subject: PUGNAX, side: 'right', drop: 0.05, scale: { from: 5, to: 5 }, span: 2 },
     actors: [
       { kind: 'npc', sector: 'EdariaFighterHall', npc: 'pugnax' },
-      { kind: 'peer', id: MIRA, name: 'Mira', at: { x: 3.84, z: 6.88 }, facing: 180, gait: 'jog', path: [{ x: 3.4, z: 2.9 }], faces: PUGNAX },
+      {
+        kind: 'peer',
+        id: MIRA,
+        name: 'Mira',
+        people: 'lumina',
+        outfit: MIRA_OUTFIT,
+        at: { x: 3.84, z: 6.88 },
+        facing: 180,
+        gait: 'jog',
+        path: [{ x: 3.4, z: 2.9 }],
+        faces: PUGNAX,
+      },
     ],
     beats: [{ at: 2.1, kind: 'greeting', npc: PUGNAX, listener: 'Mira' }],
   },
@@ -243,9 +307,9 @@ export const SPLASH_REEL: readonly SplashShot[] = [
     hour: 14,
     camera: { kind: 'subject', subject: { x: 21.8, z: 22.6 }, side: 'left', drop: 0.1, scale: { from: 5.4, to: 5 }, span: 1.5 },
     actors: [
-      { kind: 'peer', id: TAMO, name: 'Tamo', at: { x: 21.55, z: 22.77 }, facing: 120, gait: 'jog', path: [] },
-      { kind: 'peer', id: LINNEA, name: 'Linnea', at: { x: 22.05, z: 22.43 }, facing: 300, gait: 'jog', path: [] },
-      { kind: 'peer', id: ODO, name: 'Odo', at: { x: 22.32, z: 23.34 }, facing: 180, gait: 'jog', path: [] },
+      { kind: 'peer', id: TAMO, name: 'Tamo', people: 'sopors', outfit: TAMO_OUTFIT, at: { x: 21.55, z: 22.77 }, facing: 120, gait: 'jog', path: [] },
+      { kind: 'peer', id: LINNEA, name: 'Linnea', people: 'lumina', outfit: LINNEA_OUTFIT, at: { x: 22.05, z: 22.43 }, facing: 300, gait: 'jog', path: [] },
+      { kind: 'peer', id: ODO, name: 'Odo', people: 'umbrae', outfit: ODO_OUTFIT, at: { x: 22.32, z: 23.34 }, facing: 180, gait: 'jog', path: [] },
     ],
     beats: [
       { at: 0.6, kind: 'speech', speaker: TAMO, speech: 'say', text: () => t('Anyone up for the North Wood?') },
@@ -282,7 +346,18 @@ export const SPLASH_REEL: readonly SplashShot[] = [
     hour: 13,
     camera: { kind: 'subject', subject: AUREL, side: 'right', drop: -0.2, scale: { from: 5.2, to: 5 }, span: 1.75 },
     actors: [
-      { kind: 'peer', id: AUREL, name: 'Aurel', at: { x: 25, z: -48.1 }, facing: 35, gait: 'jog', path: [], faces: WOLF },
+      {
+        kind: 'peer',
+        id: AUREL,
+        name: 'Aurel',
+        people: 'vigils',
+        outfit: AUREL_OUTFIT,
+        at: { x: 25, z: -48.1 },
+        facing: 35,
+        gait: 'jog',
+        path: [],
+        faces: WOLF,
+      },
       { kind: 'carried', id: WOLF, path: [], faces: AUREL },
     ],
     beats: [
@@ -314,7 +389,18 @@ export const SPLASH_REEL: readonly SplashShot[] = [
     actors: [
       { kind: 'carried', id: AUREL, path: [] },
       { kind: 'carried', id: WOLF, path: [{ x: 23.5, z: -50 }] },
-      { kind: 'peer', id: MIRA, name: 'Mira', at: { x: 22.5, z: -45 }, facing: 120, gait: 'jog', path: [{ x: 25.65, z: -48.13 }], faces: AUREL },
+      {
+        kind: 'peer',
+        id: MIRA,
+        name: 'Mira',
+        people: 'lumina',
+        outfit: MIRA_OUTFIT,
+        at: { x: 22.5, z: -45 },
+        facing: 120,
+        gait: 'jog',
+        path: [{ x: 25.65, z: -48.13 }],
+        faces: AUREL,
+      },
     ],
     beats: [
       { at: 2.4, kind: 'raise', target: AUREL, raise: { progress: 0, seconds: 5 } },
@@ -334,6 +420,8 @@ export const SPLASH_REEL: readonly SplashShot[] = [
         kind: 'peer',
         id: ODO,
         name: 'Odo',
+        people: 'umbrae',
+        outfit: ODO_OUTFIT,
         at: { x: 5.2, z: 7.1 },
         facing: 270,
         gait: 'jog',
@@ -358,6 +446,8 @@ export const SPLASH_REEL: readonly SplashShot[] = [
         kind: 'peer',
         id: LINNEA,
         name: 'Linnea',
+        people: 'lumina',
+        outfit: LINNEA_OUTFIT,
         at: { x: 2.56, z: 6.88 },
         facing: 180,
         gait: 'jog',
@@ -414,7 +504,9 @@ function stageActor(actor: SplashActor, shot: SplashShot, previous: StagedShot |
       return {
         id: actor.id,
         kind: 'peer',
-        characterModelId: registry.playerModel,
+        characterModelId: peopleBody(registry, actor.people) ?? '',
+        people: actor.people,
+        outfit: actor.outfit,
         name: actor.name,
         radius: SOMNIO_CONSTANTS.playerRadius,
         metresPerSecond: gaitMetresPerSecond(actor.gait),
@@ -435,6 +527,8 @@ function stageActor(actor: SplashActor, shot: SplashShot, previous: StagedShot |
         id,
         kind: 'npc',
         characterModelId: npc.characterModelId,
+        people: undefined,
+        outfit: undefined,
         name: npc.name,
         radius: SOMNIO_CONSTANTS.npcRadius,
         metresPerSecond: 0,
@@ -456,6 +550,8 @@ function stageActor(actor: SplashActor, shot: SplashShot, previous: StagedShot |
         id: actor.id,
         kind: 'monster',
         characterModelId: kind.characterModelId,
+        people: undefined,
+        outfit: undefined,
         name: kind.name,
         radius: kind.radius,
         metresPerSecond: kind.strollMetresPerSecond,

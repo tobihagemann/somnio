@@ -20,6 +20,8 @@ function emptyAssets(): ModelAssets {
     ground: () => undefined,
     trophy: () => undefined,
     object: () => undefined,
+    wear: () => Promise.resolve(undefined),
+    retryWear: () => {},
     clipsFor: () => [],
     prototypeMeshes: () => undefined,
   };

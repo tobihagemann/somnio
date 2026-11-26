@@ -89,7 +89,7 @@ export function translate(locale: CatalogLocale, key: string, ...args: string[])
 export const CORE_LABEL_KEYS: readonly string[] = [
   // Each role's Spirit deepening is its own teaching under one label.
   ...new Set([
-    ...Object.values(BASE_ITEMS).map((item) => item.labelKey),
+    ...Object.values(BASE_ITEMS).flatMap((item) => ('tierLabelKeys' in item ? Object.values(item.tierLabelKeys) : [item.labelKey])),
     ...Object.values(AFFIXES).map((line) => line.nameKey),
     ...PEOPLES.map(peopleLabelKey),
     ...ROLES.map(roleLabelKey),
@@ -268,14 +268,15 @@ export const RENDERED_KEYS: readonly string[] = [
   'Main hand',
   'Off hand',
   'Head',
+  'Shoulders',
   'Chest',
   'Hands',
   'Legs',
   'Feet',
   'Neck',
-  'Ring',
-  'Ring 1',
-  'Ring 2',
+  'Bracelet',
+  'Bracelet 1',
+  'Bracelet 2',
   '+%@ Health',
   '+%@ Balance',
   '+%@ Spirit',
@@ -557,6 +558,7 @@ export const RENDERED_KEYS: readonly string[] = [
   'Turn your phone sideways.',
   'Somnio is played in landscape. Tap the ground to walk, and tap a nightmare to target it.',
   'Loading the world...',
+  'Your gear is still loading.',
   'Fullscreen',
   'Alt+Enter also enters and leaves fullscreen.',
 

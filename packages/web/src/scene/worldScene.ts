@@ -22,6 +22,7 @@ import {
   nightmareLabelKey,
   objectModel,
   paddedRasterRect,
+  peopleScale,
   rectContains,
   relativeDirection,
   resolveDoor,
@@ -29,6 +30,8 @@ import {
   sectorOrigin,
   sectorRect,
   trophyLabelKey,
+  wardrobeRow,
+  wornStem,
   worldSecondsAt,
   worldToModel,
 } from '@somnio/core';
@@ -39,21 +42,25 @@ import type {
   Heading,
   LightKind,
   ModelRegistry,
+  People,
   Point,
   QuestMarker,
   Rect,
   ResolvedDoor,
   Size,
   SpaceCollision,
+  WardrobeRow,
   WorldClockReading,
 } from '@somnio/core';
-import { CONDITIONS, HANDS } from '@somnio/protocol';
+import { CONDITIONS, HANDS, sameOutfit } from '@somnio/protocol';
 import type {
   Condition,
+  EquipSlot,
   Gait,
   Hand,
-  Held,
   LootMessage,
+  Outfit,
+  OutfitPiece,
   Placement,
   SectorView,
   SensedBearingMessage,
@@ -100,12 +107,14 @@ import {
 import type { RasterArt } from './overlayArt';
 import { CHARACTER_SCALE, PLACEHOLDER_HEIGHT, easedHeight, placeholderFootprint, placementElevation } from './placement';
 import { PROP_LIGHT_COLOR, PROP_LIGHT_DECAY, PROP_LIGHT_DISTANCE, PROP_LIGHT_POOL_SIZE, PROP_LIGHT_PRESETS, flameFlicker, flamePhase } from './propLights';
-import { prototypeMeshesOf } from './modelAssets';
+import { SKINNED_DEPTH_MATERIAL, prototypeMeshesOf } from './modelAssets';
 import type { ModelAssets, PrototypeMesh } from './modelAssets';
 import { PORTRAIT, PORTRAIT_LAYERS, PORTRAIT_SLOTS, PortraitPass, bodyFraming, portraitFraming, setPortraitLayer } from './portraits';
 import type { PortraitRenderer, PortraitShot, PortraitSlot, PortraitSubject } from './portraits';
 import { yawStep } from './yawSlew';
 import { guardDirectLights } from './lightGuard';
+import { BAKED_OUTFIT, WARDROBE_STEP_MS, WardrobeMaterial, WardrobeTextures, bakeOutfit, isPrepared, preparePiece } from './wardrobe';
+import type { PreparedPiece } from './wardrobe';
 
 /**
  * Per-entity render state the scene mutates each frame.
@@ -114,6 +123,7 @@ import { guardDirectLights } from './lightGuard';
  * yaw cannot live there — they live here, keyed by entity id.
  */
 interface EntityRenderState {
+  id: string;
   /** Translation only. Overlays hang off this, so it must never carry the facing yaw. */
   node: THREE.Object3D;
   /** Between the node and the model holder: the stagger and the lift of the combat effects move it, render-only, so a move never fights them. */
@@ -124,6 +134,8 @@ interface EntityRenderState {
   action: THREE.AnimationAction | undefined;
   kind: ClientEntity['kind'];
   characterModelId: string;
+  /** A dreamer's people, which the pieces they wear are fitted to. */
+  people: People | undefined;
   name: string;
   /** The trait an elite carries, which names it and colours its aura. */
   trait: EliteTraitId | undefined;
@@ -151,6 +163,14 @@ interface EntityRenderState {
   grassBones: { bone: THREE.Object3D; foot: boolean }[];
   /** How far above the node the head bone stands in the idle pose; always positive where `headBone` is set. */
   headBoneRest: number;
+  /** The head bone's own direction that pointed straight up in that idle pose, which its world matrix as posed now carries to the way the head points. */
+  headBoneUp: THREE.Vector3;
+  /**
+   * Each bone of the body's skeleton as it skins a vertex in the idle pose `headHeight` is measured
+   * in, relative to the node (`standingSkin`). What a bake's head wears is measured through it, so it
+   * measures standing however the body now lies or moves. `undefined` for a body without a skeleton.
+   */
+  standingSkin: THREE.Matrix4[] | undefined;
   /** Label under the feet. Created on first placement and rebuilt on a kind, name, or condition change, and when the pointer comes over a hale nightmare or leaves it. */
   namePlaque: THREE.Object3D | undefined;
   /** The plaque's own mesh, which carries its draw order. */
@@ -161,9 +181,31 @@ interface EntityRenderState {
   oneShot: { action: THREE.AnimationAction; held: boolean } | undefined;
   /** When the fall of a body that lies fallen starts, on the scene's clock, while it waits for the blow that felled it to land. */
   fallsAt: number | undefined;
-  /** What the hands hold, and the models hung on their bones for it. */
-  held: Held | undefined;
+  /** What a dreamer wears and holds, and the models hung on the hands' bones for what they hold. */
+  outfit: Outfit | undefined;
   heldProps: Partial<Record<Hand, THREE.Object3D>>;
+  /**
+   * The one mesh a dreamer's body is drawn as, under its model, the parts it was joined from, the
+   * ranges of its vertices the head wears, and how far that stands above the head, in metres, once
+   * measured (`WorldScene.headRise`); `undefined` while the model's own meshes draw it.
+   */
+  dressed:
+    { mesh: THREE.SkinnedMesh; parts: readonly PreparedPiece[]; onHead: readonly [start: number, end: number][]; headRise: number | undefined } | undefined;
+}
+
+/** A body waiting to be dressed in what it wore as it was queued (`WorldScene.dressBody`). */
+interface DressingJob {
+  state: EntityRenderState;
+  /** The body's model as it was queued. */
+  model: THREE.Object3D;
+  /** The worn pieces it was queued for. */
+  worn: OutfitPiece[];
+}
+
+/** The next piece of work toward dressing a body, budgeted at its kind's worst case (`WARDROBE_STEP_MS`). */
+interface DressingStep {
+  kind: keyof typeof WARDROBE_STEP_MS;
+  run: () => void;
 }
 
 /** A body leaving the scene, no entity of it any more, taken out over `seconds` from `startedAt` (`WorldScene.depart`). */
@@ -311,6 +353,16 @@ const ORIGIN = new THREE.Vector3();
 
 /** How long the body of a nightmare leaving without crumbling takes to fade out. */
 const BODY_FADE_SECONDS = 1.5;
+
+/** The most script a frame spends dressing bodies, in milliseconds: the frame budget's line for loading work. */
+export const DRESSING_BUDGET_MS = 6;
+
+/**
+ * Where a dressed body's mesh is culled by, in its model's own units round the feet: about half as
+ * wide again as the furthest any pack body reaches standing, running, or fallen. A fixed sphere spares
+ * three skinning every vertex to measure one.
+ */
+const DRESSED_BOUNDS = new THREE.Sphere(new THREE.Vector3(), 1.5);
 
 /** The renderer a world scene draws through. */
 export function createWorldRenderer(canvas: HTMLCanvasElement): THREE.WebGLRenderer {
@@ -471,6 +523,17 @@ export class WorldScene implements WorldRenderSurface {
   /** The clock the wind sways the grass by. */
   private readonly wind = { value: 0 };
   private readonly entityStates = new Map<string, EntityRenderState>();
+  /** Every image a dressed body draws, a layer each, kept for the scene's life. */
+  private readonly wardrobeTextures = new WardrobeTextures();
+  /** The one material every dressed body draws with, never disposed. */
+  private readonly wardrobeMaterial = new WardrobeMaterial(this.wardrobeTextures);
+  /** Each worn piece loaded so far, by stem; `null` for one that failed to load. */
+  private readonly wornModels = new Map<string, THREE.Object3D | null>();
+  /** The worn pieces still loading, by stem. */
+  private readonly wearing = new Set<string>();
+  private prewarming = false;
+  /** The bodies waiting to be dressed, by entity id, in the order they were queued. */
+  private readonly dressing = new Map<string, DressingJob>();
   /** The bodies crumbling or fading out of the scene, no entities of it any more (`depart`). */
   private departing: DepartingBody[] = [];
   private readonly bubbles = new Map<string, SpeechBubble>();
@@ -571,7 +634,7 @@ export class WorldScene implements WorldRenderSurface {
     this.loot = new LootMarkers(
       OVERLAY_ORIENTATION,
       (contents) => {
-        const model = contents.kind === 'item' ? this.assets.ground(contents.baseId) : this.assets.trophy(contents.monsterKind);
+        const model = contents.kind === 'item' ? this.assets.ground(contents.baseId, contents.tier) : this.assets.trophy(contents.monsterKind);
         if (model !== undefined) enableShadows(model);
         return model;
       },
@@ -666,6 +729,20 @@ export class WorldScene implements WorldRenderSurface {
    * draws each nightmare's body and each drop's model with, as `fadeOut` clones them.
    */
   async prewarm(renderer?: Pick<THREE.WebGLRenderer, 'compileAsync'>): Promise<void> {
+    this.prewarming = true;
+    try {
+      await this.warmUp(renderer);
+    } finally {
+      this.prewarming = false;
+    }
+  }
+
+  /** Whether `prewarm` is under way: the models still load and compile, and a body placed meanwhile is a placeholder. */
+  get warming(): boolean {
+    return this.prewarming;
+  }
+
+  private async warmUp(renderer: Pick<THREE.WebGLRenderer, 'compileAsync'> | undefined): Promise<void> {
     await Promise.all([
       this.assets.prewarm(),
       renderer === undefined ? undefined : this.effects.compile(renderer, this.camera, this.scene),
@@ -680,23 +757,23 @@ export class WorldScene implements WorldRenderSurface {
 
   /**
    * Every model and each kind of scatter as play draws them, in the world's light, so the first sight
-   * of a body, a held item, a drop, a prop, or a meadow compiles nothing mid-play. The models' and
-   * the pebbles' materials are the cache's, and the grass's and the flowers' the scene's bending
-   * copies, so each program outlives what drew it here. The scatter compiles after the models: a
-   * pebble draws one material both placed and instanced, and `compileAsync` waits for the program
-   * it compiled last for each material. The shadow pass's programs are left to three, which compiles
-   * each on the frame it first draws.
+   * of a body, a dressed body, a held item, a drop, a prop, or a meadow compiles nothing mid-play.
+   * The models' and the pebbles' materials are the cache's, the grass's and the flowers' the scene's
+   * bending copies, and a dressed body's the scene's one, so each program outlives what drew it here.
+   * The scatter compiles after the models: a pebble draws one material both placed and instanced, and
+   * `compileAsync` waits for the program it compiled last for each material. The shadow pass's
+   * programs are left to three, which compiles each on the frame it first draws.
    */
   private async compileModels(renderer: Pick<THREE.WebGLRenderer, 'compileAsync'>): Promise<void> {
     const models = new THREE.Group();
     const loaded = [
       ...this.registry.characterModels.map((rule) => this.assets.character(rule.id)),
       ...this.registry.handModels.map((rule) => this.assets.hand(rule.id)),
-      ...this.registry.groundModels.map((rule) => this.assets.ground(rule.id)),
+      ...this.groundDrops(),
       ...this.registry.trophyModels.map((rule) => this.assets.trophy(rule.id)),
       ...this.registry.objectModels.map((rule) => this.assets.object(rule.id)),
     ].filter((model) => model !== undefined);
-    if (loaded.length > 0) models.add(...loaded);
+    models.add(this.dressedBody(bakeOutfit([]), new THREE.Skeleton([new THREE.Bone()]), new THREE.Matrix4()), ...loaded);
     enableShadows(models);
     await renderer.compileAsync(models, this.camera, this.scene);
     disposeSubtree(models);
@@ -714,11 +791,19 @@ export class WorldScene implements WorldRenderSurface {
   private async compileFades(renderer: Pick<THREE.WebGLRenderer, 'compileAsync'>): Promise<void> {
     const models = [
       ...[...new Set(Object.values(MONSTER_KINDS).map((kind) => kind.characterModelId))].map((id) => this.assets.character(id)),
-      ...this.registry.groundModels.map((rule) => this.assets.ground(rule.id)),
+      ...this.groundDrops(),
       ...this.registry.trophyModels.map((rule) => this.assets.trophy(rule.id)),
     ].filter((model) => model !== undefined);
     await compileFadeOut(renderer, models, this.camera, this.scene);
     for (const model of models) disposeSubtree(model);
+  }
+
+  /** What every item drop lies as, once each: each base's ground model, and armour and jewellery's for each tier past the first, whose own is its base's. */
+  private groundDrops(): (THREE.Object3D | undefined)[] {
+    return [
+      ...this.registry.groundModels.map((rule) => this.assets.ground(rule.id, 1)),
+      ...this.registry.wardrobe.filter((row) => row.tier > 1).map((row) => this.assets.ground(row.base, row.tier)),
+    ];
   }
 
   /**
@@ -753,6 +838,7 @@ export class WorldScene implements WorldRenderSurface {
     this.grass.clear();
     this.bending.clear();
     this.entityStates.clear();
+    this.dressing.clear();
     // Detached before a fade's clones go, since a held swap keeps the outgoing root on screen, and a
     // disposed material still drawn is acquired again.
     for (const body of this.departing) letGo(body);
@@ -859,12 +945,16 @@ export class WorldScene implements WorldRenderSurface {
     if (!this.pendingPlayerReveal) this.lightDrawnSpace();
   }
 
-  /** Whether every drawn sector's ground is painted for its current inputs and its scatter placed, so nothing drawn is still to change. */
+  /**
+   * Whether every drawn sector's ground is painted for its current inputs and its scatter placed, and
+   * every body is dressed in what it wears, so nothing drawn is still to change.
+   */
   isSettled(): boolean {
     return (
       this.dirtyGrounds.size === 0 &&
       this.scatterDue.size === 0 &&
-      [...this.grounds.values()].every((ground) => ground.field !== undefined && ground.pending === undefined && ground.scatterPending === undefined)
+      [...this.grounds.values()].every((ground) => ground.field !== undefined && ground.pending === undefined && ground.scatterPending === undefined) &&
+      [...this.entityStates.values()].every((state) => this.isDressed(state))
     );
   }
 
@@ -1104,7 +1194,7 @@ export class WorldScene implements WorldRenderSurface {
       }
       for (const hand of HANDS) {
         const prop = state.heldProps[hand];
-        const baseId = state.held?.[hand];
+        const baseId = heldBase(state.outfit, hand);
         if (prop === undefined || baseId === undefined) continue;
         const contact = grassContact(prop, measuredReach(this.heldReaches, baseId, prop));
         if (contact !== undefined) contacts.push(contact);
@@ -1130,6 +1220,7 @@ export class WorldScene implements WorldRenderSurface {
       jolt.add(modelHolder);
       this.spaceRoot.add(node);
       state = {
+        id: entity.id,
         node,
         jolt,
         modelHolder,
@@ -1137,6 +1228,7 @@ export class WorldScene implements WorldRenderSurface {
         action: undefined,
         kind: entity.kind,
         characterModelId: entity.characterModelId,
+        people: entity.people,
         name: entity.name,
         trait: entity.trait,
         radius: entity.radius,
@@ -1153,14 +1245,17 @@ export class WorldScene implements WorldRenderSurface {
         headBone: undefined,
         grassBones: [],
         headBoneRest: 0,
+        headBoneUp: new THREE.Vector3(0, 1, 0),
+        standingSkin: undefined,
         namePlaque: undefined,
         namePlaquePlate: undefined,
         pose: undefined,
         condition: entity.condition,
         oneShot: undefined,
         fallsAt: undefined,
-        held: entity.held,
+        outfit: entity.outfit,
         heldProps: {},
+        dressed: undefined,
       };
       this.entityStates.set(entity.id, state);
       this.resolveEntityModel(state);
@@ -1173,6 +1268,7 @@ export class WorldScene implements WorldRenderSurface {
     if (kindChanged || state.characterModelId !== entity.characterModelId) {
       state.kind = entity.kind;
       state.characterModelId = entity.characterModelId;
+      state.people = entity.people;
       state.radius = entity.radius;
       this.resolveEntityModel(state);
       this.refreshPortraitLayers(entity.id, state);
@@ -1187,7 +1283,7 @@ export class WorldScene implements WorldRenderSurface {
     if (!drivenOff(entity)) this.auras.show(entity.id, state.jolt, entity.radius, entity.trait);
     this.questMarkers.show(entity.id, state.node, this.questMarkerOf.get(entity.id));
     if (state.condition !== entity.condition) this.updateCondition(entity.id, entity.condition);
-    if (!sameHeld(state.held, entity.held)) this.updateHeld(entity.id, entity.held);
+    this.updateOutfit(entity.id, entity.outfit);
 
     state.facing = entity.facing;
     state.gait = entity.gait;
@@ -1202,6 +1298,7 @@ export class WorldScene implements WorldRenderSurface {
     if (entity.kind === 'player') {
       this.cameraFollowId = entity.id;
       this.focusCamera(state.node.position);
+      if (this.pendingPlayerReveal) this.dressAtOnce(state);
       this.revealHeldSpaceIfPending(entity.position);
       this.hangCarriedBubble(entity);
     }
@@ -1251,13 +1348,37 @@ export class WorldScene implements WorldRenderSurface {
     }
   }
 
-  /** Hangs what the hands hold on their bones, and puts it on the portraits that show its holder, as a model put in afresh is. */
-  updateHeld(entityId: string, held: Held | undefined): void {
+  /**
+   * Hangs what the hands hold on their bones when that changed, dresses the body when what it wears
+   * changed, and puts either on the portraits that show the dreamer, as a model put in afresh is. A
+   * change in the hands alone leaves the body as it is dressed.
+   */
+  updateOutfit(entityId: string, outfit: Outfit | undefined): void {
     const state = this.entityStates.get(entityId);
-    if (state === undefined || sameHeld(state.held, held)) return;
-    state.held = held;
-    this.hangHeldProps(state);
+    if (state === undefined) return;
+    const handsChanged = !sameOutfit(handPieces(state.outfit), handPieces(outfit));
+    const wornChanged = !sameOutfit(wornPieces(state.outfit), wornPieces(outfit));
+    if (!handsChanged && !wornChanged) return;
+    state.outfit = outfit;
+    if (handsChanged) this.hangHeldProps(state);
+    if (wornChanged) this.dressBody(state);
     this.refreshPortraitLayers(entityId, state);
+  }
+
+  /**
+   * Whether the local player is drawn in all they wear, or wears nothing and shows as they are while
+   * the bake that joins their bare body is still to come.
+   */
+  ownBodyDressed(): boolean {
+    const state = this.cameraFollowId === undefined ? undefined : this.entityStates.get(this.cameraFollowId);
+    return state !== undefined && (this.isDressed(state) || (state.dressed === undefined && this.wornRows(state).length === 0));
+  }
+
+  /** Loads again each piece the local player wears that is still loading, for a load that stalls. */
+  retryOwnOutfit(): void {
+    const state = this.cameraFollowId === undefined ? undefined : this.entityStates.get(this.cameraFollowId);
+    if (state === undefined) return;
+    this.assets.retryWear(this.wornRows(state).flatMap(({ stem }) => (this.wearing.has(stem) ? [stem] : [])));
   }
 
   showBlow(attackerId: string, targetId: string, hit: boolean, evaded = false): void {
@@ -1308,10 +1429,10 @@ export class WorldScene implements WorldRenderSurface {
    * A drop of a base or a trophy of a kind this build does not know is not drawn, so nothing can be
    * pressed for it. A trophy lies as its kind's model, or as its name alone for a kind with none,
    * its name drawn plain. One shown as it falls is thrown there. Under reduced motion or in a stalled
-   * tab it lies there at once, and a hand it left empties with the `held` that follows.
+   * tab it lies there at once, and a hand it left empties with the `outfit` that follows.
    */
   showLoot({ lootId, x, z, contents, from }: LootMessage): void {
-    const labelKey = contents.kind === 'item' ? itemLabelKey(contents.baseId) : trophyLabelKey(contents.monsterKind);
+    const labelKey = contents.kind === 'item' ? itemLabelKey(contents.baseId, contents.tier) : trophyLabelKey(contents.monsterKind);
     if (labelKey === undefined) return;
     const item = contents.kind === 'item' ? contents : undefined;
     const thrown = from === undefined || this.effects.stalled(this.now()) ? undefined : this.throwFrom(from, item?.baseId);
@@ -1359,7 +1480,7 @@ export class WorldScene implements WorldRenderSurface {
 
   /** Takes the model a hand holds of the base from what the hands hold, for a throw to let go of: `undefined` when the hand draws none of it. */
   private handOver(state: EntityRenderState, hand: Hand, baseId: string): THREE.Object3D | undefined {
-    const prop = state.held?.[hand] === baseId ? state.heldProps[hand] : undefined;
+    const prop = heldBase(state.outfit, hand) === baseId ? state.heldProps[hand] : undefined;
     if (prop !== undefined) delete state.heldProps[hand];
     return prop;
   }
@@ -2035,6 +2156,8 @@ export class WorldScene implements WorldRenderSurface {
       // A hit-pause holds the clip where it is, for the bodies a blow names alone.
       if (!this.effects.frozen(id)) state.mixer?.update(dt);
     }
+    // Before the effects, so a flash or an outline over a body dressed again this frame is built over its new mesh.
+    this.dressQueued();
     // After the clips move on, so a drop leaving a hand leaves it where this frame draws the hand.
     this.loot.tick(this.sceneClock, stalled);
     this.stepDeparting(dt, stalled);
@@ -2205,12 +2328,16 @@ export class WorldScene implements WorldRenderSurface {
     const rest = bone === undefined ? 0 : bone.getWorldPosition(new THREE.Vector3()).y - state.node.position.y;
     state.headBone = rest > 0 ? bone : undefined;
     state.headBoneRest = rest;
+    // Through the whole matrix rather than its turn alone: a people's scale is uneven, and the turn
+    // decomposed from a matrix of uneven scale under a rotated bone shifts as the body turns.
+    if (bone !== undefined) state.headBoneUp.set(0, 1, 0).transformDirection(bone.matrixWorld.clone().invert());
   }
 
   private resolveEntityModel(state: EntityRenderState): void {
     // Disposed rather than merely detached: a placeholder owns its `BoxGeometry`, and a clone owns
     // its skeleton, so dropping either here would put it past the reach of any later cleanup.
     for (const child of [...state.modelHolder.children]) disposeSubtree(child);
+    state.dressed = undefined;
     state.pose = undefined;
     state.action = undefined;
     state.oneShot = undefined;
@@ -2225,18 +2352,25 @@ export class WorldScene implements WorldRenderSurface {
       state.headHeight = this.measureBody(state).headHeight;
       state.bodyReach = 0;
       state.headBone = undefined;
+      state.standingSkin = undefined;
       state.grassBones = [];
       return;
     }
+    // The pack's bodies carry each hair fit as a morph target exported at full weight; the body is drawn, measured,
+    // and baked bare, and a headpiece's fit is applied in its bake alone.
+    for (const mesh of bodyMeshes(model)) mesh.morphTargetInfluences?.fill(0);
     enableShadows(model);
     state.modelHolder.add(model);
-    state.modelHolder.scale.setScalar(CHARACTER_SCALE);
+    const people = state.people === undefined ? undefined : peopleScale(this.registry, state.people);
+    if (people === undefined) state.modelHolder.scale.setScalar(CHARACTER_SCALE);
+    else state.modelHolder.scale.set(...people).multiplyScalar(CHARACTER_SCALE);
     state.mixer = new THREE.AnimationMixer(model);
     state.isPlaceholder = false;
     // Posed first: until a clip plays, a model's bones rest wherever its file left them, which need not be a pose at all.
     this.applyPose('idle', state);
     state.mixer.update(0);
     ({ headHeight: state.headHeight, bodyReach: state.bodyReach } = this.measureBody(state));
+    state.standingSkin = standingSkin(state.node, bodyMeshes(model)[0]?.skeleton);
     this.findHeadBone(state, model);
     state.grassBones = GRASS_BONES.flatMap(({ name, foot }) => {
       const bone = model.getObjectByName(name);
@@ -2246,6 +2380,7 @@ export class WorldScene implements WorldRenderSurface {
     this.hangHeldProps(state);
     // A fall still waiting for its blow plays from the start once the blow lands (`fallsAt`).
     if (state.condition === 'fallen' && state.fallsAt === undefined) this.layFallen(state);
+    this.dressBody(state);
   }
 
   /**
@@ -2258,7 +2393,7 @@ export class WorldScene implements WorldRenderSurface {
     const model = state.modelHolder.children[0];
     if (state.isPlaceholder || model === undefined) return;
     for (const hand of HANDS) {
-      const baseId = state.held?.[hand];
+      const baseId = heldBase(state.outfit, hand);
       const bone = model.getObjectByName(HAND_BONES[hand]);
       if (baseId === undefined || bone === undefined) continue;
       const prop = this.assets.hand(baseId);
@@ -2268,6 +2403,205 @@ export class WorldScene implements WorldRenderSurface {
       bone.add(prop);
       state.heldProps[hand] = prop;
     }
+  }
+
+  /**
+   * Records what a dreamer's body is to wear: asks for each worn piece not loaded yet, and queues the
+   * body to be dressed over the next frames (`dressQueued`). A placeholder has no skeleton to dress.
+   */
+  private dressBody(state: EntityRenderState): void {
+    const model = state.modelHolder.children[0];
+    if (state.isPlaceholder || state.people === undefined || model === undefined) return;
+    for (const { stem } of this.wornRows(state)) this.requestWear(stem);
+    this.dressing.set(state.id, { state, model, worn: wornPieces(state.outfit) });
+  }
+
+  /** What a dreamer's body wears: each worn piece's wardrobe row and the stem it is worn as on their people, in `EQUIP_SLOTS` order. */
+  private wornRows(state: EntityRenderState): { row: WardrobeRow; stem: string; slot: EquipSlot }[] {
+    const people = state.people;
+    if (people === undefined) return [];
+    return wornPieces(state.outfit).flatMap((piece) => {
+      const row = wardrobeRow(this.registry, piece.baseId, piece.tier);
+      const stem = row === undefined ? undefined : wornStem(row, people, piece.slot);
+      return row === undefined || stem === undefined ? [] : [{ row, stem, slot: piece.slot }];
+    });
+  }
+
+  /** Starts loading a worn piece not loaded or loading yet. Once it comes, every body wearing it is queued to be dressed again. */
+  private requestWear(stem: string): void {
+    if (this.wornModels.has(stem) || this.wearing.has(stem)) return;
+    this.wearing.add(stem);
+    void this.assets.wear(stem).then((model) => {
+      this.wearing.delete(stem);
+      if (model !== undefined) this.wardrobeTextures.adopt(model);
+      this.wornModels.set(stem, model ?? null);
+      for (const state of this.entityStates.values()) if (this.wornRows(state).some((worn) => worn.stem === stem)) this.dressBody(state);
+    });
+  }
+
+  /** Whether a body is drawn in all it wears: nothing of it loading and nothing of it queued. A placeholder has nothing to dress. */
+  private isDressed(state: EntityRenderState): boolean {
+    return state.isPlaceholder || (!this.dressing.has(state.id) && this.wornRows(state).every(({ stem }) => !this.wearing.has(stem)));
+  }
+
+  /**
+   * Dresses the queued bodies a step at a time, the local player's first, then the rest in the order
+   * they were queued. A step starts only while the frame's dressing so far plus that step's worst case
+   * stays within `DRESSING_BUDGET_MS`. The frame's first step always runs, so the queue moves on
+   * however long a step may take.
+   */
+  private dressQueued(): void {
+    const started = this.now();
+    for (let first = true; ; first = false) {
+      const step = this.nextDressingStep();
+      if (step === undefined || (!first && this.now() - started + WARDROBE_STEP_MS[step.kind] > DRESSING_BUDGET_MS)) return;
+      step.run();
+    }
+  }
+
+  /** The next step of the first body queued that still wears what it was queued for, dropping every job left behind before it. */
+  private nextDressingStep(): DressingStep | undefined {
+    const own = this.cameraFollowId === undefined ? undefined : this.dressing.get(this.cameraFollowId);
+    for (const job of own === undefined ? [...this.dressing.values()] : [own, ...this.dressing.values()]) {
+      if (this.isCurrent(job)) return this.dressingStep(job);
+      this.dressing.delete(job.state.id);
+    }
+    return undefined;
+  }
+
+  /**
+   * Dresses the body now, every step at once, when nothing it wears is still loading, so a space
+   * revealed with it shows it dressed. A new space's reveal is the one hitch the frame budget allows.
+   */
+  private dressAtOnce(state: EntityRenderState): void {
+    if (this.wornRows(state).some(({ stem }) => this.wearing.has(stem))) return;
+    for (let job = this.dressing.get(state.id); job !== undefined && this.isCurrent(job); job = this.dressing.get(state.id)) this.dressingStep(job).run();
+  }
+
+  /** Whether the job's body is still in view with the model and the worn pieces it was queued for; a change in the hands alone leaves it current. */
+  private isCurrent(job: DressingJob): boolean {
+    const { state } = job;
+    return this.entityStates.get(state.id) === state && state.modelHolder.children[0] === job.model && sameOutfit(wornPieces(state.outfit), job.worn);
+  }
+
+  /** The job's next step: an image a part draws copied into its layer, then the part prepared, part by part, and last the join. */
+  private dressingStep(job: DressingJob): DressingStep {
+    const [binding] = bodyMeshes(job.model);
+    for (const { mesh, hairFit } of binding === undefined ? [] : this.bakeParts(job, binding)) {
+      const texture = this.wardrobeTextures.unplaced(mesh)[0];
+      if (texture !== undefined) return { kind: 'copy', run: () => this.wardrobeTextures.place(texture) };
+      if (!isPrepared(mesh, binding!, hairFit, this.wardrobeTextures)) {
+        return { kind: 'prepare', run: () => preparePiece(mesh, binding!, hairFit, this.wardrobeTextures) };
+      }
+    }
+    return { kind: 'join', run: () => this.joinOutfit(job, binding) };
+  }
+
+  /**
+   * The meshes a body's bake joins, each with the hair fit it is prepared with: every loaded worn
+   * piece's, then each of the body's regions none of them covers. A worn piece's meshes come while
+   * any of them is still to be prepared, so the caller prepares the worn pieces before it reaches
+   * the regions. Once all are prepared, a piece whose every mesh prepared is worn: its meshes join,
+   * its regions are covered, and the hair is tucked. A piece with a mesh that failed to prepare joins
+   * nothing. A piece still loading or failed to load leaves the regions and the hair as they are.
+   */
+  private *bakeParts(job: DressingJob, binding: THREE.SkinnedMesh): Generator<{ mesh: THREE.SkinnedMesh; hairFit: string | undefined; onHead: boolean }> {
+    const worn: WardrobeRow[] = [];
+    for (const { row, stem, slot } of this.wornRows(job.state)) {
+      const piece = this.wornModels.get(stem);
+      if (piece === undefined || piece === null) continue;
+      const meshes = skinnedMeshes(piece);
+      const prepared = meshes.every((mesh) => isPrepared(mesh, binding, undefined, this.wardrobeTextures));
+      // Read from the cache once every mesh is prepared, so this prepares nothing itself.
+      const whole = prepared && meshes.every((mesh) => preparePiece(mesh, binding, undefined, this.wardrobeTextures) !== undefined);
+      if (!prepared || whole) for (const mesh of meshes) yield { mesh, hairFit: undefined, onHead: slot === 'head' };
+      if (whole) worn.push(row);
+    }
+    const covered = new Set<string>(worn.flatMap((row) => row.covers));
+    const hairFit = worn.find((row) => row.hairFit !== undefined)?.hairFit;
+    for (const mesh of bodyMeshes(job.model)) if (!covered.has(mesh.name)) yield { mesh, hairFit, onHead: false };
+  }
+
+  /**
+   * Joins the prepared parts into the one mesh the body is drawn as, under its model so its clips
+   * play on as they did, and hides the body's own meshes, which keep its skeleton. A region whose part
+   * failed stays drawn as itself. The same parts as the body is dressed in leave its mesh as it is.
+   * How far what the head wears stands above it is measured later, once a portrait frames the body.
+   */
+  private joinOutfit(job: DressingJob, binding: THREE.SkinnedMesh | undefined): void {
+    const { state, model } = job;
+    this.dressing.delete(state.id);
+    if (binding === undefined) return;
+    const parts: PreparedPiece[] = [];
+    const failed = new Set<THREE.SkinnedMesh>();
+    /** The baked vertices of what the head wears, which may stand above it. */
+    const onHead: [start: number, end: number][] = [];
+    let vertices = 0;
+    for (const { mesh, hairFit, onHead: worn } of this.bakeParts(job, binding)) {
+      const part = preparePiece(mesh, binding, hairFit, this.wardrobeTextures);
+      if (part === undefined) {
+        failed.add(mesh);
+        continue;
+      }
+      parts.push(part);
+      if (worn) onHead.push([vertices, vertices + part.layer.length]);
+      vertices += part.layer.length;
+    }
+    for (const region of bodyMeshes(model)) region.visible = failed.has(region);
+    const dressed = state.dressed;
+    if (dressed !== undefined && dressed.parts.length === parts.length && dressed.parts.every((part, index) => part === parts[index])) return;
+    const mesh = this.dressedBody(bakeOutfit(parts), binding.skeleton, binding.bindMatrix);
+    model.add(mesh);
+    // Its geometry alone: the skeleton is the body's, which goes with the body.
+    dressed?.mesh.removeFromParent();
+    dressed?.mesh.geometry.dispose();
+    state.dressed = { mesh, parts, onHead, headRise: onHead.length === 0 ? 0 : undefined };
+    this.refreshPortraitLayers(state.id, state);
+  }
+
+  /**
+   * How far what the head wears stands above the head, in metres as drawn: the highest of its baked
+   * vertices skinned in the idle pose, over the top of the bare head measured in the same pose, so it
+   * is the same whether the body stands, lies, or moves. Measured the first time it is asked for, and
+   * kept for that bake.
+   */
+  private headRise(state: EntityRenderState): number {
+    const { dressed, standingSkin: skin } = state;
+    if (dressed === undefined || skin === undefined) return 0;
+    if (dressed.headRise !== undefined) return dressed.headRise;
+    const { geometry, bindMatrix } = dressed.mesh;
+    const position = geometry.getAttribute('position');
+    const skinIndex = geometry.getAttribute('skinIndex');
+    const skinWeight = geometry.getAttribute('skinWeight');
+    const bound = new THREE.Vector3();
+    const skinned = new THREE.Vector3();
+    let top = Number.NEGATIVE_INFINITY;
+    for (const [start, end] of dressed.onHead) {
+      for (let index = start; index < end; index++) {
+        bound.fromBufferAttribute(position, index).applyMatrix4(bindMatrix);
+        let y = 0;
+        for (let influence = 0; influence < 4; influence++) {
+          const weight = skinWeight.getComponent(index, influence);
+          if (weight !== 0) y += weight * skinned.copy(bound).applyMatrix4(skin[skinIndex.getComponent(index, influence)]!).y;
+        }
+        top = Math.max(top, y);
+      }
+    }
+    dressed.headRise = Math.max(0, top - state.headHeight);
+    return dressed.headRise;
+  }
+
+  /** A body's baked outfit drawn on `skeleton` as bound at `bindMatrix`, with the material every dressed body shares, casting and taking shadows as a body does. */
+  private dressedBody(geometry: THREE.BufferGeometry, skeleton: THREE.Skeleton, bindMatrix: THREE.Matrix4): THREE.SkinnedMesh {
+    const mesh = new THREE.SkinnedMesh(geometry, this.wardrobeMaterial);
+    mesh.name = BAKED_OUTFIT;
+    markOwned(mesh, { geometry: true, material: false });
+    mesh.bind(skeleton, bindMatrix);
+    mesh.boundingSphere = DRESSED_BOUNDS.clone();
+    mesh.customDepthMaterial = SKINNED_DEPTH_MATERIAL;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    return mesh;
   }
 
   /** The fixtures of the drawn sectors. */
@@ -2520,13 +2854,25 @@ export class WorldScene implements WorldRenderSurface {
   private portraitSubjectOf(entityId: string | undefined): PortraitSubject | undefined {
     const state = entityId === undefined ? undefined : this.entityStates.get(entityId);
     if (state === undefined) return undefined;
+    const feet = state.node.position;
+    const height = state.headHeight + this.headRise(state);
+    const bone = state.headBone;
+    // A dreamer's frame circle shows their head alone, from its bone to the top of what it wears, along the way the
+    // head points as it is posed now, so a head lying on the ground is framed as one held up.
+    if (state.people !== undefined && bone !== undefined && height > state.headBoneRest) {
+      const headSpan = height - state.headBoneRest;
+      bone.updateWorldMatrix(true, false);
+      const headUp = state.headBoneUp.clone().transformDirection(bone.matrixWorld);
+      const head = bone.getWorldPosition(new THREE.Vector3()).addScaledVector(headUp, headSpan);
+      return { head, feet, height, yaw: state.currentYaw, headSpan, headUp };
+    }
     const head = this.headPoint(state);
     // Centred on the head as the model carries it, which need not stand over the feet.
-    if (state.headBone !== undefined) {
-      const bone = state.headBone.getWorldPosition(new THREE.Vector3());
-      head.set(bone.x, head.y, bone.z);
+    if (bone !== undefined) {
+      const point = bone.getWorldPosition(new THREE.Vector3());
+      head.set(point.x, head.y, point.z);
     }
-    return { head, feet: state.node.position, height: state.headHeight, yaw: state.currentYaw };
+    return { head, feet, height, yaw: state.currentYaw };
   }
 
   /** A model put in afresh carries the layers of the portraits that show its entity. */
@@ -3109,8 +3455,41 @@ const FLOWER_STEM_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x5f8f3a, r
 /** The bone each hand's model hangs from at identity, the rig's `handslot.r` and `handslot.l` as `GLTFLoader` names them (see `GRASS_BONES`). */
 const HAND_BONES: Record<Hand, string> = { mainHand: 'handslotr', offHand: 'handslotl' };
 
-function sameHeld(a: Held | undefined, b: Held | undefined): boolean {
-  return a?.mainHand === b?.mainHand && a?.offHand === b?.offHand;
+function heldBase(outfit: Outfit | undefined, hand: Hand): string | undefined {
+  return outfit?.find((piece) => piece.slot === hand)?.baseId;
+}
+
+function handPieces(outfit: Outfit | undefined): OutfitPiece[] {
+  return (outfit ?? []).filter((piece) => isHand(piece.slot));
+}
+
+/** What the body wears of an outfit: every piece but those in the hands. */
+function wornPieces(outfit: Outfit | undefined): OutfitPiece[] {
+  return (outfit ?? []).filter((piece) => !isHand(piece.slot));
+}
+
+/** Each bone of `skeleton` as it skins a vertex now, relative to `node`: the bone's world matrix times its inverse bind, over the node's. */
+function standingSkin(node: THREE.Object3D, skeleton: THREE.Skeleton | undefined): THREE.Matrix4[] | undefined {
+  if (skeleton === undefined) return undefined;
+  const fromWorld = node.matrixWorld.clone().invert();
+  return skeleton.bones.map((bone, index) => fromWorld.clone().multiply(bone.matrixWorld).multiply(skeleton.boneInverses[index]!));
+}
+
+/** A body's own skinned meshes, its regions, the first of which each bake of it is bound to: never the bake, nor what a hand holds. */
+function bodyMeshes(model: THREE.Object3D): THREE.SkinnedMesh[] {
+  return skinnedMeshes(model).filter((mesh) => mesh.name !== BAKED_OUTFIT && mesh.userData[HELD_PROP] !== true);
+}
+
+function skinnedMeshes(root: THREE.Object3D): THREE.SkinnedMesh[] {
+  const meshes: THREE.SkinnedMesh[] = [];
+  root.traverse((object) => {
+    if ((object as THREE.SkinnedMesh).isSkinnedMesh) meshes.push(object as THREE.SkinnedMesh);
+  });
+  return meshes;
+}
+
+function isHand(slot: EquipSlot): slot is Hand {
+  return (HANDS as readonly EquipSlot[]).includes(slot);
 }
 
 /**

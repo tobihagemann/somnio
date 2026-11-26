@@ -47,13 +47,25 @@
     "en": "A word for Memor",
     "de": "Ein Wort an Memor"
   },
-  "Amulet": {
-    "en": "Amulet",
-    "de": "Amulett"
+  "Antler tine": {
+    "en": "Antler tine",
+    "de": "Geweihsprosse"
   },
   "Balance recovery": {
     "en": "Balance recovery",
     "de": "Standfestigkeit"
+  },
+  "Bark-grip gloves": {
+    "en": "Bark-grip gloves",
+    "de": "Rindengriff-Handschuhe"
+  },
+  "Bear claw": {
+    "en": "Bear claw",
+    "de": "Bärenkralle"
+  },
+  "Beech leaf": {
+    "en": "Beech leaf",
+    "de": "Buchenblatt"
   },
   "Bind": {
     "en": "Bind",
@@ -87,6 +99,10 @@
     "en": "Brace",
     "de": "Gegenstemmen"
   },
+  "Brush trousers": {
+    "en": "Brush trousers",
+    "de": "Buschhose"
+  },
   "Buckler": {
     "en": "Buckler",
     "de": "Faustschild"
@@ -102,6 +118,26 @@
   "Cleave": {
     "en": "Cleave",
     "de": "Rundhieb"
+  },
+  "Climbing boots": {
+    "en": "Climbing boots",
+    "de": "Kletterstiefel"
+  },
+  "Compass rose": {
+    "en": "Compass rose",
+    "de": "Windrose"
+  },
+  "Courier shoulders": {
+    "en": "Courier shoulders",
+    "de": "Boten-Schulterstücke"
+  },
+  "Courier straw hat": {
+    "en": "Courier straw hat",
+    "de": "Boten-Strohhut"
+  },
+  "Courier tunic": {
+    "en": "Courier tunic",
+    "de": "Boten-Wams"
   },
   "Cracked skull": {
     "en": "Cracked skull",
@@ -119,6 +155,10 @@
     "en": "Dagger",
     "de": "Dolch"
   },
+  "Deck boots": {
+    "en": "Deck boots",
+    "de": "Deckstiefel"
+  },
   "Deep mend": {
     "en": "Deep mend",
     "de": "Tiefes Heilen"
@@ -126,6 +166,14 @@
   "Depth": {
     "en": "Depth",
     "de": "Tiefe"
+  },
+  "Dispatch gloves": {
+    "en": "Dispatch gloves",
+    "de": "Kurierhandschuhe"
+  },
+  "Dispatch wristband": {
+    "en": "Dispatch wristband",
+    "de": "Kurierarmband"
   },
   "Drawing back": {
     "en": "Drawing back",
@@ -175,6 +223,22 @@
     "en": "Drive off the Necromancer in the burial chamber.",
     "de": "Vertreibe den Nekromanten in der Grabkammer."
   },
+  "Fen boots": {
+    "en": "Fen boots",
+    "de": "Moorstiefel"
+  },
+  "Ferry guards": {
+    "en": "Ferry guards",
+    "de": "Fährschutz"
+  },
+  "Ferryman's raincoat": {
+    "en": "Ferryman's raincoat",
+    "de": "Fährmanns-Regenmantel"
+  },
+  "Field trousers": {
+    "en": "Field trousers",
+    "de": "Feldhose"
+  },
   "Fighter": {
     "en": "Fighter",
     "de": "Kämpfer"
@@ -194,6 +258,10 @@
   "Follow-through": {
     "en": "Follow-through",
     "de": "Nachsetzen"
+  },
+  "Forester's feather band": {
+    "en": "Forester's feather band",
+    "de": "Förster-Federband"
   },
   "Gather %@ boar's tusks from Boars.": {
     "en": "Gather %@ boar's tusks from Boars.",
@@ -239,6 +307,10 @@
     "en": "Healer",
     "de": "Heiler"
   },
+  "Hide mitts": {
+    "en": "Hide mitts",
+    "de": "Fellfäustlinge"
+  },
   "Into the crypt": {
     "en": "Into the crypt",
     "de": "Hinab in die Gruft"
@@ -247,25 +319,17 @@
     "en": "Iron buckler",
     "de": "Eiserner Faustschild"
   },
-  "Iron ring": {
-    "en": "Iron ring",
-    "de": "Eisenring"
+  "Lantern cage": {
+    "en": "Lantern cage",
+    "de": "Laternenkäfig"
   },
-  "Leather boots": {
-    "en": "Leather boots",
-    "de": "Lederstiefel"
+  "Leaf gaiters": {
+    "en": "Leaf gaiters",
+    "de": "Blattgamaschen"
   },
-  "Leather cap": {
-    "en": "Leather cap",
-    "de": "Lederkappe"
-  },
-  "Leather gloves": {
-    "en": "Leather gloves",
-    "de": "Lederhandschuhe"
-  },
-  "Leather trousers": {
-    "en": "Leather trousers",
-    "de": "Lederhose"
+  "Leaf shoulder": {
+    "en": "Leaf shoulder",
+    "de": "Blattschulter"
   },
   "Lumina": {
     "en": "Lumina",
@@ -278,6 +342,10 @@
   "Mace": {
     "en": "Mace",
     "de": "Streitkolben"
+  },
+  "Maple twig": {
+    "en": "Maple twig",
+    "de": "Ahornzweig"
   },
   "Meet Pugnax and Sana in their halls.": {
     "en": "Meet Pugnax and Sana in their halls.",
@@ -299,6 +367,10 @@
     "en": "Mystic",
     "de": "Mystiker"
   },
+  "Navigator's epaulettes": {
+    "en": "Navigator's epaulettes",
+    "de": "Lotsen-Epauletten"
+  },
   "Necromancer": {
     "en": "Necromancer",
     "de": "Nekromant"
@@ -307,13 +379,17 @@
     "en": "Necromancer's sigil",
     "de": "Siegel des Nekromanten"
   },
+  "Oiled storm brim": {
+    "en": "Oiled storm brim",
+    "de": "Geölte Sturmkrempe"
+  },
   "Old bone": {
     "en": "Old bone",
     "de": "Alter Knochen"
   },
-  "Padded tunic": {
-    "en": "Padded tunic",
-    "de": "Gepolstertes Wams"
+  "Pelt guards": {
+    "en": "Pelt guards",
+    "de": "Pelzschutz"
   },
   "Radiance": {
     "en": "Radiance",
@@ -326,6 +402,14 @@
   "Read the bounty board on the square.": {
     "en": "Read the bounty board on the square.",
     "de": "Lies die Kopfgeldtafel auf dem Platz."
+  },
+  "Reed knot": {
+    "en": "Reed knot",
+    "de": "Schilfknoten"
+  },
+  "Reedwork gloves": {
+    "en": "Reedwork gloves",
+    "de": "Schilfgeflecht-Handschuhe"
   },
   "Renewal": {
     "en": "Renewal",
@@ -342,6 +426,10 @@
   "Sabre": {
     "en": "Sabre",
     "de": "Säbel"
+  },
+  "Sailmaker's gloves": {
+    "en": "Sailmaker's gloves",
+    "de": "Segelmacherhandschuhe"
   },
   "Sense the fallen": {
     "en": "Sense the fallen",
@@ -371,6 +459,10 @@
     "en": "Shielded Wolf",
     "de": "Schildbewehrter Wolf"
   },
+  "Shore coat": {
+    "en": "Shore coat",
+    "de": "Küstenmantel"
+  },
   "Short sword": {
     "en": "Short sword",
     "de": "Kurzschwert"
@@ -394,6 +486,10 @@
   "Sopors": {
     "en": "Sopors",
     "de": "Sopors"
+  },
+  "Sounding weight": {
+    "en": "Sounding weight",
+    "de": "Lotgewicht"
   },
   "Spirit deepening": {
     "en": "Spirit deepening",
@@ -423,9 +519,17 @@
     "en": "Stony Wolf",
     "de": "Steinerner Wolf"
   },
+  "Storm trousers": {
+    "en": "Storm trousers",
+    "de": "Sturmhose"
+  },
   "Strike": {
     "en": "Strike",
     "de": "Schlag"
+  },
+  "Tarred reed brim": {
+    "en": "Tarred reed brim",
+    "de": "Geteerte Schilfkrempe"
   },
   "The Fighters' trial": {
     "en": "The Fighters' trial",
@@ -451,6 +555,26 @@
     "en": "Toughening",
     "de": "Abhärtung"
   },
+  "Trail boots": {
+    "en": "Trail boots",
+    "de": "Wanderstiefel"
+  },
+  "Trail cape": {
+    "en": "Trail cape",
+    "de": "Wanderumhang"
+  },
+  "Trail leathers": {
+    "en": "Trail leathers",
+    "de": "Leder-Wanderhose"
+  },
+  "Trapper's baldric": {
+    "en": "Trapper's baldric",
+    "de": "Trapper-Bandelier"
+  },
+  "Trapper's hide band": {
+    "en": "Trapper's hide band",
+    "de": "Trapper-Fellband"
+  },
   "Umbrae": {
     "en": "Umbrae",
     "de": "Umbrae"
@@ -466,6 +590,10 @@
   "Visit Mercus in his shop.": {
     "en": "Visit Mercus in his shop.",
     "de": "Besuche Mercus in seinem Laden."
+  },
+  "Wader trousers": {
+    "en": "Wader trousers",
+    "de": "Wathose"
   },
   "Walk to the North Wood and come back.": {
     "en": "Walk to the North Wood and come back.",
@@ -486,6 +614,10 @@
   "Weaken": {
     "en": "Weaken",
     "de": "Schwächen"
+  },
+  "Wheat-ear pendant": {
+    "en": "Wheat-ear pendant",
+    "de": "Ährenanhänger"
   },
   "Wolf": {
     "en": "Wolf",

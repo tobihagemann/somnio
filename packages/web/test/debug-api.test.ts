@@ -4,7 +4,7 @@ import { installDebugAPI, makeDebugAPI } from '@/debugApi';
 import { ClientWorld } from '@/client';
 import { TEST_REGISTRY, outdoorSector } from '../../core/test/support/worldFixture.ts';
 import { carrying, inventoryFrame, item } from './helpers/inventory';
-import { clientEntity } from './helpers/worldFixture';
+import { clientEntity, outfit } from './helpers/worldFixture';
 
 /**
  * The `window.somnio` introspection surface.
@@ -53,7 +53,10 @@ describe('the debug API', () => {
   it("reports the local player once the entity stream has placed it, what a dreamer holds, and an elite's rank and trait", () => {
     const app = shell();
     app.controller.selfId = 'self';
-    app.controller.entities.set('self', clientEntity({ position: { x: 12.8, z: 9.6 }, facing: 90, held: { mainHand: 'sword', offHand: 'moonstone' } }));
+    app.controller.entities.set(
+      'self',
+      clientEntity({ position: { x: 12.8, z: 9.6 }, facing: 90, outfit: outfit({ mainHand: 'sword', offHand: 'moonstone' }) }),
+    );
     app.controller.entities.set('npc:EdariaSquare/libus', clientEntity({ id: 'npc:EdariaSquare/libus', kind: 'npc', name: 'Libus', position: { x: 3, z: 4 } }));
     app.controller.entities.set('monster:1', clientEntity({ id: 'monster:1', kind: 'monster', name: 'Ghost', position: { x: 6, z: 7 } }));
     app.controller.entities.set(
@@ -64,7 +67,7 @@ describe('the debug API', () => {
     const api = makeDebugAPI(app);
     expect(api.player()).toEqual({ x: 12.8, z: 9.6, facing: 90, gait: 'jog', name: 'Tester' });
     expect(api.entities()).toEqual([
-      { id: 'self', kind: 'player', name: 'Tester', x: 12.8, z: 9.6, condition: 'hale', held: { mainHand: 'sword', offHand: 'moonstone' } },
+      { id: 'self', kind: 'player', name: 'Tester', x: 12.8, z: 9.6, condition: 'hale', outfit: outfit({ mainHand: 'sword', offHand: 'moonstone' }) },
       { id: 'npc:EdariaSquare/libus', kind: 'npc', name: 'Libus', x: 3, z: 4, condition: 'hale' },
       { id: 'monster:1', kind: 'monster', name: 'Ghost', x: 6, z: 7, condition: 'hale' },
       { id: 'monster:2', kind: 'monster', name: 'Ghost', x: 8, z: 7, condition: 'hale', rank: 'elite', trait: 'shielded' },
@@ -358,8 +361,14 @@ describe('the debug API', () => {
     expect(stats.scriptMs).toEqual({ p50: 1.6, p95: 1.6, max: 9.6 });
     expect(stats.partsMs.world).toBeCloseTo((299 * 0.8 + 8.8) / 300, 2);
     expect(stats.fps).toBeCloseTo(1000 / ((150 * 1000) / 60 / 300 + 50 / 300 + (149 * 1000) / 120 / 300), 1);
-    // Draw calls and triangles are the window's mean, the programs and the canvas the last frame's.
-    expect([stats.drawCalls, stats.triangles, stats.programs, stats.canvas]).toEqual([301, 1_001_000, 41, { width: 1440, height: 900, pixelRatio: 1 }]);
+    // Draw calls and triangles are the window's mean, beside the most draw calls of any frame, and the programs and the canvas the last frame's.
+    expect([stats.drawCalls, stats.drawCallsMax, stats.triangles, stats.programs, stats.canvas]).toEqual([
+      301,
+      600,
+      1_001_000,
+      41,
+      { width: 1440, height: 900, pixelRatio: 1 },
+    ]);
   });
 
   it('installs unconditionally in a dev build', () => {

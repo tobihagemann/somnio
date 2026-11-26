@@ -21,14 +21,22 @@ export const PORTRAIT_LAYERS: Record<PortraitSlot, number> = { own: 1, target: 2
 
 /**
  * How a portrait frames its body, in shares of the body's standing height: `frame` from the top of
- * the circle to its bottom, the top of the head `headroom` below the circle's top. The camera looks
- * from `sideDegrees` round from the body's front and `elevationDegrees` above, or from
- * `lyingElevationDegrees` above a body that lies, from `distance` metres off.
+ * the circle to its bottom, the top of the head `headroom` below the circle's top. A dreamer's head
+ * is framed by itself instead, in shares of its own height from its bone to the top of what it
+ * wears: `headFrame` across the circle, and the top `headHeadroom` below the circle's top, which
+ * leaves room for a brim the camera sees from above. As the head comes down to the ground, both grow
+ * up to `lyingHeadScale` times, since a head lying across the view reaches wider than it stands
+ * tall. The camera looks from `sideDegrees` round from the body's front, the side that turns the
+ * face to the right of the circle, and `elevationDegrees` above, or from `lyingElevationDegrees`
+ * above a body that lies, from `distance` metres off.
  */
 export const PORTRAIT = {
   frame: 0.85,
   headroom: 0.06,
-  sideDegrees: 35,
+  headFrame: 1.6,
+  headHeadroom: 0.25,
+  lyingHeadScale: 1.35,
+  sideDegrees: -35,
   elevationDegrees: 8,
   lyingElevationDegrees: 60,
   distance: 3,
@@ -56,6 +64,10 @@ export interface PortraitSubject {
   feet: Vector;
   height: number;
   yaw: number;
+  /** For a dreamer, how tall their head stands, from its bone to the top of what it wears, which the frame circles show alone. */
+  headSpan?: number;
+  /** For a dreamer, the way their head points as it is posed now, from its bone toward `head`; straight up by how far the body stands where not given. */
+  headUp?: Vector;
 }
 
 /** Where a portrait's camera stands, what it looks at, and the half-height of what it shows, in metres. */
@@ -66,31 +78,42 @@ export interface PortraitFraming {
 }
 
 /**
- * A head-and-shoulders view three-quarters from the front of the body as it is turned. A body comes
- * down as it falls, so the view eases from that to looking down at the head as the head comes down.
+ * A head-and-shoulders view three-quarters from the front of the body as it is turned, or a dreamer's
+ * head alone, centred along the way it points so a head lying on the ground stays whole in the frame.
+ * A body comes down as it falls, so the view eases from that to looking down at the head as the head
+ * comes down.
  */
 export function portraitFraming(subject: PortraitSubject): PortraitFraming {
   const height = Math.max(subject.height, PORTRAIT.minHeight);
   const upright = clamp((subject.head.y - subject.feet.y) / height, 0, 1);
-  const focus = { x: subject.head.x, y: subject.head.y - (PORTRAIT.frame / 2 - PORTRAIT.headroom) * height * upright, z: subject.head.z };
+  const span = subject.headSpan === undefined ? undefined : subject.headSpan * (1 + (PORTRAIT.lyingHeadScale - 1) * (1 - upright));
+  const shown =
+    span === undefined
+      ? { across: PORTRAIT.frame * height, headroom: PORTRAIT.headroom * height }
+      : { across: PORTRAIT.headFrame * span, headroom: PORTRAIT.headHeadroom * span };
+  const down = shown.across / 2 - shown.headroom;
+  const up = subject.headUp ?? { x: 0, y: upright, z: 0 };
+  const focus = { x: subject.head.x - up.x * down, y: subject.head.y - up.y * down, z: subject.head.z - up.z * down };
   const elevation = THREE.MathUtils.degToRad(PORTRAIT.lyingElevationDegrees + (PORTRAIT.elevationDegrees - PORTRAIT.lyingElevationDegrees) * upright);
   const bearing = subject.yaw + THREE.MathUtils.degToRad(PORTRAIT.sideDegrees);
   const across = Math.cos(elevation) * PORTRAIT.distance;
   return {
     eye: { x: focus.x + Math.sin(bearing) * across, y: focus.y + Math.sin(elevation) * PORTRAIT.distance, z: focus.z + Math.cos(bearing) * across },
     focus,
-    halfHeight: (PORTRAIT.frame * height) / 2,
+    halfHeight: shown.across / 2,
   };
 }
 
 /**
- * How the Character window frames its body, in shares of the standing height: `frame` from the top
- * of its rect to its bottom, round the middle of the body from the feet to the top of the head. The
- * camera looks from `sideDegrees` round from the body's front, turned on by the window's own turn,
- * and `elevationDegrees` above, or from the portrait's lying elevation above a body that lies.
+ * How the Character window frames its body, in shares of the standing height: from the feet to the
+ * top of the head, with `headroom` over the head, room for a brim the camera sees from above, and
+ * `footroom` under the feet. The camera looks from `sideDegrees` round from the body's front, turned
+ * on by the window's own turn, and `elevationDegrees` above, or from the portrait's lying elevation
+ * above a body that lies.
  */
 export const BODY_VIEW = {
-  frame: 1.08,
+  headroom: 0.1,
+  footroom: 0.04,
   sideDegrees: 25,
   elevationDegrees: 10,
 } as const;
@@ -99,14 +122,15 @@ export const BODY_VIEW = {
 export function bodyFraming(subject: PortraitSubject, turn: number): PortraitFraming {
   const height = Math.max(subject.height, PORTRAIT.minHeight);
   const upright = clamp((subject.head.y - subject.feet.y) / height, 0, 1);
-  const focus = { x: (subject.head.x + subject.feet.x) / 2, y: (subject.head.y + subject.feet.y) / 2, z: (subject.head.z + subject.feet.z) / 2 };
+  const raised = ((BODY_VIEW.headroom - BODY_VIEW.footroom) / 2) * height * upright;
+  const focus = { x: (subject.head.x + subject.feet.x) / 2, y: (subject.head.y + subject.feet.y) / 2 + raised, z: (subject.head.z + subject.feet.z) / 2 };
   const elevation = THREE.MathUtils.degToRad(PORTRAIT.lyingElevationDegrees + (BODY_VIEW.elevationDegrees - PORTRAIT.lyingElevationDegrees) * upright);
   const bearing = subject.yaw + THREE.MathUtils.degToRad(BODY_VIEW.sideDegrees) + turn;
   const across = Math.cos(elevation) * PORTRAIT.distance;
   return {
     eye: { x: focus.x + Math.sin(bearing) * across, y: focus.y + Math.sin(elevation) * PORTRAIT.distance, z: focus.z + Math.cos(bearing) * across },
     focus,
-    halfHeight: (BODY_VIEW.frame * height) / 2,
+    halfHeight: ((1 + BODY_VIEW.headroom + BODY_VIEW.footroom) * height) / 2,
   };
 }
 

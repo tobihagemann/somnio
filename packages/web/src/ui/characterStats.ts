@@ -77,7 +77,7 @@ export function statGroups(inventory: Inventory, lucidity: LucidityMessage): Sta
                 t('Damage a swing'),
                 String(swing.damage),
                 [
-                  t('%1$@: %2$@', mainHand === undefined ? t('Bare hands') : itemName(mainHand.baseId, t), String(swing.damage - stats.damage)),
+                  t('%1$@: %2$@', mainHand === undefined ? t('Bare hands') : itemName(mainHand.baseId, mainHand.tier, t), String(swing.damage - stats.damage)),
                   sources('damage'),
                 ]
                   .filter((part) => part !== undefined)

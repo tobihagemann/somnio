@@ -1,6 +1,6 @@
 import { EQUIP_SLOTS, SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { EquipSlot, LucidityMessage } from '@somnio/protocol';
-import { NO_INVENTORY, bagHasRoom, baseItem, droppableItem, itemAtPlace, salePrice, sellable, slotsFor, unequipItem } from '@somnio/core';
+import { NO_INVENTORY, bagHasRoom, baseItem, droppableItem, isBraceletSlot, itemAtPlace, salePrice, sellable, slotsFor, unequipItem } from '@somnio/core';
 import type { Inventory, ItemInstance } from '@somnio/core';
 import { NO_LUCIDITY_MESSAGE, TAP_SLOP_PX } from '@/client';
 import { t } from '@/i18n';
@@ -52,7 +52,8 @@ const SWAY = { radians: (40 * Math.PI) / 180, periodMs: 14_000, pauseMs: 3500 } 
 
 /**
  * Where each slot stands on the doll's grid, column and row from 1, in a window of `columns`:
- * armour down the first column, the neck and rings down the last, the hands under the body.
+ * armour down the first column, the neck, the bracelets, and the shoulders down the last, the hands
+ * under the body.
  */
 function dollPlace(slot: EquipSlot, columns: number): [column: number, row: number] {
   switch (slot) {
@@ -68,10 +69,12 @@ function dollPlace(slot: EquipSlot, columns: number): [column: number, row: numb
       return [1, 5];
     case 'neck':
       return [columns, 1];
-    case 'ring1':
+    case 'bracelet1':
       return [columns, 2];
-    case 'ring2':
+    case 'bracelet2':
       return [columns, 3];
+    case 'shoulders':
+      return [columns, 4];
     case 'mainHand':
       return [columns / 2, 5];
     case 'offHand':
@@ -79,9 +82,9 @@ function dollPlace(slot: EquipSlot, columns: number): [column: number, row: numb
   }
 }
 
-/** A slot's name on its empty place, where either ring slot is a Ring. */
+/** A slot's name on its empty place, where either bracelet slot is a Bracelet. */
 function placeName(slot: EquipSlot): string {
-  return slotName(slot === 'ring1' || slot === 'ring2' ? 'ring' : slot);
+  return slotName(isBraceletSlot(slot) ? 'bracelet' : slot);
 }
 
 function sourceKey(source: ItemSource): string {
@@ -388,7 +391,7 @@ export class CharacterWindow {
         'aria-haspopup': 'dialog',
         'aria-expanded': 'false',
       },
-      children: [itemIcon(item.baseId)],
+      children: [itemIcon(item.baseId, item.tier)],
     });
     const worn = 'slot' in source;
     const warning = worn && !bagHasRoom(this.inventory) ? { warning: t('Your bag is full.') } : {};
@@ -549,7 +552,7 @@ export class CharacterWindow {
     this.ghost.style.width = `${from?.width ?? 0}px`;
     this.ghost.style.height = `${from?.height ?? 0}px`;
     this.ghost.replaceChildren(
-      itemIcon(carry.item.baseId),
+      itemIcon(carry.item.baseId, carry.item.tier),
       element('span', { className: 'hud-ghost__caption hud-ghost__caption--drop', text: t('Drop') }),
       this.ghostRefusal,
     );

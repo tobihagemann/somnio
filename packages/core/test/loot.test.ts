@@ -49,6 +49,7 @@ describe.each(['nightmare', 'elite', 'boss'] as const)('rollDrops for a foe of r
   it('drops every base of the tier at the tier, and never the Moonstone', () => {
     expect(new Set(drops.map((drop) => drop.baseId))).toEqual(new Set(droppableBases(1)));
     expect(droppableBases(1)).not.toContain('moonstone');
+    expect(droppableBases(1)).toEqual(expect.arrayContaining(['shoulders', 'bracelet']));
     expect(drops.every((drop) => drop.tier === 1 && baseItem(drop.baseId).tier === 1)).toBe(true);
   });
 });

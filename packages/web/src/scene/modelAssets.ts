@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { allModelEntries, groundModelStem, handModelStem, missingClips, modelForCharacter, modelForObjectId, trophyModelStem } from '@somnio/core';
+import { allModelEntries, groundModelStem, handModelStem, missingClips, modelForCharacter, modelForObjectId, trophyModelStem, wardrobeRow } from '@somnio/core';
 import type { ModelRegistry } from '@somnio/core';
 
 /**
@@ -10,7 +10,8 @@ import type { ModelRegistry } from '@somnio/core';
  * Loading is async but the render surface is driven synchronously, so everything is warmed in
  * `prewarm()`
  * and the per-request accessors are synchronous cache reads. A stem the prewarm has not cached
- * resolves `undefined` (a placeholder), never blocking and never throwing.
+ * resolves `undefined` (a placeholder), never blocking and never throwing. Worn pieces are the
+ * exception: each loads when a dreamer first wears it (`wear`).
  *
  */
 export interface ModelAssets {
@@ -18,11 +19,24 @@ export interface ModelAssets {
   character(id: string): THREE.Object3D | undefined;
   /** What a hand holding an item of `baseId` draws, to hang at identity under its `handslot` bone. */
   hand(baseId: string): THREE.Object3D | undefined;
-  /** What a drop of an item of `baseId` draws: a model lying on the ground, its ground bounds centred on its origin. */
-  ground(baseId: string): THREE.Object3D | undefined;
+  /** What a drop of an item of `baseId` rolled at `tier` draws: a model lying on the ground, its ground bounds centred on its origin. */
+  ground(baseId: string, tier: number): THREE.Object3D | undefined;
   /** What the trophy of `monsterKind` draws, lying on the ground as a drop of an item does. */
   trophy(monsterKind: string): THREE.Object3D | undefined;
   object(id: string): THREE.Object3D | undefined;
+  /**
+   * The worn piece of `stem`, loaded on its first call and cached: the cache's own model, read to
+   * dress a body and never drawn itself. `undefined` for a piece that failed to load, which leaves
+   * the body's base clothes showing.
+   */
+  wear(stem: string): Promise<THREE.Object3D | undefined>;
+  /**
+   * Loads each of `stems` again, under a URL of its own, for a load that stalls. Every call to `wear`
+   * for a piece still loading, earlier ones included, answers with what the newest attempt brings,
+   * and an older attempt that comes back once a newer one has started is ignored. A piece whose load
+   * has come back keeps its answer.
+   */
+  retryWear(stems: readonly string[]): void;
   clipsFor(root: THREE.Object3D): THREE.AnimationClip[];
   /**
    * The single-material meshes of an object model's cached prototype, each with its transform
@@ -52,6 +66,11 @@ export class HttpModelAssets implements ModelAssets {
   /** Negative cache: a stem whose fetch already failed is not retried on the next prewarm. */
   private readonly misses = new Set<string>();
   private readonly clipsByRoot = new WeakMap<THREE.Object3D, THREE.AnimationClip[]>();
+  /** Each worn piece asked for: what every `wear` for it answers, the newest attempt at loading it counted from 0, and how that attempt settles the answer. */
+  private readonly worn = new Map<
+    string,
+    { load: Promise<THREE.Object3D | undefined>; attempt: number; settle: (model: THREE.Object3D | undefined) => void }
+  >();
 
   constructor(registry: ModelRegistry, baseURL = '/assets') {
     this.registry = registry;
@@ -76,8 +95,8 @@ export class HttpModelAssets implements ModelAssets {
     return stem === undefined ? undefined : this.instantiate(stem);
   }
 
-  ground(baseId: string): THREE.Object3D | undefined {
-    const stem = groundModelStem(this.registry, baseId);
+  ground(baseId: string, tier: number): THREE.Object3D | undefined {
+    const stem = wardrobeRow(this.registry, baseId, tier)?.ground ?? groundModelStem(this.registry, baseId);
     return stem === undefined ? undefined : this.instantiate(stem);
   }
 
@@ -89,6 +108,46 @@ export class HttpModelAssets implements ModelAssets {
   object(id: string): THREE.Object3D | undefined {
     const entry = modelForObjectId(this.registry, id);
     return entry === undefined ? undefined : this.instantiate(entry.stem);
+  }
+
+  wear(stem: string): Promise<THREE.Object3D | undefined> {
+    const asked = this.worn.get(stem);
+    if (asked !== undefined) return asked.load;
+    let settle!: (model: THREE.Object3D | undefined) => void;
+    const load = new Promise<THREE.Object3D | undefined>((resolve) => (settle = resolve));
+    this.worn.set(stem, { load, attempt: 0, settle });
+    this.loadWear(stem, 0);
+    return load;
+  }
+
+  retryWear(stems: readonly string[]): void {
+    for (const stem of stems) {
+      const asked = this.worn.get(stem);
+      if (asked === undefined) continue;
+      asked.attempt += 1;
+      this.loadWear(stem, asked.attempt);
+    }
+  }
+
+  /**
+   * Starts attempt `attempt` at loading a worn piece, which answers every `wear` for it unless a
+   * newer attempt has started by the time it comes back. A retry asks under a URL of its own, since
+   * three's loader joins a request for a URL already in flight.
+   */
+  private loadWear(stem: string, attempt: number): void {
+    const url = `${this.baseURL}/Models/${stem}.glb${attempt === 0 ? '' : `?retry=${attempt}`}`;
+    void this.loader.loadAsync(url).then(
+      (gltf) => this.settleWear(stem, attempt, gltf.scene),
+      () => {
+        console.warn(`worn piece "${stem}" unavailable; its wearer keeps the base clothes`);
+        this.settleWear(stem, attempt, undefined);
+      },
+    );
+  }
+
+  private settleWear(stem: string, attempt: number, model: THREE.Object3D | undefined): void {
+    const asked = this.worn.get(stem)!;
+    if (asked.attempt === attempt) asked.settle(model);
   }
 
   clipsFor(root: THREE.Object3D): THREE.AnimationClip[] {
@@ -150,7 +209,7 @@ export class HttpModelAssets implements ModelAssets {
  * a depth variant of its own (an alpha test, alpha to coverage, an alpha map, or a displacement map)
  * is left to three, which makes one for it.
  */
-const SKINNED_DEPTH_MATERIAL = new THREE.MeshDepthMaterial();
+export const SKINNED_DEPTH_MATERIAL = new THREE.MeshDepthMaterial();
 
 function usesSharedDepth(mesh: THREE.SkinnedMesh): boolean {
   const material = mesh.material as THREE.Material & { alphaMap?: unknown; displacementMap?: unknown };

@@ -537,6 +537,10 @@ export class GameHUD {
     this.root.classList.toggle('hud--tracker-shown', shown);
   }
 
+  get shown(): boolean {
+    return !isHidden(this.root);
+  }
+
   /** Before the player stands in the world nothing of the HUD shows, and whatever was open closes. */
   setShown(shown: boolean): void {
     if (shown === !isHidden(this.root)) return;

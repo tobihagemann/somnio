@@ -140,7 +140,7 @@ function actionRow(action: HTMLElement): HTMLElement {
 
 /** A row of the shop: the item's icon edged and its name in its rarity's colour, with its rarity unless plain, what it does, and the button that trades it. */
 function tradeRow(attributes: Record<string, string>, item: Item, notes: readonly HTMLElement[], action: HTMLButtonElement): HTMLElement {
-  const icon = itemIcon(item.baseId);
+  const icon = itemIcon(item.baseId, item.tier);
   icon.classList.add('ware-icon', `hud-rarity--${item.rarity}`);
   return element('div', {
     className: 'ware-row',
@@ -453,12 +453,13 @@ export class ServicePanel {
 
   /** A ware to buy, a plain one at its base's tier. */
   private wareRow(ware: Ware, inventory: Inventory, tradeLocked: boolean): HTMLElement {
+    const item = plainItem(ware);
     const coins = price(ware);
     const action = button(t('Buy for %@c', String(coins)), () => this.callbacks.onBuy(ware));
     // Several wares share a price, so the button's accessible name says which one it buys.
-    action.setAttribute('aria-label', t('Buy %1$@ for %2$@c', itemName(ware, t), String(coins)));
+    action.setAttribute('aria-label', t('Buy %1$@ for %2$@c', itemName(ware, item.tier, t), String(coins)));
     action.disabled = tradeLocked || !canBuy(inventory, ware);
-    return tradeRow({ 'data-ware': ware }, plainItem(ware), tradeNotes(coins, inventory), action);
+    return tradeRow({ 'data-ware': ware }, item, tradeNotes(coins, inventory), action);
   }
 
   /** An item the dreamer sold, to buy back for what it fetched. */

@@ -143,6 +143,8 @@ export interface PredictorSession {
    */
   readonly connectionState: ConnectionState;
   readonly presentedOverlay: OverlayKind | undefined;
+  /** Whether the loading cover hides the world while the player's own body is being dressed. */
+  readonly loadingCovered: boolean;
   readonly entities: Map<string, ClientEntity>;
   readonly selfId: string | undefined;
   readonly world: ClientWorld | undefined;
@@ -308,9 +310,12 @@ export class GameplayPredictor {
     this.session.world?.follow(position, this.renderSurface);
   }
 
-  /** The gameplay-input gate, refreshed every tick so opening an overlay ends the walk without an explicit notify path. Typing in chat leaves it open, so a walk goes on. */
+  /**
+   * The gameplay-input gate, refreshed every tick so opening an overlay or the loading cover ends the
+   * walk without an explicit notify path. Typing in chat leaves it open, so a walk goes on.
+   */
   gateIsOpen(): boolean {
-    return this.session.connectionState === 'attached' && this.session.presentedOverlay === undefined;
+    return this.session.connectionState === 'attached' && this.session.presentedOverlay === undefined && !this.session.loadingCovered;
   }
 
   runTick(nowMs: number): void {

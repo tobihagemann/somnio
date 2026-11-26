@@ -6,7 +6,7 @@ import type { ClientChannel, ClientEffect, ClientEntity, ClientRaise } from '@/c
 import { abilityName, currentLocale, formatNameList, t } from '@/i18n';
 import { playerPlaqueBackground } from '@/scene/overlayArt';
 import { element, iconButton, setHidden } from './dom';
-import { EFFECT_GLYPHS, HUD_ICONS, PEOPLE_SIGILS, glyph } from './hudIcons';
+import { EFFECT_GLYPHS, HUD_ICONS, glyph } from './hudIcons';
 import { setTip } from './hudTooltip';
 
 /**
@@ -197,8 +197,8 @@ export function showShare(bar: ShareBar, share: number, reading: string): void {
  * A frame's portrait: a ring round a circle left open, through which the scene draws the body on the
  * canvas under the HUD (`scene/portraits.ts`).
  */
-function portraitSlot(...children: HTMLElement[]): HTMLElement {
-  return element('span', { className: 'hud-portrait', attributes: { 'aria-hidden': 'true' }, children });
+function portraitSlot(): HTMLElement {
+  return element('span', { className: 'hud-portrait', attributes: { 'aria-hidden': 'true' } });
 }
 
 /** Rings the portrait in the tint of the player's own plaque, which follows their condition. */
@@ -225,21 +225,16 @@ export class OwnFrame {
   readonly portrait: HTMLElement;
   readonly effects = new EffectRow();
   readonly timed = new TimedBar();
-  /** The people's sigil, on a badge at the portrait's foot. */
-  private readonly sigil: HTMLElement;
   private readonly name: HTMLElement;
   /** The people and the role, on a mouse's frame. */
   private readonly traits: HTMLElement | undefined;
   /** Health and Spirit, on a finger's frame, which has no globes. */
   private readonly pools: { health: ShareBar; spirit: ShareBar } | undefined;
   private shown: string | undefined;
-  /** The people whose sigil is drawn, `null` before the first render. */
-  private shownPeople: People | undefined | null = null;
   private shownPools: string | undefined;
 
   constructor(onPress: () => void, coarse: boolean) {
-    this.sigil = element('span', { className: 'hud-sigil' });
-    this.portrait = portraitSlot(this.sigil);
+    this.portrait = portraitSlot();
     this.name = element('span', { className: 'hud-unit__name' });
     this.traits = coarse ? undefined : element('span', { className: 'hud-unit__traits' });
     this.pools = coarse ? { health: shareBar('hud-bar__fill--health'), spirit: shareBar('hud-bar__fill--spirit') } : undefined;
@@ -268,10 +263,6 @@ export class OwnFrame {
     ringPortrait(this.root, state.condition);
     this.root.dataset['condition'] = state.condition;
     this.root.setAttribute('aria-pressed', String(state.targeted));
-    if (state.people !== this.shownPeople) {
-      this.shownPeople = state.people;
-      this.sigil.replaceChildren(...(state.people === undefined ? [] : [glyph(PEOPLE_SIGILS[state.people])]));
-    }
     if (this.traits !== undefined) {
       const role = state.role === undefined ? t('No role yet') : t(roleLabelKey(state.role));
       this.traits.textContent = state.people === undefined ? role : `${t(peopleLabelKey(state.people))} · ${role}`;

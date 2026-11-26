@@ -12,7 +12,10 @@ import {
   distance,
   groundHeightAt,
   isLegalMove,
+  PEOPLES,
   npcBodies,
+  peopleBody,
+  peopleScale,
   rectContains,
   sectorRect,
   spawnArea,
@@ -154,7 +157,7 @@ function greeted(shot: StagedShot): { listener: StagedActor; npc: StagedActor; a
   );
 }
 
-/** How tall a figure is taken to stand, for its head to clear what covers the screen too. */
+/** How tall a figure is taken to stand, for its head to clear what covers the screen too; a dreamer stands as tall as their people. */
 const FIGURE_HEIGHT = 1.6;
 
 interface Box {
@@ -173,9 +176,10 @@ function drawnBox(actor: StagedActor, seconds: number, focus: Point, scale: numb
   const plate = renderNamePlaque(actor.name, actor.kind === 'npc' ? NAME_PLAQUE.npcBackground : NAME_PLAQUE.playerBackground, false);
   const pixelsPerMetre = viewport.height / 2 / scale;
   const magnification = overlayMagnification(scale, viewport.height);
-  const halfWidth = Math.max(actor.radius, (plate.widthPixels * OVERLAY_METRES_PER_PIXEL * magnification) / 2) * pixelsPerMetre;
+  const [wide = 1, tall = 1, deep = 1] = actor.people === undefined ? [] : peopleScale(registry, actor.people)!;
+  const halfWidth = Math.max(actor.radius * Math.max(wide, deep), (plate.widthPixels * OVERLAY_METRES_PER_PIXEL * magnification) / 2) * pixelsPerMetre;
   const feet = drawnAt(pathPoint(actor, seconds), 0, focus, scale, viewport);
-  const head = drawnAt(pathPoint(actor, seconds), FIGURE_HEIGHT, focus, scale, viewport);
+  const head = drawnAt(pathPoint(actor, seconds), FIGURE_HEIGHT * tall, focus, scale, viewport);
   return {
     left: feet.x - halfWidth,
     right: feet.x + halfWidth,
@@ -360,6 +364,16 @@ describe('the splash reel', () => {
         }
       }
     }
+  });
+
+  it("draws every dreamer in their people's body and an outfit, all four peoples across the reel", () => {
+    const dreamers = reel.flatMap((shot) => shot.actors.filter((actor) => actor.kind === 'peer'));
+    for (const actor of dreamers) {
+      expect(actor.people, actor.id).toBeDefined();
+      expect(actor.characterModelId, actor.id).toBe(peopleBody(registry, actor.people!));
+      expect(actor.outfit?.length, actor.id).toBeGreaterThan(0);
+    }
+    expect(new Set(dreamers.map((actor) => actor.people))).toEqual(new Set(PEOPLES));
   });
 
   it('moves no scripted dreamer at the walk gait', () => {

@@ -98,6 +98,7 @@ const BOUNCE_SECONDS = 0.16;
 /** How near each vertex of a ground model must come to its hand model's, moved by one transform, for the two to be one piece. */
 const SAME_PIECE_METRES = 1e-4;
 const UNIT_SCALE = new THREE.Vector3(1, 1, 1);
+const IDENTITY = new THREE.Matrix4();
 
 /** A drop as the scene draws it: where it lies, at the height a body there stands at, the item or trophy it is, and its name. */
 export interface ShownLoot {
@@ -133,6 +134,11 @@ interface Flight {
   offset: THREE.Vector3 | undefined;
   turn: THREE.Quaternion | undefined;
   size: THREE.Vector3 | undefined;
+  /**
+   * What the hand's model carried as it left that a turn and a size cannot say, the shear of a body
+   * scaled unevenly and turned at the wrist, eased away with the turn and the size.
+   */
+  shear: THREE.Matrix4 | undefined;
   /** The level axis it turns over about, across the way it flies. */
   axis: THREE.Vector3;
 }
@@ -285,8 +291,8 @@ export class LootMarkers {
 
   /**
    * The drops on the ground, lying where they landed or hopping as they land, each with its model
-   * and a key for what the model is, one per base or trophy kind. A drop without a model, or one in
-   * the air, is left out.
+   * and a key for what the model is, one per base and tier or trophy kind. A drop without a model, or
+   * one in the air, is left out.
    */
   lying(): { key: string; model: THREE.Object3D }[] {
     return this.markers.flatMap(({ loot, model, flight }) =>
@@ -455,6 +461,7 @@ export class LootMarkers {
       offset: undefined,
       turn: undefined,
       size: undefined,
+      shear: undefined,
       axis: new THREE.Vector3(1, 0, 0),
     };
     marker.toss.visible = false;
@@ -482,6 +489,7 @@ export class LootMarkers {
       marker.toss.quaternion.setFromAxisAngle(flight.axis, share * arc.turns * Math.PI * 2);
       if (flight.turn !== undefined) marker.toss.quaternion.slerpQuaternions(flight.turn, marker.toss.quaternion.clone(), ease);
       if (flight.size !== undefined) marker.toss.scale.lerpVectors(flight.size, UNIT_SCALE, ease);
+      if (flight.shear !== undefined) shearToss(marker.toss, flight.shear, ease);
       return;
     }
     if (!marker.label.visible) this.showLanded(marker);
@@ -492,6 +500,7 @@ export class LootMarkers {
     }
     marker.toss.position.set(0, arc.bounce * Math.sin(hop * Math.PI), 0);
     marker.toss.quaternion.identity();
+    marker.toss.matrixAutoUpdate = true;
   }
 
   /**
@@ -504,9 +513,11 @@ export class LootMarkers {
     if (leaving === undefined) {
       flight.offset = flight.from().sub(marker.root.position);
     } else {
-      flight.offset = leaving.position;
-      flight.turn = leaving.quaternion;
-      flight.size = leaving.scale;
+      flight.offset = new THREE.Vector3();
+      flight.turn = new THREE.Quaternion();
+      flight.size = new THREE.Vector3();
+      leaving.decompose(flight.offset, flight.turn, flight.size);
+      flight.shear = new THREE.Matrix4().compose(flight.offset, flight.turn, flight.size).invert().multiply(leaving);
     }
     this.letGo(flight);
     if (flight.offset.x !== 0 || flight.offset.z !== 0) flight.axis.set(-flight.offset.z, 0, flight.offset.x).normalize();
@@ -515,10 +526,11 @@ export class LootMarkers {
 
   /**
    * How the toss sits under the drop's root for its model to be drawn where `prop`, the same piece
-   * held in a hand, is drawn now; `undefined` while the drop has no model, the prop has left the
-   * hand, or the two models are not one piece.
+   * held in a hand, is drawn now, as a whole matrix, since a hand under a body scaled unevenly is
+   * sheared as well as turned and sized; `undefined` while the drop has no model, the prop has left
+   * the hand, or the two models are not one piece.
    */
-  private tossOver(marker: Marker, prop: THREE.Object3D): { position: THREE.Vector3; quaternion: THREE.Quaternion; scale: THREE.Vector3 } | undefined {
+  private tossOver(marker: Marker, prop: THREE.Object3D): THREE.Matrix4 | undefined {
     const { model, loot } = marker;
     if (model === undefined || loot?.contents.kind !== 'item' || prop.parent === null) return undefined;
     const { baseId } = loot.contents;
@@ -530,10 +542,7 @@ export class LootMarkers {
     marker.holder.updateMatrix();
     model.updateMatrix();
     const underToss = marker.holder.matrix.clone().multiply(model.matrix);
-    const toss = marker.root.matrixWorld.clone().invert().multiply(prop.matrixWorld).multiply(fromHand.clone().invert()).multiply(underToss.invert());
-    const leaving = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion(), scale: new THREE.Vector3() };
-    toss.decompose(leaving.position, leaving.quaternion, leaving.scale);
-    return leaving;
+    return marker.root.matrixWorld.clone().invert().multiply(prop.matrixWorld).multiply(fromHand.clone().invert()).multiply(underToss.invert());
   }
 
   /** Takes the hand's model the drop leaves from the hand, once. */
@@ -608,11 +617,21 @@ export class LootMarkers {
   }
 }
 
-/** Sets a drop's toss where the drop lies: no offset, no turn, and its own size. */
+/** Sets a drop's toss where the drop lies: no offset, no turn, no shear, and its own size. */
 function settle(toss: THREE.Object3D): void {
   toss.position.set(0, 0, 0);
   toss.quaternion.identity();
   toss.scale.set(1, 1, 1);
+  toss.matrixAutoUpdate = true;
+}
+
+/** Draws the toss as its offset, turn, and size say, sheared by `shear` eased `ease` of the way to none. */
+function shearToss(toss: THREE.Object3D, shear: THREE.Matrix4, ease: number): void {
+  const eased = shear.clone();
+  for (const [index, value] of IDENTITY.elements.entries()) eased.elements[index] = eased.elements[index]! + (value - eased.elements[index]!) * ease;
+  toss.matrixAutoUpdate = false;
+  toss.matrix.compose(toss.position, toss.quaternion, toss.scale).multiply(eased);
+  toss.matrixWorldNeedsUpdate = true;
 }
 
 /** An item's rarity; a trophy is plain. */
@@ -621,7 +640,7 @@ function rarityOf(contents: LootContentsMessage): Rarity {
 }
 
 function modelKey(contents: LootContentsMessage): string {
-  return contents.kind === 'item' ? `item:${contents.baseId}` : `trophy:${contents.monsterKind}`;
+  return contents.kind === 'item' ? `item:${contents.baseId}:${contents.tier}` : `trophy:${contents.monsterKind}`;
 }
 
 /**

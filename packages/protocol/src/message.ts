@@ -25,7 +25,6 @@ import type {
   EnterSpaceMessage,
   EntityMessage,
   EquipMessage,
-  HeldMessage,
   HelloMessage,
   InteractMessage,
   InventoryMessage,
@@ -45,6 +44,7 @@ import type {
   MovesMessage,
   OtherSessionsMessage,
   OtherSessionsRevokedMessage,
+  OutfitMessage,
   PickUpMessage,
   RaisingMessage,
   RedeemSessionMessage,
@@ -129,7 +129,7 @@ export type SomnioMessage =
   | { tag: 'questShareAnswer'; payload: QuestShareAnswerMessage }
   | { tag: 'bountiesRanOut'; payload: BountiesRanOutMessage }
   | { tag: 'condition'; payload: ConditionMessage }
-  | { tag: 'held'; payload: HeldMessage }
+  | { tag: 'outfit'; payload: OutfitMessage }
   | { tag: 'vitals'; payload: VitalsMessage }
   | { tag: 'effects'; payload: EffectsMessage }
   | { tag: 'blow'; payload: BlowMessage }

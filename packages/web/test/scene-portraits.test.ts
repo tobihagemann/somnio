@@ -6,7 +6,7 @@ import { BODY_VIEW, PORTRAIT, PORTRAIT_LAYERS, bodyFraming, portraitFraming, por
 import type { DeviceRect, PortraitRenderer, PortraitSlot } from '@/scene/portraits';
 import { CHARACTER_SCALE } from '@/scene/placement';
 import { TEST_REGISTRY } from '../../core/test/support/worldFixture.ts';
-import { clientEntity } from './helpers/worldFixture';
+import { clientEntity, outfit } from './helpers/worldFixture';
 
 /** A body with the rig's two hand bones, as the pack's characters carry them. */
 function rig(): THREE.Object3D {
@@ -24,6 +24,8 @@ function assets(resolves: () => boolean): ModelAssets {
     ground: () => undefined,
     trophy: () => undefined,
     object: () => undefined,
+    wear: () => Promise.resolve(undefined),
+    retryWear: () => {},
     clipsFor: () => [],
     prototypeMeshes: () => undefined,
   };
@@ -79,6 +81,25 @@ describe('portrait framing', () => {
     expect(THREE.MathUtils.radToDeg(Math.asin((framing.eye.y - framing.focus.y) / PORTRAIT.distance))).toBeCloseTo(PORTRAIT.lyingElevationDegrees);
   });
 
+  it("frames a dreamer's head alone, from its bone to the top of what it wears, with room over it for a brim", () => {
+    const framing = portraitFraming({ head: { x: 4, y: 1.5, z: 7 }, feet, height: 1, yaw: 0, headSpan: 0.4 });
+    expect(framing.halfHeight).toBeCloseTo((PORTRAIT.headFrame * 0.4) / 2);
+    expect(framing.focus.y + framing.halfHeight).toBeCloseTo(1.5 + PORTRAIT.headHeadroom * 0.4);
+  });
+
+  it("centres a dreamer's head along the way it points, framed wider as it comes down, so one lying on the ground stays whole in the circle", () => {
+    const head = { x: 4.4, y: feet.y, z: 7 };
+    const framing = portraitFraming({ head, feet, height: 1, yaw: 0, headSpan: 0.4, headUp: { x: 1, y: 0, z: 0 } });
+    const span = 0.4 * PORTRAIT.lyingHeadScale;
+    const down = (PORTRAIT.headFrame * span) / 2 - PORTRAIT.headHeadroom * span;
+    expect([framing.focus.x, framing.focus.y, framing.focus.z]).toEqual([expect.closeTo(head.x - down), expect.closeTo(head.y), expect.closeTo(head.z)]);
+    expect(framing.halfHeight).toBeCloseTo((PORTRAIT.headFrame * span) / 2);
+
+    // Halfway down, half as much wider.
+    const halfway = portraitFraming({ head: { ...head, y: feet.y + 0.5 }, feet, height: 1, yaw: 0, headSpan: 0.4, headUp: { x: 1, y: 0, z: 0 } });
+    expect(halfway.halfHeight).toBeCloseTo((PORTRAIT.headFrame * 0.4 * (1 + (PORTRAIT.lyingHeadScale - 1) / 2)) / 2);
+  });
+
   it('frames a body measured at nothing by the least height', () => {
     expect(portraitFraming({ head: feet, feet, height: 0, yaw: 0 }).halfHeight).toBeCloseTo((PORTRAIT.frame * PORTRAIT.minHeight) / 2);
   });
@@ -89,10 +110,11 @@ describe("the Character window's body", () => {
   const bearingOf = (framing: ReturnType<typeof bodyFraming>): number =>
     THREE.MathUtils.radToDeg(Math.atan2(framing.eye.x - framing.focus.x, framing.eye.z - framing.focus.z));
 
-  it('frames the whole standing body round its middle, three-quarters from the front, a little above', () => {
+  it('frames the whole standing body with more room over the head than under the feet, three-quarters from the front, a little above', () => {
     const framing = bodyFraming({ head: { x: 4, y: 2.3, z: 7 }, feet, height: 1.8, yaw: 0 }, 0);
-    expect(framing.halfHeight).toBeCloseTo((BODY_VIEW.frame * 1.8) / 2);
-    expect(framing.focus).toEqual({ x: 4, y: 1.4, z: 7 });
+    expect(framing.focus.y + framing.halfHeight).toBeCloseTo(2.3 + BODY_VIEW.headroom * 1.8);
+    expect(framing.focus.y - framing.halfHeight).toBeCloseTo(0.5 - BODY_VIEW.footroom * 1.8);
+    expect([framing.focus.x, framing.focus.z]).toEqual([4, 7]);
     expect(bearingOf(framing)).toBeCloseTo(BODY_VIEW.sideDegrees);
     expect(THREE.MathUtils.radToDeg(Math.asin((framing.eye.y - framing.focus.y) / PORTRAIT.distance))).toBeCloseTo(BODY_VIEW.elevationDegrees);
   });
@@ -210,13 +232,13 @@ describe('what a portrait shows in hand', () => {
     scene.setPortraitSubject('body', 'self');
     scene.setPortraitSubject('target', 'peer');
 
-    scene.updateHeld('self', { mainHand: 'sword' });
-    scene.updateHeld('peer', { offHand: 'moonstone' });
+    scene.updateOutfit('self', outfit({ mainHand: 'sword' }));
+    scene.updateOutfit('peer', outfit({ offHand: 'moonstone' }));
     expect(heldOn(scene, PORTRAIT_LAYERS.own)).toEqual(['sword']);
     expect(heldOn(scene, PORTRAIT_LAYERS.target)).toEqual(['moonstone']);
 
-    scene.updateHeld('self', { mainHand: 'mace', offHand: 'shield' });
-    scene.updateHeld('peer', { mainHand: 'dagger' });
+    scene.updateOutfit('self', outfit({ mainHand: 'mace', offHand: 'shield' }));
+    scene.updateOutfit('peer', outfit({ mainHand: 'dagger' }));
     expect(heldOn(scene, PORTRAIT_LAYERS.own)).toEqual(['mace', 'shield']);
     expect(heldOn(scene, PORTRAIT_LAYERS.body)).toEqual(['mace', 'shield']);
     expect(heldOn(scene, PORTRAIT_LAYERS.target)).toEqual(['dagger']);
@@ -335,7 +357,7 @@ describe('drawing portraits', () => {
       [true, undefined],
     ]);
     expect(renders[1]).toMatchObject({ layers: 1 << PORTRAIT_LAYERS.body });
-    expect(renders[1]!['top']).toBeCloseTo((BODY_VIEW.frame * CHARACTER_SCALE) / 2, 6);
+    expect(renders[1]!['top']).toBeCloseTo(((1 + BODY_VIEW.headroom + BODY_VIEW.footroom) * CHARACTER_SCALE) / 2, 6);
     expect((renders[1]!['right'] as number) / (renders[1]!['top'] as number)).toBeCloseTo(512 / 344, 6);
     const eye = (turn: number) => draw(turn)[1]!['camera'] as THREE.Vector3;
     const bearing = (point: THREE.Vector3) => THREE.MathUtils.radToDeg(Math.atan2(point.x - 6, point.z - 9));

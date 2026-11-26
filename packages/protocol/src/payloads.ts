@@ -44,11 +44,11 @@ export type EntityKind = (typeof ENTITY_KINDS)[number];
 export const GAITS = ['walk', 'jog', 'run'] as const;
 export type Gait = (typeof GAITS)[number];
 
-/** Where a dreamer wears an item, a ring on either hand. Only the two hands show on their body. */
-export const EQUIP_SLOTS = ['mainHand', 'offHand', 'head', 'chest', 'hands', 'legs', 'feet', 'neck', 'ring1', 'ring2'] as const;
+/** Where a dreamer wears an item, a bracelet on either wrist. */
+export const EQUIP_SLOTS = ['mainHand', 'offHand', 'head', 'shoulders', 'chest', 'hands', 'legs', 'feet', 'neck', 'bracelet1', 'bracelet2'] as const;
 export type EquipSlot = (typeof EQUIP_SLOTS)[number];
 
-/** The slots that show on a dreamer's body, each in a hand. */
+/** The slots a dreamer holds an item in, one to a hand. */
 export const HANDS = ['mainHand', 'offHand'] as const satisfies readonly EquipSlot[];
 export type Hand = (typeof HANDS)[number];
 
@@ -157,9 +157,9 @@ export interface ClientSayMessage {
 }
 
 /**
- * Wears an item in a slot its base fits: `slot` when given, else the free one of a ring's two, else
- * its first. From the bag, whatever the slot wore takes the item's place there. A ring worn in the
- * other ring slot changes slots with what that one wears.
+ * Wears an item in a slot its base fits: `slot` when given, else the free one of a bracelet's two,
+ * else its first. From the bag, whatever the slot wore takes the item's place there. A bracelet worn
+ * in the other bracelet slot changes slots with what that one wears.
  */
 export interface EquipMessage {
   itemId: string;
@@ -334,10 +334,12 @@ export interface SectorMessage {
   outdoorDoorIds?: string[];
 }
 
+/** A player carries its `people`, which its body follows, and every other kind its `characterModelId`. */
 export interface EntityMessage {
   id: string;
   kind: EntityKind;
-  characterModelId: string;
+  characterModelId?: string;
+  people?: string;
   name: string;
   /** The body radius the server uses for this entity, in metres. */
   radius: number;
@@ -349,7 +351,7 @@ export interface EntityMessage {
   /** Present on an NPC that offers one. */
   service?: Service;
   /** Present on a dreamer. */
-  held?: Held;
+  outfit?: Outfit;
   /** Present on a nightmare above its kind's ordinary run. */
   rank?: NightmareRank;
   /** The trait an elite carries, by id. */
@@ -358,10 +360,19 @@ export interface EntityMessage {
   summonedBy?: string;
 }
 
-/** The bases of what a dreamer's hands hold, which is all anyone else is shown of their gear. */
-export interface Held {
-  mainHand?: string;
-  offHand?: string;
+/** An item a dreamer wears or holds: its slot, its base, and the tier it rolled, which is what anyone else is shown of it. */
+export interface OutfitPiece {
+  slot: EquipSlot;
+  baseId: string;
+  tier: number;
+}
+
+/** Everything a dreamer wears and holds, in `EQUIP_SLOTS` order, one slot at most once. A slot left out is empty. */
+export type Outfit = OutfitPiece[];
+
+/** Whether two outfits match slot by slot, base by base, and tier by tier. Both must be in `EQUIP_SLOTS` order. */
+export function sameOutfit(a: readonly OutfitPiece[], b: readonly OutfitPiece[]): boolean {
+  return a.length === b.length && a.every(({ slot, baseId, tier }, index) => slot === b[index]!.slot && baseId === b[index]!.baseId && tier === b[index]!.tier);
 }
 
 export interface EntityMove {
@@ -425,10 +436,10 @@ export interface ItemMessage {
 }
 
 /**
- * What a drop is, as its owner sees it before picking it up: an item of a base at a rarity, whose
- * tier and stat lines the server keeps until it is picked up, or the trophy of a nightmare kind.
+ * What a drop is, as its owner sees it before picking it up: an item of a base at a tier and a rarity,
+ * whose stat lines the server keeps until it is picked up, or the trophy of a nightmare kind.
  */
-export type LootContentsMessage = { kind: 'item'; baseId: string; rarity: Rarity } | { kind: 'trophy'; monsterKind: string };
+export type LootContentsMessage = { kind: 'item'; baseId: string; tier: number; rarity: Rarity } | { kind: 'trophy'; monsterKind: string };
 
 export interface EquippedItemMessage {
   slot: EquipSlot;
@@ -445,6 +456,7 @@ export interface BaggedItemMessage {
 export interface TradeMessage {
   kind: TradeKind;
   baseId: string;
+  tier: number;
   rarity: Rarity;
   coins: number;
 }
@@ -583,10 +595,10 @@ export interface ConditionMessage {
   condition: Condition;
 }
 
-/** What a dreamer's hands hold, sent when it changes. */
-export interface HeldMessage {
+/** What a dreamer wears and holds, sent when it changes. */
+export interface OutfitMessage {
   entityId: string;
-  held: Held;
+  outfit: Outfit;
 }
 
 /** The health of the dreamer's target, as a share of its maximum. Sent to that dreamer alone. */
@@ -996,10 +1008,11 @@ export function decodeSectorMessage(container: Record<string, unknown>, path: st
  * raster time, so nothing visible is lost.
  */
 export function decodeEntityMessage(container: Record<string, unknown>, path: string): EntityMessage {
+  const kind = requireStringEnum(container, 'kind', path, ENTITY_KINDS);
   return {
     id: requireEntityId(container, 'id', path),
-    kind: requireStringEnum(container, 'kind', path, ENTITY_KINDS),
-    characterModelId: requireString(container, 'characterModelId', path),
+    kind,
+    ...(kind === 'player' ? { people: requireId(container, 'people', path) } : { characterModelId: requireString(container, 'characterModelId', path) }),
     name: truncateToUTF8Bytes(requireString(container, 'name', path), PROTOCOL_BYTE_CAPS.identifier),
     radius: requirePositiveMetres(container, 'radius', path),
     x: requireMetres(container, 'x', path),
@@ -1008,17 +1021,29 @@ export function decodeEntityMessage(container: Record<string, unknown>, path: st
     gait: requireStringEnum(container, 'gait', path, GAITS),
     condition: requireStringEnum(container, 'condition', path, CONDITIONS),
     ...(isAbsent(container, 'service') ? {} : { service: requireStringEnum(container, 'service', path, SERVICES) }),
-    ...(isAbsent(container, 'held') ? {} : { held: decodeHeld(requireNested(container, 'held', path), `${path}.held`) }),
+    ...(isAbsent(container, 'outfit') ? {} : { outfit: decodeOutfit(container, 'outfit', path) }),
     ...(isAbsent(container, 'rank') ? {} : { rank: requireStringEnum(container, 'rank', path, NIGHTMARE_RANKS) }),
     ...(isAbsent(container, 'trait') ? {} : { trait: requireId(container, 'trait', path) }),
     ...(isAbsent(container, 'summonedBy') ? {} : { summonedBy: requireEntityId(container, 'summonedBy', path) }),
   };
 }
 
-function decodeHeld(container: Record<string, unknown>, path: string): Held {
+/** Base ids decode as ids: the bases are core's, so the client checks them. */
+function decodeOutfit(container: Record<string, unknown>, key: string, path: string): Outfit {
+  const outfit = mapArray(container, key, path, EQUIP_SLOTS.length, decodeOutfitPiece);
+  refuseRepeats(
+    outfit,
+    ({ slot }) => slot,
+    (slot, index) => new WireDecodingError(`${path}.${key}[${index}].slot`, `slot "${slot}" worn twice`),
+  );
+  return outfit;
+}
+
+function decodeOutfitPiece(container: Record<string, unknown>, path: string): OutfitPiece {
   return {
-    ...(isAbsent(container, 'mainHand') ? {} : { mainHand: requireId(container, 'mainHand', path) }),
-    ...(isAbsent(container, 'offHand') ? {} : { offHand: requireId(container, 'offHand', path) }),
+    slot: requireStringEnum(container, 'slot', path, EQUIP_SLOTS),
+    baseId: requireId(container, 'baseId', path),
+    tier: requireTier(container, 'tier', path),
   };
 }
 
@@ -1087,7 +1112,7 @@ function decodeAffixMessage(container: Record<string, unknown>, path: string): A
 
 /** Item, base, and affix ids decode as ids: the items are core's, so core's reader checks them. */
 function decodeItemMessage(container: Record<string, unknown>, path: string): ItemMessage {
-  const tier = requireAtLeastOne(requireInt32(container, 'tier', path), `${path}.tier`, 'a tier');
+  const tier = requireTier(container, 'tier', path);
   return {
     id: requireId(container, 'id', path),
     baseId: requireId(container, 'baseId', path),
@@ -1124,6 +1149,7 @@ function decodeTradeMessage(container: Record<string, unknown>, path: string): T
   return {
     kind: requireStringEnum(container, 'kind', path, TRADE_KINDS),
     baseId: requireId(container, 'baseId', path),
+    tier: requireTier(container, 'tier', path),
     rarity: requireStringEnum(container, 'rarity', path, RARITIES),
     coins: requireNonNegative(requireInt32(container, 'coins', path), `${path}.coins`),
   };
@@ -1179,7 +1205,12 @@ function decodeLootContentsMessage(container: Record<string, unknown>, path: str
   const kind = requireStringEnum(container, 'kind', path, LOOT_KINDS);
   switch (kind) {
     case 'item':
-      return { kind, baseId: requireId(container, 'baseId', path), rarity: requireStringEnum(container, 'rarity', path, RARITIES) };
+      return {
+        kind,
+        baseId: requireId(container, 'baseId', path),
+        tier: requireTier(container, 'tier', path),
+        rarity: requireStringEnum(container, 'rarity', path, RARITIES),
+      };
     case 'trophy':
       return { kind, monsterKind: requireId(container, 'monsterKind', path) };
   }
@@ -1234,6 +1265,10 @@ function requireAtLeastOne(value: number, path: string, noun: string): number {
   return value;
 }
 
+function requireTier(container: Record<string, unknown>, key: string, path: string): number {
+  return requireAtLeastOne(requireInt32(container, key, path), `${path}.${key}`, 'a tier');
+}
+
 function decodeTeachingRankMessage(container: Record<string, unknown>, path: string): TeachingRankMessage {
   return {
     teachingId: requireId(container, 'teachingId', path),
@@ -1281,7 +1316,7 @@ export function decodeBountyMessage(container: Record<string, unknown>, path: st
 function decodeBountyReward(container: Record<string, unknown>, path: string): BountyMessage['reward'] {
   const coins = requireNonNegative(requireInt32(container, 'coins', path), `${path}.coins`);
   if (isAbsent(container, 'gear')) return { coins };
-  return { coins, gear: requireAtLeastOne(requireInt32(container, 'gear', path), `${path}.gear`, 'a tier') };
+  return { coins, gear: requireTier(container, 'gear', path) };
 }
 
 export function decodeQuestsMessage(container: Record<string, unknown>, path: string): QuestsMessage {
@@ -1323,10 +1358,10 @@ export function decodeConditionMessage(container: Record<string, unknown>, path:
   };
 }
 
-export function decodeHeldMessage(container: Record<string, unknown>, path: string): HeldMessage {
+export function decodeOutfitMessage(container: Record<string, unknown>, path: string): OutfitMessage {
   return {
     entityId: requireEntityId(container, 'entityId', path),
-    held: decodeHeld(requireNested(container, 'held', path), `${path}.held`),
+    outfit: decodeOutfit(container, 'outfit', path),
   };
 }
 

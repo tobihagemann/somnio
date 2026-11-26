@@ -1,12 +1,14 @@
-import type { BaseItemId } from '@somnio/core';
+import { isWardrobeBase } from '@somnio/core';
+import type { BaseItemId, Tier, WardrobeBaseId } from '@somnio/core';
 import { element } from './dom';
 
 /**
- * Each item's icon, by its base: a coloured picture of its own model on a transparent ground, which
- * the asset pipeline renders into the pack's `UI/Items/`, where `Scripts/bundle-web-assets.sh` names
- * each one. No rarity is drawn in it: the part that holds it draws the rarity's edge.
+ * Each item's icon: a coloured picture of its own model on a transparent ground, which the asset
+ * pipeline renders into the pack's `UI/Items/`, where `Scripts/bundle-web-assets.sh` names each one.
+ * No rarity is drawn in it: the part that holds it draws the rarity's edge. A weapon, a shield, or a
+ * focus has one picture for its base, armour and jewellery one for its design at each tier.
  */
-export const ITEM_ICONS: Record<BaseItemId, string> = {
+export const ITEM_ICONS: Record<Exclude<BaseItemId, WardrobeBaseId>, string> = {
   dagger: '/assets/UI/Items/dagger.png',
   cudgel: '/assets/UI/Items/cudgel.png',
   sword: '/assets/UI/Items/sword.png',
@@ -21,16 +23,69 @@ export const ITEM_ICONS: Record<BaseItemId, string> = {
   'iron-buckler': '/assets/UI/Items/iron-buckler.png',
   'skull-shield': '/assets/UI/Items/skull-shield.png',
   'skull-staff': '/assets/UI/Items/skull-staff.png',
-  cap: '/assets/UI/Items/cap.png',
-  tunic: '/assets/UI/Items/tunic.png',
-  gloves: '/assets/UI/Items/gloves.png',
-  trousers: '/assets/UI/Items/trousers.png',
-  boots: '/assets/UI/Items/boots.png',
-  amulet: '/assets/UI/Items/amulet.png',
-  ring: '/assets/UI/Items/ring.png',
+};
+
+export const WARDROBE_ICONS: Record<WardrobeBaseId, Record<Tier, string>> = {
+  cap: {
+    1: '/assets/UI/Items/cap.png',
+    2: '/assets/UI/Items/cap-t2.png',
+    3: '/assets/UI/Items/cap-t3.png',
+    4: '/assets/UI/Items/cap-t4.png',
+    5: '/assets/UI/Items/cap-t5.png',
+  },
+  shoulders: {
+    1: '/assets/UI/Items/shoulders.png',
+    2: '/assets/UI/Items/shoulders-t2.png',
+    3: '/assets/UI/Items/shoulders-t3.png',
+    4: '/assets/UI/Items/shoulders-t4.png',
+    5: '/assets/UI/Items/shoulders-t5.png',
+  },
+  tunic: {
+    1: '/assets/UI/Items/tunic.png',
+    2: '/assets/UI/Items/tunic-t2.png',
+    3: '/assets/UI/Items/tunic-t3.png',
+    4: '/assets/UI/Items/tunic-t4.png',
+    5: '/assets/UI/Items/tunic-t5.png',
+  },
+  gloves: {
+    1: '/assets/UI/Items/gloves.png',
+    2: '/assets/UI/Items/gloves-t2.png',
+    3: '/assets/UI/Items/gloves-t3.png',
+    4: '/assets/UI/Items/gloves-t4.png',
+    5: '/assets/UI/Items/gloves-t5.png',
+  },
+  trousers: {
+    1: '/assets/UI/Items/trousers.png',
+    2: '/assets/UI/Items/trousers-t2.png',
+    3: '/assets/UI/Items/trousers-t3.png',
+    4: '/assets/UI/Items/trousers-t4.png',
+    5: '/assets/UI/Items/trousers-t5.png',
+  },
+  boots: {
+    1: '/assets/UI/Items/boots.png',
+    2: '/assets/UI/Items/boots-t2.png',
+    3: '/assets/UI/Items/boots-t3.png',
+    4: '/assets/UI/Items/boots-t4.png',
+    5: '/assets/UI/Items/boots-t5.png',
+  },
+  amulet: {
+    1: '/assets/UI/Items/amulet.png',
+    2: '/assets/UI/Items/amulet-t2.png',
+    3: '/assets/UI/Items/amulet-t3.png',
+    4: '/assets/UI/Items/amulet-t4.png',
+    5: '/assets/UI/Items/amulet-t5.png',
+  },
+  bracelet: {
+    1: '/assets/UI/Items/bracelet.png',
+    2: '/assets/UI/Items/bracelet-t2.png',
+    3: '/assets/UI/Items/bracelet-t3.png',
+    4: '/assets/UI/Items/bracelet-t4.png',
+    5: '/assets/UI/Items/bracelet-t5.png',
+  },
 };
 
 /** An item's icon as an element, decorative by construction: the accessible name lives on the control. */
-export function itemIcon(baseId: BaseItemId): HTMLImageElement {
-  return element('img', { className: 'hud-item-icon', attributes: { src: ITEM_ICONS[baseId], alt: '', draggable: 'false' } });
+export function itemIcon(baseId: BaseItemId, tier: Tier): HTMLImageElement {
+  const src = isWardrobeBase(baseId) ? WARDROBE_ICONS[baseId][tier] : ITEM_ICONS[baseId];
+  return element('img', { className: 'hud-item-icon', attributes: { src, alt: '', draggable: 'false' } });
 }

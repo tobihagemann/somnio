@@ -10,19 +10,20 @@ const RARITY_NAMES: Record<Rarity, () => string> = {
   rare: () => t('Rare'),
 };
 
-/** Each slot's name on the doll, and each kind of slot's in an item's tip, where a ring fits either ring slot. */
+/** Each slot's name on the doll, and each kind of slot's in an item's tip, where a bracelet fits either bracelet slot. */
 const SLOT_NAMES: Record<EquipSlot | SlotKind, () => string> = {
   mainHand: () => t('Main hand'),
   offHand: () => t('Off hand'),
   head: () => t('Head'),
+  shoulders: () => t('Shoulders'),
   chest: () => t('Chest'),
   hands: () => t('Hands'),
   legs: () => t('Legs'),
   feet: () => t('Feet'),
   neck: () => t('Neck'),
-  ring: () => t('Ring'),
-  ring1: () => t('Ring 1'),
-  ring2: () => t('Ring 2'),
+  bracelet: () => t('Bracelet'),
+  bracelet1: () => t('Bracelet 1'),
+  bracelet2: () => t('Bracelet 2'),
 };
 
 const STAT_LINES: Record<StatId, (value: string) => string> = {
@@ -82,7 +83,7 @@ export function itemTip(item: Item, after: { lines?: readonly string[]; warning?
   return {
     title: itemTitle(item),
     rarity: item.rarity,
-    icon: item.baseId,
+    icon: item,
     facts: [{ text: rarityName(item.rarity) }, { text: slotName(baseItem(item.baseId).slot) }],
     lines: [...itemLines(item), ...(sellable(item) ? [t('Sells for %@c', String(salePrice(item)))] : []), ...(after.lines ?? [])],
     ...(after.warning === undefined ? {} : { warning: after.warning }),

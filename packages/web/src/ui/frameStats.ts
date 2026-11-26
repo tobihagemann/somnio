@@ -20,7 +20,9 @@ export interface FrameStatsSummary {
   scriptMs: Spread;
   /** Each part's mean; together they sum to the script's mean. */
   partsMs: Record<FramePart, number>;
+  /** The draw calls' mean, and the most any one frame made. */
   drawCalls: number;
+  drawCallsMax: number;
   triangles: number;
   programs: number;
   canvas: { width: number; height: number; pixelRatio: number };
@@ -61,6 +63,7 @@ export class FrameStats {
       scriptMs: spread(samples.map((sample) => FRAME_PARTS.reduce((sum, part) => sum + sample.parts[part], 0))),
       partsMs: Object.fromEntries(FRAME_PARTS.map((part) => [part, round(meanOf(samples.map((sample) => sample.parts[part])))])) as Record<FramePart, number>,
       drawCalls: Math.round(meanOf(samples.map((sample) => sample.drawCalls))),
+      drawCallsMax: Math.max(...samples.map((sample) => sample.drawCalls)),
       triangles: Math.round(meanOf(samples.map((sample) => sample.triangles))),
       programs: last.programs,
       canvas: { ...last.canvas },

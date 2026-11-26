@@ -1717,8 +1717,8 @@ export class GameplaySession {
     return { global: globalSeconds > 0 ? span(globalSeconds, GLOBAL_COOLDOWN_SECONDS, true) : undefined, abilities };
   }
 
-  private announceTrade({ kind, baseId, coins }: TradeMessage): void {
-    this.controller.appendChat({ kind, baseId, coins });
+  private announceTrade({ kind, baseId, tier, coins }: TradeMessage): void {
+    this.controller.appendChat({ kind, baseId, tier, coins });
   }
 
   /**

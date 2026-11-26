@@ -381,7 +381,7 @@ export class ConnectionActor {
         case 'questShareAnswer':
         case 'bountiesRanOut':
         case 'condition':
-        case 'held':
+        case 'outfit':
         case 'vitals':
         case 'effects':
         case 'blow':
@@ -466,7 +466,7 @@ export class ConnectionActor {
         case 'questShareAnswer':
         case 'bountiesRanOut':
         case 'condition':
-        case 'held':
+        case 'outfit':
         case 'vitals':
         case 'effects':
         case 'blow':
@@ -588,7 +588,7 @@ export class ConnectionActor {
       case 'questShareAnswer':
       case 'bountiesRanOut':
       case 'condition':
-      case 'held':
+      case 'outfit':
       case 'vitals':
       case 'effects':
       case 'blow':

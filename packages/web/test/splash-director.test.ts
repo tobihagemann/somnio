@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { bundledModelRegistry, dialogLine, speechReadSeconds } from '@somnio/core';
+import { bundledModelRegistry, dialogLine, peopleBody, speechReadSeconds } from '@somnio/core';
 import { setLocale } from '@/i18n';
 import type { Point } from '@somnio/core';
+import type { Outfit } from '@somnio/protocol';
 import type { ClientEntity, RaiseProgress, SpeechBubbleRequest } from '@/client';
 import { SplashDirector } from '@/splash/director';
 import type { SplashSurface } from '@/splash/director';
@@ -84,6 +85,7 @@ function directing(reel: readonly SplashShot[], reducedMotion = false) {
 const WALKER = 'splash:walker';
 const STROLLER = 'splash:stroller';
 const NEWCOMER = 'splash:newcomer';
+const TUNIC: Outfit = [{ slot: 'chest', baseId: 'tunic', tier: 1 }];
 const WALKER_PATH: Point[] = [
   { x: 20, z: 22 },
   { x: 21, z: 22 },
@@ -98,8 +100,18 @@ const REEL: SplashShot[] = [
     hour: 10,
     camera: { kind: 'subject', subject: WALKER, side: 'left', drop: 0.4, scale: { from: 6, to: 6 }, span: 0 },
     actors: [
-      { kind: 'peer', id: WALKER, name: 'Walker', at: { x: 18, z: 22 }, facing: 90, gait: 'walk', path: WALKER_PATH.slice(0, 1) },
-      { kind: 'peer', id: STROLLER, name: 'Stroller', at: { x: 22, z: 24 }, facing: 0, gait: 'walk', path: [] },
+      {
+        kind: 'peer',
+        id: WALKER,
+        name: 'Walker',
+        people: 'vigils',
+        outfit: TUNIC,
+        at: { x: 18, z: 22 },
+        facing: 90,
+        gait: 'walk',
+        path: WALKER_PATH.slice(0, 1),
+      },
+      { kind: 'peer', id: STROLLER, name: 'Stroller', people: 'sopors', outfit: TUNIC, at: { x: 22, z: 24 }, facing: 0, gait: 'walk', path: [] },
     ],
     beats: [],
   },
@@ -111,7 +123,7 @@ const REEL: SplashShot[] = [
     camera: { kind: 'area', from: { point: { x: 20, z: 20 }, scale: 7 }, to: { point: { x: 21, z: 20 }, scale: 7 } },
     actors: [
       { kind: 'carried', id: WALKER, path: WALKER_PATH.slice(1) },
-      { kind: 'peer', id: NEWCOMER, name: 'Newcomer', at: { x: 19, z: 24 }, facing: 0, gait: 'walk', path: [] },
+      { kind: 'peer', id: NEWCOMER, name: 'Newcomer', people: 'vigils', outfit: TUNIC, at: { x: 19, z: 24 }, facing: 0, gait: 'walk', path: [] },
     ],
     beats: [],
   },
@@ -134,7 +146,9 @@ const RAISE_REEL: SplashShot[] = [
     seconds: 6,
     hour: 13,
     camera: { kind: 'subject', subject: WALKER, side: 'left', drop: 0.4, scale: { from: 5.5, to: 5.5 }, span: 0 },
-    actors: [{ kind: 'peer', id: WALKER, name: 'Walker', at: { x: 18, z: 22 }, facing: 90, gait: 'walk', path: [{ x: 19, z: 22 }] }],
+    actors: [
+      { kind: 'peer', id: WALKER, name: 'Walker', people: 'vigils', outfit: TUNIC, at: { x: 18, z: 22 }, facing: 90, gait: 'walk', path: [{ x: 19, z: 22 }] },
+    ],
     beats: [{ at: 2, kind: 'condition', id: WALKER, condition: 'fallen' }],
   },
   {
@@ -145,7 +159,18 @@ const RAISE_REEL: SplashShot[] = [
     camera: { kind: 'subject', subject: WALKER, side: 'left', drop: 0.4, scale: { from: 5.5, to: 5.5 }, span: 0 },
     actors: [
       { kind: 'carried', id: WALKER, path: [] },
-      { kind: 'peer', id: NEWCOMER, name: 'Healer', at: { x: 21, z: 23 }, facing: 270, gait: 'walk', path: [{ x: 19.6, z: 22.5 }], faces: WALKER },
+      {
+        kind: 'peer',
+        id: NEWCOMER,
+        name: 'Healer',
+        people: 'vigils',
+        outfit: TUNIC,
+        at: { x: 21, z: 23 },
+        facing: 270,
+        gait: 'walk',
+        path: [{ x: 19.6, z: 22.5 }],
+        faces: WALKER,
+      },
     ],
     beats: [
       { at: 1.5, kind: 'raise', target: WALKER, raise: { progress: 0, seconds: 5 } },
@@ -186,6 +211,21 @@ describe('the splash director', () => {
     d.director.update(FRAME);
     const [focus] = d.named('frameShot')[0]!.args as [Point];
     expect(focus).not.toEqual(shotFocus({ x: 18, z: 22 }, 'left', 0.4, 6, VIEWPORT));
+  });
+
+  it("places each dreamer in their people's body, dressed in what they wear", () => {
+    const d = directing(REEL);
+    d.director.update(FRAME);
+
+    expect(
+      d.named('placeEntity').map((call) => {
+        const entity = call.args[0] as ClientEntity;
+        return [entity.id, entity.people, entity.characterModelId, entity.outfit];
+      }),
+    ).toEqual([
+      [WALKER, 'vigils', peopleBody(registry, 'vigils'), TUNIC],
+      [STROLLER, 'sopors', peopleBody(registry, 'sopors'), TUNIC],
+    ]);
   });
 
   it('cuts to the next shot only at full dark, keeping the space and the figure it carries over', () => {
@@ -236,6 +276,35 @@ describe('the splash director', () => {
 
     d.scene.settled = true;
     d.step(0.3);
+    expect(d.director.dipOpacity).toBe(0);
+  });
+
+  /** The scene reports unsettled from the dip's rise, so it is still dressing the newcomer as the cut places them. */
+  function cutWhileDressing(): ReturnType<typeof directing> {
+    const d = directing(REEL);
+    d.step(5.8);
+    d.scene.settled = false;
+    while (d.director.currentShotId === 'first') d.director.update(FRAME);
+    d.calls.length = 0;
+    return d;
+  }
+
+  it('holds a cut that places a dreamer in the same space in the dark, its shot waiting, until the scene settles', () => {
+    const d = cutWhileDressing();
+    d.step(1);
+    expect(d.director.dipOpacity).toBe(1);
+    expect(d.named('updatePosition')).toEqual([]);
+
+    d.scene.settled = true;
+    d.step(0.3);
+    expect(d.director.dipOpacity).toBe(0);
+  });
+
+  it('plays a cut whose dreamer never finishes dressing after three seconds in the dark', () => {
+    const d = cutWhileDressing();
+    d.step(2.9);
+    expect(d.director.dipOpacity).toBe(1);
+    d.step(0.4);
     expect(d.director.dipOpacity).toBe(0);
   });
 

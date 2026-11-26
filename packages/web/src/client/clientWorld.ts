@@ -6,6 +6,7 @@ import type {
   EngageTarget,
   FoundPath,
   ModelRegistry,
+  People,
   PlacedFixture,
   Point,
   ResolvedDoor,
@@ -13,7 +14,7 @@ import type {
   WalkRaster,
   WorldEntity,
 } from '@somnio/core';
-import type { Condition, Held, NightmareRank, SectorView, Service } from '@somnio/protocol';
+import type { Condition, NightmareRank, Outfit, SectorView, Service } from '@somnio/protocol';
 import type { WorldRenderSurface } from './renderSurface';
 import { defaultWalkRasterizer } from './walkRasterizer';
 import type { WalkRasterizer } from './walkRasterizer';
@@ -24,8 +25,10 @@ export interface ClientEntity extends WorldEntity {
   condition: Condition;
   /** What asking an NPC offers beyond its dialog. */
   service: Service | undefined;
-  /** What a dreamer's hands hold. */
-  held: Held | undefined;
+  /** A dreamer's people, when this build knows it; its body is `characterModelId`. */
+  people: People | undefined;
+  /** What a dreamer wears and holds. */
+  outfit: Outfit | undefined;
   /** Set on a nightmare above its kind's ordinary run. */
   rank: NightmareRank | undefined;
   /** The trait an elite carries, when this build knows it. */

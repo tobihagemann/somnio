@@ -115,7 +115,7 @@ export function turnInSaid({ held, study, coins, items }: QuestTurnedIn): QuestT
   return {
     title: questTitle(said, held.definition),
     paid: paid.join(' · '),
-    items: items.map(({ baseId, rarity }) => ({ name: itemName(baseId, t), rarity })),
+    items: items.map(({ baseId, tier, rarity }) => ({ name: itemName(baseId, tier, t), rarity })),
   };
 }
 

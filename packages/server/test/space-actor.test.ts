@@ -30,7 +30,7 @@ describe('SpaceActor.attach', () => {
       payload: {
         id: alice.character.id,
         kind: 'player',
-        characterModelId: 'hero',
+        people: 'lumina',
         name: 'alice',
         radius: SOMNIO_CONSTANTS.playerRadius,
         x: 2,
@@ -38,7 +38,7 @@ describe('SpaceActor.attach', () => {
         facing: 0,
         gait: 'jog',
         condition: 'hale',
-        held: {},
+        outfit: [],
       },
     });
     expect(messages[5]).toEqual({ tag: 'lucidity', payload: { ranks: [] } });

@@ -70,6 +70,12 @@ describe.each(DROPPED_TIERS)('rollItem at tier %i', (tier) => {
 });
 
 describe('AFFIXES', () => {
+  it('rolls on shoulders the lines a chest rolls', () => {
+    expect(AFFIX_IDS.filter((affixId) => affix(affixId).slots.includes('shoulders'))).toEqual(
+      AFFIX_IDS.filter((affixId) => affix(affixId).slots.includes('chest')),
+    );
+  });
+
   it('rolls every line higher at each dropped tier than at the one before', () => {
     for (const affixId of AFFIX_IDS) {
       for (const [lower, higher] of [
@@ -87,8 +93,9 @@ describe('AFFIXES', () => {
 describe('itemNameKeys', () => {
   const trousers = (tier: Tier, affixes: Item['affixes']): Item => ({ baseId: 'trousers', tier, rarity: 'magic', affixes });
 
-  it('names a plain item after its base alone', () => {
-    expect(itemNameKeys({ baseId: 'trousers', tier: 1, rarity: 'plain', affixes: [] })).toEqual({ labelKey: 'Leather trousers' });
+  it('names a plain item after its base alone, by its design at its tier', () => {
+    expect(itemNameKeys({ baseId: 'trousers', tier: 1, rarity: 'plain', affixes: [] })).toEqual({ labelKey: 'Field trousers' });
+    expect(itemNameKeys({ baseId: 'trousers', tier: 3, rarity: 'plain', affixes: [] })).toEqual({ labelKey: 'Wader trousers' });
   });
 
   it('adds the suffix of the line rolled nearest the most it rolls at the item tier', () => {
@@ -100,7 +107,7 @@ describe('itemNameKeys', () => {
         ]),
       ),
     ).toEqual({
-      labelKey: 'Leather trousers',
+      labelKey: 'Field trousers',
       suffixKey: '%@ of the Bulwark',
     });
     expect(
@@ -121,6 +128,6 @@ describe('itemNameKeys', () => {
   });
 
   it('passes over a line with no range at the item tier', () => {
-    expect(itemNameKeys(trousers(4, [{ affixId: 'health', value: 8 }]))).toEqual({ labelKey: 'Leather trousers' });
+    expect(itemNameKeys(trousers(4, [{ affixId: 'health', value: 8 }]))).toEqual({ labelKey: 'Trail leathers' });
   });
 });

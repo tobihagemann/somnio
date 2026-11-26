@@ -415,17 +415,40 @@
   },
   "entity-player": {
     "payload": {
-      "characterModelId": "dreamer",
       "condition": "grazed",
       "facing": 90,
       "gait": "run",
-      "held": {
-        "mainHand": "sword",
-        "offHand": "moonstone"
-      },
       "id": "7c1d2e3f-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
       "kind": "player",
       "name": "Alice",
+      "outfit": [
+        {
+          "baseId": "sword",
+          "slot": "mainHand",
+          "tier": 1
+        },
+        {
+          "baseId": "moonstone",
+          "slot": "offHand",
+          "tier": 1
+        },
+        {
+          "baseId": "cap",
+          "slot": "head",
+          "tier": 3
+        },
+        {
+          "baseId": "tunic",
+          "slot": "chest",
+          "tier": 2
+        },
+        {
+          "baseId": "bracelet",
+          "slot": "bracelet2",
+          "tier": 5
+        }
+      ],
+      "people": "sopors",
       "radius": 0.3,
       "x": 12.5,
       "z": 7.25
@@ -473,22 +496,13 @@
   "equip-into-slot": {
     "payload": {
       "itemId": "0190a1b2-c3d7-7c3d-8e4f-5a6b7c8d9eaf",
-      "slot": "ring2"
+      "slot": "bracelet2"
     },
     "tag": "equip"
   },
-  "held": {
-    "payload": {
-      "entityId": "7c1d2e3f-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
-      "held": {
-        "mainHand": "dagger"
-      }
-    },
-    "tag": "held"
-  },
   "hello": {
     "payload": {
-      "protocolVersion": 25
+      "protocolVersion": 26
     },
     "tag": "hello"
   },
@@ -587,7 +601,8 @@
         "baseId": "cap",
         "coins": 25,
         "kind": "boughtBack",
-        "rarity": "magic"
+        "rarity": "magic",
+        "tier": 1
       }
     },
     "tag": "inventory"
@@ -599,7 +614,8 @@
       "dropped": {
         "baseId": "cap",
         "kind": "item",
-        "rarity": "magic"
+        "rarity": "magic",
+        "tier": 1
       },
       "equipped": []
     },
@@ -629,7 +645,8 @@
       "pickedUp": {
         "baseId": "cap",
         "kind": "item",
-        "rarity": "magic"
+        "rarity": "magic",
+        "tier": 1
       }
     },
     "tag": "inventory"
@@ -657,7 +674,8 @@
         "baseId": "cap",
         "coins": 25,
         "kind": "sold",
-        "rarity": "magic"
+        "rarity": "magic",
+        "tier": 1
       }
     },
     "tag": "inventory"
@@ -699,7 +717,8 @@
         {
           "baseId": "cap",
           "kind": "item",
-          "rarity": "rare"
+          "rarity": "rare",
+          "tier": 3
         }
       ]
     },
@@ -754,7 +773,8 @@
       "contents": {
         "baseId": "cap",
         "kind": "item",
-        "rarity": "magic"
+        "rarity": "magic",
+        "tier": 2
       },
       "lootId": "loot-12",
       "x": 31.5,
@@ -767,7 +787,8 @@
       "contents": {
         "baseId": "cap",
         "kind": "item",
-        "rarity": "rare"
+        "rarity": "rare",
+        "tier": 4
       },
       "from": {
         "x": 31,
@@ -784,7 +805,8 @@
       "contents": {
         "baseId": "cap",
         "kind": "item",
-        "rarity": "magic"
+        "rarity": "magic",
+        "tier": 2
       },
       "lootId": "loot-12",
       "shared": true,
@@ -798,7 +820,8 @@
       "contents": {
         "baseId": "cap",
         "kind": "item",
-        "rarity": "magic"
+        "rarity": "magic",
+        "tier": 2
       },
       "from": {
         "entityId": "0b9f6c1e-5d4a-4e7b-9a6c-1d2e3f4a5b6c",
@@ -817,7 +840,8 @@
       "contents": {
         "baseId": "sword",
         "kind": "item",
-        "rarity": "rare"
+        "rarity": "rare",
+        "tier": 1
       },
       "from": {
         "entityId": "0b9f6c1e-5d4a-4e7b-9a6c-1d2e3f4a5b6c",
@@ -960,6 +984,31 @@
       "revoked": true
     },
     "tag": "otherSessionsRevoked"
+  },
+  "outfit": {
+    "payload": {
+      "entityId": "7c1d2e3f-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+      "outfit": [
+        {
+          "baseId": "dagger",
+          "slot": "mainHand",
+          "tier": 1
+        },
+        {
+          "baseId": "tunic",
+          "slot": "chest",
+          "tier": 3
+        }
+      ]
+    },
+    "tag": "outfit"
+  },
+  "outfit-empty": {
+    "payload": {
+      "entityId": "7c1d2e3f-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+      "outfit": []
+    },
+    "tag": "outfit"
   },
   "pickUp": {
     "payload": {

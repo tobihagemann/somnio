@@ -56,7 +56,7 @@ describe('buying from the shopkeeper', () => {
         coins: 40,
         equipped: [{ slot: 'mainHand', item: CUDGEL }],
         bag: [bought],
-        trade: { kind: 'bought', baseId: 'dagger', rarity: 'plain', coins: 60 },
+        trade: { kind: 'bought', baseId: 'dagger', tier: 1, rarity: 'plain', coins: 60 },
       },
     ]);
   });
@@ -91,7 +91,7 @@ describe('selling to the shopkeeper', () => {
     s.world.space.handleSell(MERCUS, CUDGEL.id, s.dreamer.entityId);
     expect(s.inventory()).toEqual({ coins: 115, equipped: {}, bag: [] });
     expect(await s.framesAfterJoin()).toEqual([
-      { coins: 115, equipped: [], bag: [], trade: { kind: 'sold', baseId: 'cudgel', rarity: 'plain', coins: 15 }, buyBack: [CUDGEL] },
+      { coins: 115, equipped: [], bag: [], trade: { kind: 'sold', baseId: 'cudgel', tier: 1, rarity: 'plain', coins: 15 }, buyBack: [CUDGEL] },
     ]);
   });
 
@@ -106,7 +106,7 @@ describe('selling to the shopkeeper', () => {
     const s = shop(AT_MERCUS, { inventory: carrying({ coins: COINS, worn: [CUDGEL], bag: [DAGGER, RARE_AMULET] }) });
     s.world.space.handleSell(MERCUS, RARE_AMULET.id, s.dreamer.entityId);
     expect(s.inventory()).toEqual(carrying({ coins: 173, worn: [CUDGEL], bag: [DAGGER] }));
-    expect((await s.framesAfterJoin()).map((frame) => frame.trade)).toEqual([{ kind: 'sold', baseId: 'amulet', rarity: 'rare', coins: 73 }]);
+    expect((await s.framesAfterJoin()).map((frame) => frame.trade)).toEqual([{ kind: 'sold', baseId: 'amulet', tier: 1, rarity: 'rare', coins: 73 }]);
   });
 
   it('holds what was sold newest first, and no more than the cap', async () => {
@@ -156,9 +156,21 @@ describe('buying back from the shopkeeper', () => {
       coins: 130,
       equipped: [{ slot: 'mainHand', item: CUDGEL }],
       bag: [{ place: 0, item: RARE_AMULET }],
-      trade: { kind: 'boughtBack', baseId: 'amulet', rarity: 'rare', coins: 73 },
+      trade: { kind: 'boughtBack', baseId: 'amulet', tier: 1, rarity: 'rare', coins: 73 },
       buyBack: [DAGGER],
     });
+  });
+
+  it('says the tier of the item sold and bought back, not that of a like item worn', async () => {
+    const worn: ItemInstance = { id: '00000000-0000-7000-8000-000000000007', ...plain('tunic') };
+    const finer: ItemInstance = { id: '00000000-0000-7000-8000-000000000008', ...plain('tunic'), tier: 3 };
+    const s = shop(AT_MERCUS, { inventory: carrying({ worn: [worn], bag: [finer] }) });
+    s.world.space.handleSell(MERCUS, finer.id, s.dreamer.entityId);
+    s.world.space.handleBuyBack(MERCUS, finer.id, s.dreamer.entityId);
+    expect((await s.framesAfterJoin()).map(({ trade }) => [trade?.kind, trade?.tier])).toEqual([
+      ['sold', 3],
+      ['boughtBack', 3],
+    ]);
   });
 
   it('leaves the frame without the list once he holds nothing to buy back', async () => {

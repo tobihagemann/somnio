@@ -5,15 +5,15 @@ import type {
   Condition,
   EnterSpaceMessage,
   EntityKind,
-  Held,
   LeaveMessage,
   Locale,
   LoginResult,
+  Outfit,
   RegisterResult,
   SectorMessage,
   SomnioMessage,
 } from '@somnio/protocol';
-import { bundledModelRegistry, heading, isEliteTraitId, isPeople, worldSecondsAt } from '@somnio/core';
+import { bundledModelRegistry, heading, isEliteTraitId, isPeople, peopleBody, worldSecondsAt } from '@somnio/core';
 import type { ModelRegistry, People, WorldClockReading, WorldEntityKind } from '@somnio/core';
 import type { GameplayTransport, GameplayTransportEvent } from '@/transport';
 import { SessionStore } from './sessionStore';
@@ -177,6 +177,12 @@ export class ConnectionController {
    */
   inWorld = false;
   /**
+   * Where the loading cover stands for the space last entered: armed at `enterSpace`, placed with the
+   * player's own body, and down for the rest of the space once that body is drawn in all they wear.
+   * A piece put on in play then pops in as anyone's does.
+   */
+  private cover: 'armed' | 'placed' | 'down' = 'down';
+  /**
    * How many other browsers could still resume this account: the login's or resume's `otherSessions`,
    * and 0 once they are logged out. Nothing can add to it while this one is in the world, so it needs
    * no refresh, and a 0 can hide Log Out Other Browsers for the rest of the session.
@@ -242,6 +248,22 @@ export class ConnectionController {
     this.resolveURL = options.resolveURL ?? (() => '/ws');
     this.maxResumeRetries = options.maxResumeRetries ?? 3;
     this.locale = options.locale ?? 'en';
+  }
+
+  /**
+   * Whether the loading cover hides the world: the player's own body placed in the space just
+   * entered and not yet drawn in all they wear, so they never see themselves undressed on entering.
+   */
+  get loadingCovered(): boolean {
+    return this.cover === 'placed' && !this.renderSurface.ownBodyDressed();
+  }
+
+  /**
+   * Lowers the cover once the player's own body is drawn in all they wear, and keeps it down until the
+   * next `enterSpace`. Called each frame, since no frame from the server says the body is dressed.
+   */
+  settleLoadingCover(): void {
+    if (this.cover === 'placed' && this.renderSurface.ownBodyDressed()) this.cover = 'down';
   }
 
   get chatHistory(): readonly ChatLine[] {
@@ -577,8 +599,8 @@ export class ConnectionController {
       case 'condition':
         this.handleCondition(message.payload.entityId, message.payload.condition);
         return;
-      case 'held':
-        this.handleHeld(message.payload.entityId, message.payload.held);
+      case 'outfit':
+        this.handleOutfit(message.payload.entityId, message.payload.outfit);
         return;
       case 'moves':
       case 'correction':
@@ -798,6 +820,7 @@ export class ConnectionController {
     this.selfPeople = isPeople(payload.people) ? payload.people : undefined;
     this.world = new ClientWorld(payload.spaceId, this.registry, this.walkRasterizer);
     this.renderSurface.enterSpace(this.world);
+    this.cover = 'armed';
     this.renderSurface.setClock(payload.worldSeconds);
     this.worldClock = { worldSeconds: payload.worldSeconds, atMs: performance.now() };
     this.connectionState = 'attached';
@@ -853,10 +876,14 @@ export class ConnectionController {
     // The player's own name arrives only on their own `entity` frame; without it their chat lines
     // render with an empty sender.
     if (kind === 'player') this.selfDisplayName = payload.name;
+    // A dreamer is drawn in their people's body, and in the placeholder for a people this build does not know.
+    const people = payload.people !== undefined && isPeople(payload.people) ? payload.people : undefined;
+    const body = payload.kind === 'player' ? (people === undefined ? undefined : peopleBody(this.registry, people)) : payload.characterModelId;
     const entity: ClientEntity = {
       id: payload.id,
       kind,
-      characterModelId: payload.characterModelId,
+      characterModelId: body ?? '',
+      people,
       name: payload.name,
       radius: payload.radius,
       position: { x: payload.x, z: payload.z },
@@ -864,7 +891,7 @@ export class ConnectionController {
       gait: payload.gait,
       condition: payload.condition,
       service: payload.service,
-      held: payload.held,
+      outfit: payload.outfit,
       rank: payload.rank,
       trait: payload.trait !== undefined && isEliteTraitId(payload.trait) ? payload.trait : undefined,
     };
@@ -875,8 +902,12 @@ export class ConnectionController {
     if (kind === 'player') this.world?.follow(entity.position, this.renderSurface);
     this.renderSurface.placeEntity(entity);
     if (payload.summonedBy !== undefined) this.renderSurface.showSummoned(entity.id, payload.summonedBy);
-    // Before the roster push below, whose repaint is what shows the world in place of the splash.
-    if (kind === 'player') this.inWorld = true;
+    // Before the roster push below, whose repaint is what shows the world in place of the splash,
+    // or the cover over it while the body is still being dressed.
+    if (kind === 'player') {
+      this.inWorld = true;
+      if (this.cover === 'armed') this.cover = 'placed';
+    }
     if (
       (kind === 'peer' || kind === 'player') &&
       !this.players.includes(entity.name) &&
@@ -915,12 +946,12 @@ export class ConnectionController {
     if (entityId === this.selfId) this.onSelfConditionChanged?.(condition);
   }
 
-  /** What a dreamer's hands hold, sent when it changes. */
-  private handleHeld(entityId: string, held: Held): void {
+  /** What a dreamer wears and holds, sent when it changes. */
+  private handleOutfit(entityId: string, outfit: Outfit): void {
     const entity = this.entities.get(entityId);
     if (entity === undefined) return;
-    this.entities.set(entityId, { ...entity, held });
-    this.renderSurface.updateHeld(entityId, held);
+    this.entities.set(entityId, { ...entity, outfit });
+    this.renderSurface.updateOutfit(entityId, outfit);
   }
 
   /**
@@ -989,6 +1020,7 @@ export class ConnectionController {
     this.onTeardown?.();
     this.connectionState = 'disconnected';
     this.inWorld = false;
+    this.cover = 'down';
     this.otherSessionCount = 0;
     this.entities.clear();
     this.players = [];

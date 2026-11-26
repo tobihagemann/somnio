@@ -27,6 +27,110 @@
       }
     },
     {
+      "id": "dreamer-vigils",
+      "model": {
+        "expectedClips": [
+          "Idle",
+          "Walking_A",
+          "Running_A",
+          "Sneaking",
+          "Walking_Backwards",
+          "Running_Strafe_Left",
+          "Running_Strafe_Right",
+          "Death_A",
+          "Hit_A",
+          "Throw",
+          "Melee_1H_Attack_Slice_Horizontal",
+          "Ranged_Magic_Raise",
+          "Melee_Block",
+          "Melee_1H_Attack_Jump_Chop",
+          "Cheering",
+          "Ranged_Magic_Shoot",
+          "Ranged_Magic_Spellcasting",
+          "Ranged_Magic_Spellcasting_Long"
+        ],
+        "stem": "DreamerVigils"
+      }
+    },
+    {
+      "id": "dreamer-sopors",
+      "model": {
+        "expectedClips": [
+          "Idle",
+          "Walking_A",
+          "Running_A",
+          "Sneaking",
+          "Walking_Backwards",
+          "Running_Strafe_Left",
+          "Running_Strafe_Right",
+          "Death_A",
+          "Hit_A",
+          "Throw",
+          "Melee_1H_Attack_Slice_Horizontal",
+          "Ranged_Magic_Raise",
+          "Melee_Block",
+          "Melee_1H_Attack_Jump_Chop",
+          "Cheering",
+          "Ranged_Magic_Shoot",
+          "Ranged_Magic_Spellcasting",
+          "Ranged_Magic_Spellcasting_Long"
+        ],
+        "stem": "DreamerSopors"
+      }
+    },
+    {
+      "id": "dreamer-umbrae",
+      "model": {
+        "expectedClips": [
+          "Idle",
+          "Walking_A",
+          "Running_A",
+          "Sneaking",
+          "Walking_Backwards",
+          "Running_Strafe_Left",
+          "Running_Strafe_Right",
+          "Death_A",
+          "Hit_A",
+          "Throw",
+          "Melee_1H_Attack_Slice_Horizontal",
+          "Ranged_Magic_Raise",
+          "Melee_Block",
+          "Melee_1H_Attack_Jump_Chop",
+          "Cheering",
+          "Ranged_Magic_Shoot",
+          "Ranged_Magic_Spellcasting",
+          "Ranged_Magic_Spellcasting_Long"
+        ],
+        "stem": "DreamerUmbrae"
+      }
+    },
+    {
+      "id": "dreamer-lumina",
+      "model": {
+        "expectedClips": [
+          "Idle",
+          "Walking_A",
+          "Running_A",
+          "Sneaking",
+          "Walking_Backwards",
+          "Running_Strafe_Left",
+          "Running_Strafe_Right",
+          "Death_A",
+          "Hit_A",
+          "Throw",
+          "Melee_1H_Attack_Slice_Horizontal",
+          "Ranged_Magic_Raise",
+          "Melee_Block",
+          "Melee_1H_Attack_Jump_Chop",
+          "Cheering",
+          "Ranged_Magic_Shoot",
+          "Ranged_Magic_Spellcasting",
+          "Ranged_Magic_Spellcasting_Long"
+        ],
+        "stem": "DreamerLumina"
+      }
+    },
+    {
       "id": "libus",
       "model": {
         "expectedClips": [
@@ -181,6 +285,12 @@
       }
     }
   ],
+  "peoples": [
+    { "model": "dreamer-vigils", "people": "vigils", "scale": [1, 1, 1] },
+    { "model": "dreamer-sopors", "people": "sopors", "scale": [1.27, 1.18, 1.13] },
+    { "model": "dreamer-umbrae", "people": "umbrae", "scale": [0.85, 1.04, 0.9] },
+    { "model": "dreamer-lumina", "people": "lumina", "scale": [0.96, 0.99, 0.97] }
+  ],
   "handModels": [
     { "id": "dagger", "stem": "HandDagger" },
     { "id": "cudgel", "stem": "HandCudgel" },
@@ -212,12 +322,13 @@
     { "id": "skull-shield", "stem": "GroundSkullShield" },
     { "id": "skull-staff", "stem": "GroundSkullStaff" },
     { "id": "cap", "stem": "GroundCap" },
+    { "id": "shoulders", "stem": "GroundShoulders" },
     { "id": "tunic", "stem": "GroundTunic" },
     { "id": "gloves", "stem": "GroundGloves" },
     { "id": "trousers", "stem": "GroundTrousers" },
     { "id": "boots", "stem": "GroundBoots" },
     { "id": "amulet", "stem": "GroundAmulet" },
-    { "id": "ring", "stem": "GroundRing" }
+    { "id": "bracelet", "stem": "GroundBracelet" }
   ],
   "trophyModels": [
     { "id": "ghost", "stem": "GroundGhostlyWisp" },
@@ -227,6 +338,48 @@
     { "id": "skeleton-minion", "stem": "GroundOldBone" },
     { "id": "skeleton-warrior", "stem": "GroundCrackedSkull" },
     { "id": "necromancer", "stem": "GroundNecromancerSigil" }
+  ],
+  "wardrobe": [
+    { "base": "cap", "covers": [], "ground": "GroundCap", "hairFit": "Hayfield courier", "tier": 1, "wear": { "peoples": { "vigils": "WearCapT1Vigils", "sopors": "WearCapT1Sopors", "umbrae": "WearCapT1Umbrae", "lumina": "WearCapT1Lumina" } } },
+    { "base": "cap", "covers": [], "ground": "GroundCapT2", "hairFit": "Autumn trailfinder", "tier": 2, "wear": { "peoples": { "vigils": "WearCapT2Vigils", "sopors": "WearCapT2Sopors", "umbrae": "WearCapT2Umbrae", "lumina": "WearCapT2Lumina" } } },
+    { "base": "cap", "covers": [], "ground": "GroundCapT3", "hairFit": "Reed ferryman", "tier": 3, "wear": { "peoples": { "vigils": "WearCapT3Vigils", "sopors": "WearCapT3Sopors", "umbrae": "WearCapT3Umbrae", "lumina": "WearCapT3Lumina" } } },
+    { "base": "cap", "covers": [], "ground": "GroundCapT4", "hairFit": "Bear-country trapper", "tier": 4, "wear": { "peoples": { "vigils": "WearCapT4Vigils", "sopors": "WearCapT4Sopors", "umbrae": "WearCapT4Umbrae", "lumina": "WearCapT4Lumina" } } },
+    { "base": "cap", "covers": [], "ground": "GroundCapT5", "hairFit": "Shore navigator", "tier": 5, "wear": { "peoples": { "vigils": "WearCapT5Vigils", "sopors": "WearCapT5Sopors", "umbrae": "WearCapT5Umbrae", "lumina": "WearCapT5Lumina" } } },
+    { "base": "shoulders", "covers": [], "ground": "GroundShoulders", "tier": 1, "wear": { "peoples": { "vigils": "WearShouldersT1Vigils", "sopors": "WearShouldersT1Sopors", "umbrae": "WearShouldersT1Umbrae", "lumina": "WearShouldersT1Lumina" } } },
+    { "base": "shoulders", "covers": [], "ground": "GroundShouldersT2", "tier": 2, "wear": { "peoples": { "vigils": "WearShouldersT2Vigils", "sopors": "WearShouldersT2Sopors", "umbrae": "WearShouldersT2Umbrae", "lumina": "WearShouldersT2Lumina" } } },
+    { "base": "shoulders", "covers": [], "ground": "GroundShouldersT3", "tier": 3, "wear": { "peoples": { "vigils": "WearShouldersT3Vigils", "sopors": "WearShouldersT3Sopors", "umbrae": "WearShouldersT3Umbrae", "lumina": "WearShouldersT3Lumina" } } },
+    { "base": "shoulders", "covers": [], "ground": "GroundShouldersT4", "tier": 4, "wear": { "peoples": { "vigils": "WearShouldersT4Vigils", "sopors": "WearShouldersT4Sopors", "umbrae": "WearShouldersT4Umbrae", "lumina": "WearShouldersT4Lumina" } } },
+    { "base": "shoulders", "covers": [], "ground": "GroundShouldersT5", "tier": 5, "wear": { "peoples": { "vigils": "WearShouldersT5Vigils", "sopors": "WearShouldersT5Sopors", "umbrae": "WearShouldersT5Umbrae", "lumina": "WearShouldersT5Lumina" } } },
+    { "base": "tunic", "covers": ["Torso", "SleeveL", "SleeveR"], "ground": "GroundTunic", "tier": 1, "wear": { "peoples": { "vigils": "WearTunicT1", "sopors": "WearTunicT1Sopors", "umbrae": "WearTunicT1Umbrae", "lumina": "WearTunicT1Lumina" } } },
+    { "base": "tunic", "covers": ["Torso", "SleeveL", "SleeveR"], "ground": "GroundTunicT2", "tier": 2, "wear": { "peoples": { "vigils": "WearTunicT2", "sopors": "WearTunicT2Sopors", "umbrae": "WearTunicT2Umbrae", "lumina": "WearTunicT2Lumina" } } },
+    { "base": "tunic", "covers": ["Torso", "SleeveL", "SleeveR"], "ground": "GroundTunicT3", "tier": 3, "wear": { "peoples": { "vigils": "WearTunicT3", "sopors": "WearTunicT3Sopors", "umbrae": "WearTunicT3Umbrae", "lumina": "WearTunicT3Lumina" } } },
+    { "base": "tunic", "covers": ["Torso", "SleeveL", "SleeveR"], "ground": "GroundTunicT4", "tier": 4, "wear": { "peoples": { "vigils": "WearTunicT4", "sopors": "WearTunicT4Sopors", "umbrae": "WearTunicT4Umbrae", "lumina": "WearTunicT4Lumina" } } },
+    { "base": "tunic", "covers": ["Torso", "SleeveL", "SleeveR"], "ground": "GroundTunicT5", "tier": 5, "wear": { "peoples": { "vigils": "WearTunicT5", "sopors": "WearTunicT5Sopors", "umbrae": "WearTunicT5Umbrae", "lumina": "WearTunicT5Lumina" } } },
+    { "base": "gloves", "covers": ["HandL", "HandR"], "ground": "GroundGloves", "tier": 1, "wear": { "default": "WearGlovesT1" } },
+    { "base": "gloves", "covers": ["HandL", "HandR"], "ground": "GroundGlovesT2", "tier": 2, "wear": { "default": "WearGlovesT2" } },
+    { "base": "gloves", "covers": ["HandL", "HandR"], "ground": "GroundGlovesT3", "tier": 3, "wear": { "default": "WearGlovesT3" } },
+    { "base": "gloves", "covers": ["HandL", "HandR"], "ground": "GroundGlovesT4", "tier": 4, "wear": { "default": "WearGlovesT4" } },
+    { "base": "gloves", "covers": ["HandL", "HandR"], "ground": "GroundGlovesT5", "tier": 5, "wear": { "default": "WearGlovesT5" } },
+    { "base": "trousers", "covers": ["ThighL", "ThighR"], "ground": "GroundTrousers", "tier": 1, "wear": { "default": "WearTrousersT1" } },
+    { "base": "trousers", "covers": ["ThighL", "ThighR"], "ground": "GroundTrousersT2", "tier": 2, "wear": { "default": "WearTrousersT2" } },
+    { "base": "trousers", "covers": ["ThighL", "ThighR"], "ground": "GroundTrousersT3", "tier": 3, "wear": { "default": "WearTrousersT3" } },
+    { "base": "trousers", "covers": ["ThighL", "ThighR"], "ground": "GroundTrousersT4", "tier": 4, "wear": { "default": "WearTrousersT4" } },
+    { "base": "trousers", "covers": ["ThighL", "ThighR"], "ground": "GroundTrousersT5", "tier": 5, "wear": { "default": "WearTrousersT5" } },
+    { "base": "boots", "covers": ["BootL", "BootR"], "ground": "GroundBoots", "tier": 1, "wear": { "default": "WearBootsT1" } },
+    { "base": "boots", "covers": ["BootL", "BootR"], "ground": "GroundBootsT2", "tier": 2, "wear": { "default": "WearBootsT2" } },
+    { "base": "boots", "covers": ["BootL", "BootR"], "ground": "GroundBootsT3", "tier": 3, "wear": { "default": "WearBootsT3" } },
+    { "base": "boots", "covers": ["BootL", "BootR"], "ground": "GroundBootsT4", "tier": 4, "wear": { "default": "WearBootsT4" } },
+    { "base": "boots", "covers": ["BootL", "BootR"], "ground": "GroundBootsT5", "tier": 5, "wear": { "default": "WearBootsT5" } },
+    { "base": "amulet", "covers": [], "ground": "GroundAmulet", "tier": 1, "wear": { "default": "WearAmuletT1" } },
+    { "base": "amulet", "covers": [], "ground": "GroundAmuletT2", "tier": 2, "wear": { "default": "WearAmuletT2" } },
+    { "base": "amulet", "covers": [], "ground": "GroundAmuletT3", "tier": 3, "wear": { "default": "WearAmuletT3" } },
+    { "base": "amulet", "covers": [], "ground": "GroundAmuletT4", "tier": 4, "wear": { "default": "WearAmuletT4" } },
+    { "base": "amulet", "covers": [], "ground": "GroundAmuletT5", "tier": 5, "wear": { "default": "WearAmuletT5" } },
+    { "base": "bracelet", "covers": [], "ground": "GroundBracelet", "tier": 1, "wear": { "wrists": { "bracelet1": "WearBraceletT1Left", "bracelet2": "WearBraceletT1Right" } } },
+    { "base": "bracelet", "covers": [], "ground": "GroundBraceletT2", "tier": 2, "wear": { "wrists": { "bracelet1": "WearBraceletT2Left", "bracelet2": "WearBraceletT2Right" } } },
+    { "base": "bracelet", "covers": [], "ground": "GroundBraceletT3", "tier": 3, "wear": { "wrists": { "bracelet1": "WearBraceletT3Left", "bracelet2": "WearBraceletT3Right" } } },
+    { "base": "bracelet", "covers": [], "ground": "GroundBraceletT4", "tier": 4, "wear": { "wrists": { "bracelet1": "WearBraceletT4Left", "bracelet2": "WearBraceletT4Right" } } },
+    { "base": "bracelet", "covers": [], "ground": "GroundBraceletT5", "tier": 5, "wear": { "wrists": { "bracelet1": "WearBraceletT5Left", "bracelet2": "WearBraceletT5Right" } } }
   ],
   "objectModels": [
     {
@@ -2263,6 +2416,5 @@
         "stem": "NoticeBoard"
       }
     }
-  ],
-  "playerModel": "dreamer"
+  ]
 }

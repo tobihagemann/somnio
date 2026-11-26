@@ -51,6 +51,7 @@ interface Rig {
   session: PredictorSession & {
     connectionState: ConnectionState;
     presentedOverlay: OverlayKind | undefined;
+    loadingCovered: boolean;
   };
   world: ClientWorld;
   interpolation: RemoteInterpolation;
@@ -89,6 +90,7 @@ function makeRig(options: { sector?: Partial<SectorView>; entities?: ClientEntit
   const session: Rig['session'] = {
     connectionState: 'attached',
     presentedOverlay: undefined,
+    loadingCovered: false,
     entities,
     selfId: 'self',
     world,
@@ -1062,6 +1064,7 @@ describe('the input gate', () => {
   it.each<[string, (rig: Rig) => void]>([
     ['an overlay is presented', (rig) => (rig.session.presentedOverlay = { kind: 'gameMenu' })],
     ['the connection is not attached', (rig) => (rig.session.connectionState = 'awaitingEnterSpace')],
+    ['the loading cover is up', (rig) => (rig.session.loadingCovered = true)],
   ])('ends the walk when %s', (_label, close) => {
     const rig = makeRig();
     rig.predictor.walkTo(along(UP_SCREEN, 5));
@@ -1072,6 +1075,7 @@ describe('the input gate', () => {
     rig.predictor.runTick(300);
     rig.session.presentedOverlay = undefined;
     rig.session.connectionState = 'attached';
+    rig.session.loadingCovered = false;
     rig.predictor.runTick(400);
 
     expect(rig.predictor.walk).toBeUndefined();

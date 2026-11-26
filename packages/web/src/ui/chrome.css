@@ -631,6 +631,35 @@ button {
   background: #05060a;
 }
 
+/* Over the world and the HUD while the player's own body is dressed on entering a space, under the
+   overlays (`loadingCover.ts`). It holds the keyboard but is no control, so it draws no focus ring. */
+.loading-cover:focus {
+  outline: none;
+}
+
+.loading-cover__card {
+  width: min(320px, calc(100vw - 48px));
+  text-align: center;
+  animation: loading-cover-card-in 200ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.loading-cover__card .form-actions {
+  justify-content: center;
+}
+
+@keyframes loading-cover-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading-cover__card {
+    animation: none;
+  }
+}
+
 /* A finger's controls are at least 44px. A field's text is 16px, because under that iOS zooms the page
    into the field a tap focuses and leaves it there. The HUD's own layout for a finger is in `hud.css`. */
 @media (pointer: coarse) {

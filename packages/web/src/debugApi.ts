@@ -1,8 +1,8 @@
 import { renderChatLine } from '@/i18n';
 import { catalogTables, currentLocale } from '@/i18n';
 import { inventoryMessage, questsMessage } from '@somnio/core';
-import type { AbilityId, EffectId, EliteTraitId, EngageAction, Point, QuestMarker } from '@somnio/core';
-import type { Energy, Held, InventoryMessage, LootContentsMessage, LucidityMessage, NightmareRank, QuestsMessage, TelegraphKind } from '@somnio/protocol';
+import type { AbilityId, EffectId, EliteTraitId, EngageAction, People, Point, QuestMarker } from '@somnio/core';
+import type { Energy, InventoryMessage, LootContentsMessage, LucidityMessage, NightmareRank, Outfit, QuestsMessage, TelegraphKind } from '@somnio/protocol';
 import type { AppShell } from '@/ui/appShell';
 import type { FrameStatsSummary } from '@/ui/frameStats';
 
@@ -33,10 +33,22 @@ export interface SomnioDebugAPI {
   /** The sector the predicted position stands in. */
   sectorName(): string | undefined;
   /**
-   * `held` is what a dreamer's hands hold, as base ids; absent for anything but a dreamer. `rank`
-   * is an elite's or a boss's, and `trait` an elite's; absent for any other entity.
+   * `people` is a dreamer's people, and `outfit` what they wear and hold, each piece by slot, base
+   * id, and tier; both absent for anything but a dreamer. `rank` is an elite's or a boss's, and
+   * `trait` an elite's; absent for any other entity.
    */
-  entities(): { id: string; kind: string; name: string; x: number; z: number; condition: string; held?: Held; rank?: NightmareRank; trait?: EliteTraitId }[];
+  entities(): {
+    id: string;
+    kind: string;
+    name: string;
+    x: number;
+    z: number;
+    condition: string;
+    people?: People;
+    outfit?: Outfit;
+    rank?: NightmareRank;
+    trait?: EliteTraitId;
+  }[];
   /** The player's own pools, as last sent. */
   energy(): Energy;
   lucidity(): LucidityMessage;
@@ -103,7 +115,7 @@ export interface SomnioDebugAPI {
   telegraphs(): { id: string; kind: TelegraphKind; casterId: string; x: number; z: number; radius: number; seconds: number }[];
   /**
    * The drops lying on the ground for the player, as the server last said, each with what it is (an
-   * item's base and rarity, or a trophy's kind), whether it is an item a dreamer dropped for anyone
+   * item's base, tier, and rarity, or a trophy's kind), whether it is an item a dreamer dropped for anyone
    * (`shared`), and where on the page its name and its model are drawn, in CSS pixels, so a press
    * can be aimed at either; `undefined` for one not drawn, and `model` for one drawn without its
    * model.
@@ -177,7 +189,8 @@ export function makeDebugAPI(shell: AppShell): SomnioDebugAPI {
         x: entity.position.x,
         z: entity.position.z,
         condition: entity.condition,
-        ...(entity.held === undefined ? {} : { held: { ...entity.held } }),
+        ...(entity.people === undefined ? {} : { people: entity.people }),
+        ...(entity.outfit === undefined ? {} : { outfit: entity.outfit.map((piece) => ({ ...piece })) }),
         ...(entity.rank === undefined ? {} : { rank: entity.rank }),
         ...(entity.trait === undefined ? {} : { trait: entity.trait }),
       })),

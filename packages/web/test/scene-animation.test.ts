@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { ABILITIES, bundledModelRegistry, modelForCharacter } from '@somnio/core';
+import { ABILITIES, PEOPLES, bundledModelRegistry, modelForCharacter, peopleBody } from '@somnio/core';
 import type { AbilityId } from '@somnio/core';
 import { GAITS } from '@somnio/protocol';
 import { CLIP_PREFERENCES, ONE_SHOT_CLIPS, movementPose, resolveClipName, resolveOneShotClipName } from '@/scene/animation';
@@ -90,10 +90,12 @@ describe('one-shot clips', () => {
     expect(resolveOneShotClipName(oneShot, GHOST)).toBe(ghost);
   });
 
-  it.each(Object.keys(ABILITIES) as AbilityId[])('resolves %s on the player model, as the registry expects of it', (abilityId) => {
+  it.each(Object.keys(ABILITIES) as AbilityId[])("resolves %s on every people's body, as the registry expects of it", (abilityId) => {
     const registry = bundledModelRegistry();
-    const clips = modelForCharacter(registry, registry.playerModel)?.expectedClips ?? [];
-    expect(resolveOneShotClipName(abilityId, clips)).toBeDefined();
+    for (const people of PEOPLES) {
+      const clips = modelForCharacter(registry, peopleBody(registry, people) ?? '')?.expectedClips ?? [];
+      expect(resolveOneShotClipName(abilityId, clips), people).toBeDefined();
+    }
   });
 
   it.each(['wail', 'summon'] as const)("resolves the Necromancer's %s, as the registry expects of it", (oneShot) => {

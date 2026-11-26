@@ -10,7 +10,7 @@ import type { BaseItemId, Item, ItemInstance } from './items.ts';
  * he pays for it. The share is tuned in play, as `COMBAT`'s numbers are.
  */
 export const SHOP = {
-  wares: ['dagger', 'cudgel', 'sword', 'mace', 'buckler', 'shield', 'wand', 'cap', 'tunic', 'gloves', 'trousers', 'boots', 'amulet', 'ring'],
+  wares: ['dagger', 'cudgel', 'sword', 'mace', 'buckler', 'shield', 'wand', 'cap', 'shoulders', 'tunic', 'gloves', 'trousers', 'boots', 'amulet', 'bracelet'],
   saleShare: 0.5,
 } as const satisfies { wares: readonly BaseItemId[]; saleShare: number };
 export type Ware = (typeof SHOP.wares)[number];

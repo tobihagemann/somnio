@@ -67,7 +67,7 @@ const SERVER_TO_CLIENT_TAGS = [
   'questShareAnswer',
   'bountiesRanOut',
   'condition',
-  'held',
+  'outfit',
   'vitals',
   'effects',
   'blow',

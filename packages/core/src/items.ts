@@ -1,5 +1,5 @@
 import { EQUIP_SLOTS, RARITIES } from '@somnio/protocol';
-import type { EquipSlot, Rarity } from '@somnio/protocol';
+import type { EquipSlot, Hand, Rarity } from '@somnio/protocol';
 import type { AffixId } from './affixes.ts';
 
 export type { EquipSlot, Rarity };
@@ -13,10 +13,11 @@ export function isRarity(value: string): value is Rarity {
 }
 
 /** How far from Edaria an item comes from, the bestiary's rings: a further ring rolls higher. */
-export type Tier = 1 | 2 | 3 | 4 | 5;
+export const TIERS = [1, 2, 3, 4, 5] as const;
+export type Tier = (typeof TIERS)[number];
 
 export function isTier(value: number): value is Tier {
-  return Number.isInteger(value) && value >= 1 && value <= 5;
+  return (TIERS as readonly number[]).includes(value);
 }
 
 /**
@@ -63,12 +64,25 @@ export interface Weapon {
   balanceCost: number;
 }
 
-/** The kind of slot a base fits: a slot of its own, or `ring`, which fits either ring slot. */
-export type SlotKind = Exclude<EquipSlot, 'ring1' | 'ring2'> | 'ring';
+/** The two slots a bracelet is worn in. */
+export const BRACELET_SLOTS = ['bracelet1', 'bracelet2'] as const satisfies readonly EquipSlot[];
+export type BraceletSlot = (typeof BRACELET_SLOTS)[number];
 
-interface BaseItem {
-  labelKey: string;
-  slot: SlotKind;
+export function isBraceletSlot(slot: EquipSlot): slot is BraceletSlot {
+  return (BRACELET_SLOTS as readonly EquipSlot[]).includes(slot);
+}
+
+/** The kind of slot a base fits: a slot of its own, or `bracelet`, which fits either bracelet slot. */
+export type SlotKind = Exclude<EquipSlot, BraceletSlot> | 'bracelet';
+
+/**
+ * Where the base is worn and how the catalog names it: a held item by one name whatever its tier, and
+ * armour and jewellery, worn anywhere but in a hand, after their design at each tier.
+ */
+type BaseItemName =
+  { slot: Hand; labelKey: string; tierLabelKeys?: never } | { slot: Exclude<SlotKind, Hand>; tierLabelKeys: Readonly<Record<Tier, string>>; labelKey?: never };
+
+type BaseItem = BaseItemName & {
   tier: Tier;
   /** The coins an item of the base is worth before its rolls. The Moonstone, never sold, is worth nothing. */
   value: number;
@@ -80,11 +94,11 @@ interface BaseItem {
   focus?: true;
   /** It comes only from the Healer's trial: it is never rolled, dropped, bought, or sold. */
   trialOnly?: true;
-}
+};
 
 /**
- * The kinds of item there are, by id, each with the catalog key of its display name. An id is
- * saved with every item, so it is kebab-case like a teaching id.
+ * The kinds of item there are, by id, each with the catalog keys it is named by. An id is saved
+ * with every item, so it is kebab-case like a teaching id.
  */
 export const BASE_ITEMS = {
   dagger: { labelKey: 'Dagger', slot: 'mainHand', tier: 1, value: 60, weapon: { damage: 6, balanceCost: 10 } },
@@ -102,13 +116,62 @@ export const BASE_ITEMS = {
   'iron-buckler': { labelKey: 'Iron buckler', slot: 'offHand', tier: 3, value: 100, implicit: { guard: 5 } },
   'skull-shield': { labelKey: 'Skull shield', slot: 'offHand', tier: 3, value: 225, implicit: { guard: 9 } },
   'skull-staff': { labelKey: 'Skull staff', slot: 'offHand', tier: 3, value: 200, focus: true, implicit: { spiritMax: 10 } },
-  cap: { labelKey: 'Leather cap', slot: 'head', tier: 1, value: 25, implicit: { spiritRecovery: 5 } },
-  tunic: { labelKey: 'Padded tunic', slot: 'chest', tier: 1, value: 50, implicit: { guard: 3 } },
-  gloves: { labelKey: 'Leather gloves', slot: 'hands', tier: 1, value: 25, implicit: { swingSpeed: 4 } },
-  trousers: { labelKey: 'Leather trousers', slot: 'legs', tier: 1, value: 40, implicit: { healthMax: 6 } },
-  boots: { labelKey: 'Leather boots', slot: 'feet', tier: 1, value: 25, implicit: { balanceMax: 5 } },
-  amulet: { labelKey: 'Amulet', slot: 'neck', tier: 1, value: 70, implicit: { spiritMax: 5 } },
-  ring: { labelKey: 'Iron ring', slot: 'ring', tier: 1, value: 50, implicit: { damage: 1 } },
+  cap: {
+    tierLabelKeys: { 1: 'Courier straw hat', 2: "Forester's feather band", 3: 'Tarred reed brim', 4: "Trapper's hide band", 5: 'Oiled storm brim' },
+    slot: 'head',
+    tier: 1,
+    value: 25,
+    implicit: { spiritRecovery: 5 },
+  },
+  shoulders: {
+    tierLabelKeys: { 1: 'Courier shoulders', 2: 'Leaf shoulder', 3: 'Ferry guards', 4: 'Pelt guards', 5: "Navigator's epaulettes" },
+    slot: 'shoulders',
+    tier: 1,
+    value: 40,
+    implicit: { balanceRecovery: 10 },
+  },
+  tunic: {
+    tierLabelKeys: { 1: 'Courier tunic', 2: 'Trail cape', 3: "Ferryman's raincoat", 4: "Trapper's baldric", 5: 'Shore coat' },
+    slot: 'chest',
+    tier: 1,
+    value: 50,
+    implicit: { guard: 3 },
+  },
+  gloves: {
+    tierLabelKeys: { 1: 'Dispatch gloves', 2: 'Bark-grip gloves', 3: 'Reedwork gloves', 4: 'Hide mitts', 5: "Sailmaker's gloves" },
+    slot: 'hands',
+    tier: 1,
+    value: 25,
+    implicit: { swingSpeed: 4 },
+  },
+  trousers: {
+    tierLabelKeys: { 1: 'Field trousers', 2: 'Brush trousers', 3: 'Wader trousers', 4: 'Trail leathers', 5: 'Storm trousers' },
+    slot: 'legs',
+    tier: 1,
+    value: 40,
+    implicit: { healthMax: 6 },
+  },
+  boots: {
+    tierLabelKeys: { 1: 'Trail boots', 2: 'Leaf gaiters', 3: 'Fen boots', 4: 'Climbing boots', 5: 'Deck boots' },
+    slot: 'feet',
+    tier: 1,
+    value: 25,
+    implicit: { balanceMax: 5 },
+  },
+  amulet: {
+    tierLabelKeys: { 1: 'Wheat-ear pendant', 2: 'Beech leaf', 3: 'Lantern cage', 4: 'Bear claw', 5: 'Compass rose' },
+    slot: 'neck',
+    tier: 1,
+    value: 70,
+    implicit: { spiritMax: 5 },
+  },
+  bracelet: {
+    tierLabelKeys: { 1: 'Dispatch wristband', 2: 'Maple twig', 3: 'Reed knot', 4: 'Antler tine', 5: 'Sounding weight' },
+    slot: 'bracelet',
+    tier: 1,
+    value: 50,
+    implicit: { damage: 1 },
+  },
 } as const satisfies Record<string, BaseItem>;
 export type BaseItemId = keyof typeof BASE_ITEMS;
 
@@ -120,12 +183,17 @@ export function baseItem(baseId: BaseItemId): BaseItem {
   return BASE_ITEMS[baseId];
 }
 
-const RING_SLOTS = ['ring1', 'ring2'] as const satisfies readonly EquipSlot[];
+/** Armour and jewellery: the bases worn anywhere but in a hand, each named after its design at each tier. */
+export type WardrobeBaseId = { [Id in BaseItemId]: (typeof BASE_ITEMS)[Id] extends { tierLabelKeys: object } ? Id : never }[BaseItemId];
 
-/** The slots an item of the base is worn in, in the order one is taken: a ring's two, any other base's one. */
+export function isWardrobeBase(baseId: BaseItemId): baseId is WardrobeBaseId {
+  return baseItem(baseId).tierLabelKeys !== undefined;
+}
+
+/** The slots an item of the base is worn in, in the order one is taken: a bracelet's two, any other base's one. */
 export function slotsFor(baseId: BaseItemId): readonly EquipSlot[] {
   const kind = baseItem(baseId).slot;
-  return kind === 'ring' ? RING_SLOTS : [kind];
+  return kind === 'bracelet' ? BRACELET_SLOTS : [kind];
 }
 
 /** One stat line an item rolled, and how much it adds. */
@@ -187,9 +255,16 @@ export function equipSlot(equipment: Equipment, baseId: BaseItemId): EquipSlot {
 export type Hands = Pick<Equipment, 'mainHand' | 'offHand'>;
 
 /**
- * The catalog key of an item's display name, which the consumer resolves in its locale. An unknown
- * id resolves to `undefined` so a missing entry surfaces rather than rendering a wrong label.
+ * The catalog key of the display name of an item of the base at the tier it rolled at, which the
+ * consumer resolves in its locale: the base's own name, or the design armour and jewellery are made
+ * in at that tier. An unknown id, or a tier outside 1 to 5 for armour and jewellery, resolves to
+ * `undefined` so a missing entry surfaces rather than rendering a wrong label.
  */
-export function itemLabelKey(baseId: string): string | undefined {
-  return isBaseItemId(baseId) ? baseItem(baseId).labelKey : undefined;
+export function itemLabelKey(baseId: BaseItemId, tier: Tier): string;
+export function itemLabelKey(baseId: string, tier: number): string | undefined;
+export function itemLabelKey(baseId: string, tier: number): string | undefined {
+  if (!isBaseItemId(baseId)) return undefined;
+  const base = baseItem(baseId);
+  if (base.tierLabelKeys === undefined) return base.labelKey;
+  return isTier(tier) ? base.tierLabelKeys[tier] : undefined;
 }

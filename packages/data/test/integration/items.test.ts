@@ -42,7 +42,7 @@ describe('item repository', () => {
     await harness.stop();
   });
 
-  it('saves and reloads the coins, the items worn in their slots with their affixes, a ring on each ring slot, and the bag at its places', async () => {
+  it('saves and reloads the coins, the items worn in their slots with their affixes, shoulders among them, a bracelet on each bracelet slot, and the bag at its places', async () => {
     const character = await newCharacter();
     const [first, second, third] = [newItemId(), newItemId(), newItemId()].sort();
     const dagger: ItemInstance = { ...plainInstance('dagger'), id: first! };
@@ -58,11 +58,12 @@ describe('item repository', () => {
       ],
     };
     const amulet: ItemInstance = { ...plainInstance('amulet'), rarity: 'magic', affixes: [{ affixId: 'spirit', value: 4 }] };
-    const ring = plainInstance('ring');
-    const secondRing: ItemInstance = { ...plainInstance('ring'), rarity: 'magic', affixes: [{ affixId: 'mend-depth', value: 2 }] };
+    const bracelet = plainInstance('bracelet');
+    const secondBracelet: ItemInstance = { ...plainInstance('bracelet'), rarity: 'magic', affixes: [{ affixId: 'mend-depth', value: 2 }] };
+    const shoulders: ItemInstance = { ...plainInstance('shoulders'), tier: 3, rarity: 'magic', affixes: [{ affixId: 'guard', value: 5 }] };
     const inventory: Inventory = {
       coins: 137,
-      equipped: { mainHand: sword, neck: amulet, head: cap, ring1: ring, ring2: secondRing },
+      equipped: { mainHand: sword, neck: amulet, head: cap, shoulders, bracelet1: bracelet, bracelet2: secondBracelet },
       bag: [
         { place: 3, item: tunic },
         { place: 17, item: dagger },
@@ -141,7 +142,7 @@ describe('item repository', () => {
     ['an affix', sql`UPDATE items SET affixes = '[{"affixId": "luck", "value": 3}]'`],
     ['a value that is no whole number', sql`UPDATE items SET affixes = '[{"affixId": "damage", "value": 1.5}]'`],
     ['an item worn in a slot its base does not fit', sql`UPDATE items SET equipped_slot = 'offHand'`],
-    ['a ring worn round the neck', sql`UPDATE items SET base_id = 'ring', equipped_slot = 'neck'`],
+    ['a bracelet worn round the neck', sql`UPDATE items SET base_id = 'bracelet', equipped_slot = 'neck'`],
   ])('throws on %s it does not know', async (_label, corrupt) => {
     const character = await newCharacter({ coins: 0, equipped: { mainHand: plainInstance('cudgel') }, bag: [] });
     await sql`${corrupt} WHERE character_id = ${character.id}`.execute(harness.db);

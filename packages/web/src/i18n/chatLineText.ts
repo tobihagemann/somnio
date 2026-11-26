@@ -55,11 +55,11 @@ export function renderChatLine(line: ChatLine, tables: CatalogTables, locale: Ca
     case 'coinsGained':
       return lookup('You receive %@c.', String(line.coins));
     case 'bought':
-      return lookup('%1$@ bought for %2$@c.', itemName(line.baseId, lookup), String(line.coins));
+      return lookup('%1$@ bought for %2$@c.', itemName(line.baseId, line.tier, lookup), String(line.coins));
     case 'sold':
-      return lookup('%1$@ sold for %2$@c.', itemName(line.baseId, lookup), String(line.coins));
+      return lookup('%1$@ sold for %2$@c.', itemName(line.baseId, line.tier, lookup), String(line.coins));
     case 'boughtBack':
-      return lookup('%1$@ bought back for %2$@c.', itemName(line.baseId, lookup), String(line.coins));
+      return lookup('%1$@ bought back for %2$@c.', itemName(line.baseId, line.tier, lookup), String(line.coins));
     case 'dropped':
       return lookup('%@ dropped.', lootName(line.contents, lookup));
     case 'pickedUp':
@@ -185,8 +185,8 @@ function renderSpoken(line: SpokenLine, lookup: Lookup): string {
  * An item's display name in the lookup's locale. An id the item table does not know renders raw, so
  * an operator seeing it in a screenshot can tell which item is missing from the table.
  */
-export function itemName(baseId: string, lookup: Lookup): string {
-  const key = itemLabelKey(baseId);
+export function itemName(baseId: string, tier: number, lookup: Lookup): string {
+  const key = itemLabelKey(baseId, tier);
   return key === undefined ? baseId : lookup(key);
 }
 
@@ -194,7 +194,7 @@ export function itemName(baseId: string, lookup: Lookup): string {
 function lootName(contents: LootContentsMessage, lookup: Lookup): string {
   switch (contents.kind) {
     case 'item':
-      return itemName(contents.baseId, lookup);
+      return itemName(contents.baseId, contents.tier, lookup);
     case 'trophy': {
       const key = trophyLabelKey(contents.monsterKind);
       return key === undefined ? contents.monsterKind : lookup(key);

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { parseModelRegistry, resolveDoor } from '@somnio/core';
+import { PEOPLES, parseModelRegistry, resolveDoor } from '@somnio/core';
 import type { ModelRegistry, Sector, WorldIssue } from '@somnio/core';
 import { AuthoringOverlay, overlayLabels } from '@/editor/authoringOverlay';
 import type { AuthoringOverlayInput } from '@/editor/authoringOverlay';
@@ -44,7 +44,7 @@ function centerOf(mesh: THREE.Mesh, overlay: AuthoringOverlay): THREE.Vector3 {
 function registryWith(objectModel: object): ModelRegistry {
   return parseModelRegistry({
     characterModels: [{ id: 'hero', model: { stem: 'Hero', expectedClips: ['Idle'] } }],
-    playerModel: 'hero',
+    peoples: PEOPLES.map((people) => ({ people, model: 'hero', scale: [1, 1, 1] })),
     objectModels: [objectModel],
   });
 }

@@ -1,13 +1,13 @@
-import type { AbilityId, EffectId, People } from '@somnio/core';
+import type { AbilityId, EffectId } from '@somnio/core';
 import { element } from './dom';
 
 /**
  * The HUD's glyphs, white silhouettes in the weight of Kenney's CC0 icons. Most are those icons, in
  * the asset pack's `UI/`, where `Scripts/bundle-web-assets.sh` names each one. Where Kenney has
- * nothing that fits (the chat, the Moonstone, Cleave, Radiance, Dream-bolt, a fallen dreamer, the
- * elites' traits, and the peoples' sigils) one is drawn here on a 24-unit grid instead. Each is a
- * CSS mask (`.hud-glyph` in `hud.css`), so it takes the ink of the control it sits on. Items are
- * drawn as pictures, not glyphs (`itemIcons.ts`).
+ * nothing that fits (the chat, the Moonstone, Cleave, Radiance, Dream-bolt, a fallen dreamer, and
+ * the elites' traits) one is drawn here on a 24-unit grid instead. Each is a CSS mask (`.hud-glyph`
+ * in `hud.css`), so it takes the ink of the control it sits on. Items are drawn as pictures, not
+ * glyphs (`itemIcons.ts`).
  */
 export interface HUDGlyph {
   /** The mask image, a CSS `url()`. */
@@ -121,19 +121,6 @@ export const EFFECT_GLYPHS: Record<EffectId, HUDGlyph> = {
   veiled: HUD_ICONS.veil,
   stony: HUD_ICONS.stony,
   shielded: HUD_ICONS.shielded,
-};
-
-/** Each people's sigil on the player's own frame: the Waking's open eye, the Deep's closed one, the Shadow's crescent, and the Light's sun. */
-export const PEOPLE_SIGILS: Record<People, HUDGlyph> = {
-  vigils: drawn(
-    '<path d="M1.5 12C4.6 6.9 8.1 4.5 12 4.5s7.4 2.4 10.5 7.5c-3.1 5.1-6.6 7.5-10.5 7.5S4.6 17.1 1.5 12zM16.6 12a4.6 4.6 0 1 1-9.2 0 4.6 4.6 0 1 1 9.2 0zM14.2 12a2.2 2.2 0 1 1-4.4 0 2.2 2.2 0 1 1 4.4 0z"/>',
-  ),
-  sopors: drawn(line('M2.5 8.5C6 13.5 9 15 12 15s6-1.5 9.5-6.5', 3.2) + line('M5.6 13 4 15.8M9.3 15.2 8.6 18.4M14.7 15.2l.7 3.2M18.4 13l1.6 2.8', 2.6)),
-  umbrae: drawn('<path d="M20.5 15.2A9 9 0 1 1 8.8 3.5a10 10 0 0 0 11.7 11.7z"/>'),
-  lumina: drawn(
-    '<path d="M16.8 12a4.8 4.8 0 1 1-9.6 0 4.8 4.8 0 1 1 9.6 0z"/>' +
-      line('M19.6 12H22M17.37 17.37l1.7 1.7M12 19.6V22M6.63 17.37l-1.7 1.7M4.4 12H2M6.63 6.63l-1.7-1.7M12 4.4V2M17.37 6.63l1.7-1.7', 2.6),
-  ),
 };
 
 /** A glyph as an element, decorative by construction: the accessible name lives on the control. */

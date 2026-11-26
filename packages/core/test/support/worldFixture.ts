@@ -1,4 +1,5 @@
 import { parseModelRegistry } from '../../src/modelRegistry.ts';
+import { PEOPLES } from '../../src/people.ts';
 import type { Sector } from '../../src/sector.ts';
 
 /** A sector with no content; every test names only what it is about. */
@@ -49,7 +50,7 @@ export const TEST_REGISTRY = parseModelRegistry({
     { id: 'hero', model: { stem: 'Hero', expectedClips: ['Idle'] } },
     { id: 'ghost', model: { stem: 'Ghost', expectedClips: ['Flying_Idle'] } },
   ],
-  playerModel: 'hero',
+  peoples: PEOPLES.map((people) => ({ people, model: 'hero', scale: [1, 1, 1] })),
   objectModels: [
     { id: 'box', model: prop('Box'), footprint: { width: 2, depth: 1 } },
     { id: 'rug', model: prop('Rug'), footprint: { width: 2, depth: 1 }, colliders: [] },

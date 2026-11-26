@@ -39,6 +39,7 @@ import { raiseShownAt } from '@/client/renderSurface';
 import type { AbilityShown, RaiseProgress } from '@/client/renderSurface';
 import type { OneShot } from './animation';
 import { offsetDirection } from './cameraRig';
+import { BAKED_OUTFIT } from './wardrobe';
 
 /**
  * When the weapon lands, or the gesture peaks, as a share of each clip: measured off the clips' hand
@@ -355,9 +356,11 @@ interface Jolt {
   lift: { start: number; metres: number } | undefined;
 }
 
-/** The flash and the outline drawn over a body's meshes, built for the model it carries. */
+/** The flash and the outline drawn over a body's meshes, built for the model it carries and the outfit it is dressed in. */
 interface Hulls {
   model: THREE.Object3D;
+  /** The mesh the body is dressed as, which they are built over alone; `undefined` for a body not dressed. */
+  bake: THREE.Object3D | undefined;
   flash: THREE.Mesh[];
   flashMaterial: THREE.MeshBasicMaterial;
   outline: THREE.Mesh[];
@@ -2451,22 +2454,28 @@ export class CombatEffects {
 
   /**
    * The flash and the outline over the body's meshes, built the first time either is needed and
-   * again when the body carries another model. They draw the model's own geometry, on its skeleton,
-   * from the effects' root: a mesh there is on no portrait's layer.
+   * again when the body carries another model or is dressed again. They draw the model's own
+   * geometry, or a dressed body's baked outfit alone, on its skeleton, from the effects' root: a mesh
+   * there is on no portrait's layer.
    */
   private hullsFor(entityId: string, body: EffectBody): Hulls | undefined {
     const model = body.modelHolder.children[0];
     if (model === undefined) return undefined;
+    const bake = model.getObjectByName(BAKED_OUTFIT);
     const built = this.hulls.get(entityId);
-    if (built?.model === model) return built;
+    if (built?.model === model && built.bake === bake) return built;
     this.dropHulls(entityId);
     const sources: THREE.Mesh[] = [];
-    model.traverse((object) => {
-      if ((object as THREE.Mesh).isMesh && object.userData[HELD_PROP] !== true) sources.push(object as THREE.Mesh);
-    });
+    if (bake !== undefined) sources.push(bake as THREE.Mesh);
+    else {
+      model.traverse((object) => {
+        if ((object as THREE.Mesh).isMesh && object.userData[HELD_PROP] !== true) sources.push(object as THREE.Mesh);
+      });
+    }
     const { flashMaterial, outlineMaterial, thickness } = this.spareHullMaterials.pop() ?? { flashMaterial: flashMaterialFor(), ...outlineFor() };
     const hulls: Hulls = {
       model,
+      bake,
       flash: sources.map((source) => this.hull(source, flashMaterial, 6)),
       flashMaterial,
       outline: sources.map((source) => this.hull(source, outlineMaterial, 3)),

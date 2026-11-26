@@ -85,10 +85,10 @@ const cases: { label: string; message: SomnioMessage; state: ConnectionState['ki
   { label: 'pre-login lucidity', message: { tag: 'lucidity', payload: { ranks: [] } }, state: 'awaitingLogin' },
   { label: 'post-attach lucidity', message: { tag: 'lucidity', payload: { ranks: [] } }, state: 'attached' },
   { label: 'post-attach condition', message: { tag: 'condition', payload: { entityId: 'peer', condition: 'fallen' } }, state: 'attached' },
-  { label: 'post-attach held', message: { tag: 'held', payload: { entityId: 'peer', held: {} } }, state: 'attached' },
+  { label: 'post-attach outfit', message: { tag: 'outfit', payload: { entityId: 'peer', outfit: [] } }, state: 'attached' },
   {
     label: 'post-attach loot',
-    message: { tag: 'loot', payload: { lootId: 'loot-1', x: 10, z: 12, contents: { kind: 'item', baseId: 'dagger', rarity: 'plain' } } },
+    message: { tag: 'loot', payload: { lootId: 'loot-1', x: 10, z: 12, contents: { kind: 'item', baseId: 'dagger', tier: 1, rarity: 'plain' } } },
     state: 'attached',
   },
   { label: 'post-attach lootGone', message: { tag: 'lootGone', payload: { lootId: 'loot-1' } }, state: 'attached' },
@@ -474,7 +474,7 @@ describe('the frame budgets of an attached account', () => {
       Array.from({ length: 30 }, (_, frame) => [wear, shuffle, putAway][frame % 3]!),
     );
     // Of the 20 admitted, every third shuffles the bag, which no viewer is shown.
-    expect(payloads(viewer.sent, 'held')).toHaveLength(14);
+    expect(payloads(viewer.sent, 'outfit')).toHaveLength(14);
   });
 
   it('spends one budget across the bag and the ground, so past it no throw or pick-up reaches a viewer', async () => {

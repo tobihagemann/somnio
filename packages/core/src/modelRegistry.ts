@@ -1,18 +1,21 @@
 import registryJSON from '../data/ModelRegistry.json' with { type: 'json' };
 import { rectsOverlap } from './geometry.ts';
 import type { Rect, Size } from './geometry.ts';
-import { isBaseItemId } from './items.ts';
-import type { BaseItemId } from './items.ts';
+import { BASE_ITEMS, TIERS, isBaseItemId, isBraceletSlot, isTier, isWardrobeBase, slotsFor } from './items.ts';
+import type { BaseItemId, BraceletSlot, EquipSlot, Tier } from './items.ts';
 import { isMonsterKindId } from './monsterKinds.ts';
 import type { MonsterKindId } from './monsterKinds.ts';
+import { PEOPLES, isPeople } from './people.ts';
+import type { People } from './people.ts';
 
 /**
  * The model registry: character model ids to character model stems (each with its clip-presence
- * contract), the items a dreamer holds to the stems drawn in their hands, the items that can drop
- * and the trophies nightmares leave to the stems drawn lying on the ground, and semantic object ids
- * to prop stems with their collision geometry. It references only filename stems, so one file
- * describes the pack for the browser, the editor, the server's collision, and the asset pipeline's
- * gates.
+ * contract), each people to the body its dreamers are drawn in, the items a dreamer holds to the
+ * stems drawn in their hands, the items that can drop and the trophies nightmares leave to the stems
+ * drawn lying on the ground, armour and jewellery by tier to the stems they lie and are worn as, and
+ * semantic object ids to prop stems with their collision geometry. It references only filename
+ * stems, so one file describes the pack for the browser, the editor, the server's collision, and
+ * the asset pipeline's gates.
  *
  * Object geometry is in model space: metres, the model's origin at its ground-footprint centre,
  * +X east and +Z south at yaw 0.
@@ -80,35 +83,69 @@ export interface TrophyModelRule {
   stem: string;
 }
 
+/** The regions of a dreamer's body, each a mesh of the body a worn piece hides while it covers it. */
+export const BODY_REGIONS = ['BootL', 'BootR', 'Crown', 'Face', 'HandL', 'HandR', 'SleeveL', 'SleeveR', 'ThighL', 'ThighR', 'Torso'] as const;
+export type BodyRegion = (typeof BODY_REGIONS)[number];
+
+/** The body a people's dreamers are drawn in: a character model, at a scale per axis. */
+export interface PeopleRule {
+  people: People;
+  model: string;
+  scale: readonly [number, number, number];
+}
+
+/** The stems a piece is worn as: one for each wrist for a bracelet, else one fitted to a people, else one for every people. */
+export interface WornStems {
+  default?: string;
+  peoples?: Partial<Record<People, string>>;
+  wrists?: Readonly<Record<BraceletSlot, string>>;
+}
+
+/** What an armour or jewellery item of `base` rolled at `tier` draws: lying on the ground, and worn. */
+export interface WardrobeRow {
+  base: BaseItemId;
+  tier: Tier;
+  ground: string;
+  /** The body regions the piece hides while it is worn. */
+  covers: BodyRegion[];
+  /** The morph target of the body's hair the piece tucks, on a body that carries it. */
+  hairFit?: string;
+  wear: WornStems;
+}
+
 export interface ModelRegistry {
   characterModels: CharacterModelRule[];
-  /** The character model every player uses. */
-  playerModel: string;
+  /** The body each people's dreamers are drawn in, one per people. */
+  peoples: PeopleRule[];
   /** What a hand holding an item draws: a model in the frame of the hand's `handslot` bone, its grip at the origin, hung there at identity. */
   handModels: ItemModelRule[];
   /** What a drop of an item draws: a model lying on the ground, its ground bounds centred on the origin, at the size a dreamer holds or wears it. */
   groundModels: ItemModelRule[];
   /** What a trophy draws, lying on the ground as a drop of an item does. */
   trophyModels: TrophyModelRule[];
+  /** What armour and jewellery draw, one row per base and tier. Each base's tier-1 ground stem is its `groundModels` stem too. */
+  wardrobe: WardrobeRow[];
   objectModels: ObjectModelRule[];
 }
 
 /** Empty registry: every lookup resolves `undefined`, so the loader renders placeholders. */
 export const PLACEHOLDER_REGISTRY: ModelRegistry = {
   characterModels: [],
-  playerModel: '',
+  peoples: [],
   handModels: [],
   groundModels: [],
   trophyModels: [],
+  wardrobe: [],
   objectModels: [],
 };
 
 /**
  * Validates the structural invariants the JSON shape cannot express: non-empty stems and ids, no
- * duplicate ids, characters expecting at least one clip, a player model that is a character
- * model, hand and ground models of known items, trophy models of known nightmare kinds, positive
- * sizes, cardinal door facings, walk surfaces of one model that do not overlap, and lights of a
- * known kind not below the ground.
+ * duplicate ids, characters expecting at least one clip, one body of a character model for every
+ * people, at a positive scale on every axis, hand and ground models of known items, trophy models of
+ * known nightmare kinds, a wardrobe that is absent, empty, or whole, whose every piece resolves and
+ * whose tier-1 drops are the ground models, positive sizes, cardinal door facings, walk surfaces of
+ * one model that do not overlap, and lights of a known kind not below the ground.
  */
 export function parseModelRegistry(raw: unknown): ModelRegistry {
   const root = requireRecord(raw, 'registry');
@@ -129,14 +166,11 @@ export function parseModelRegistry(raw: unknown): ModelRegistry {
     'registry.characterModels',
   );
 
-  const playerModel = requireNonEmptyString(root['playerModel'], 'registry.playerModel');
-  if (!characterModels.some((rule) => rule.id === playerModel)) {
-    throw new ModelRegistryError(`registry.playerModel: no character model "${playerModel}"`);
-  }
-
+  const peoples = parsePeoples(root['peoples'], characterModels);
   const handModels = parseStemRules(root['handModels'], 'registry.handModels', isBaseItemId, 'item');
   const groundModels = parseStemRules(root['groundModels'], 'registry.groundModels', isBaseItemId, 'item');
   const trophyModels = parseStemRules(root['trophyModels'], 'registry.trophyModels', isMonsterKindId, 'nightmare kind');
+  const wardrobe = parseWardrobe(root['wardrobe'], groundModels);
 
   const objectModels = requireArray(root['objectModels'], 'registry.objectModels').map((element, index) => {
     const path = `registry.objectModels[${index}]`;
@@ -160,7 +194,7 @@ export function parseModelRegistry(raw: unknown): ModelRegistry {
     'registry.objectModels',
   );
 
-  return { characterModels, playerModel, handModels, groundModels, trophyModels, objectModels };
+  return { characterModels, peoples, handModels, groundModels, trophyModels, wardrobe, objectModels };
 }
 
 export function modelForCharacter(registry: ModelRegistry, id: string): ModelEntry | undefined {
@@ -177,6 +211,27 @@ export function groundModelStem(registry: ModelRegistry, baseId: string): string
   return registry.groundModels.find((rule) => rule.id === baseId)?.stem;
 }
 
+/** The character model the dreamers of `people` are drawn in, or `undefined` for a people with no body. */
+export function peopleBody(registry: ModelRegistry, people: string): string | undefined {
+  return registry.peoples.find((rule) => rule.people === people)?.model;
+}
+
+/** The scale per axis the body of `people` is drawn at, or `undefined` for a people with no body. */
+export function peopleScale(registry: ModelRegistry, people: string): readonly [number, number, number] | undefined {
+  return registry.peoples.find((rule) => rule.people === people)?.scale;
+}
+
+/** What an item of `baseId` rolled at `tier` draws, or `undefined` for an item that is no armour or jewellery. */
+export function wardrobeRow(registry: ModelRegistry, baseId: string, tier: number): WardrobeRow | undefined {
+  return registry.wardrobe.find((row) => row.base === baseId && row.tier === tier);
+}
+
+/** The stem the piece is worn as by a dreamer of `people` in `slot`: the wrist's for a bracelet slot, else the people's fit, else the one for every people. */
+export function wornStem(row: WardrobeRow, people: People, slot: EquipSlot): string | undefined {
+  if (isBraceletSlot(slot)) return row.wear.wrists?.[slot];
+  return row.wear.peoples?.[people] ?? row.wear.default;
+}
+
 /** The stem the trophy of `monsterKind` lies on the ground as, or `undefined` for a kind whose trophy has no model. */
 export function trophyModelStem(registry: ModelRegistry, monsterKind: string): string | undefined {
   return registry.trophyModels.find((rule) => rule.id === monsterKind)?.stem;
@@ -190,12 +245,21 @@ export function modelForObjectId(registry: ModelRegistry, id: string): ModelEntr
   return objectModel(registry, id)?.model;
 }
 
-/** Every entry, character models first, then object models, then hand, ground, and trophy models, dropping duplicate stems. A hand, ground, or trophy model expects no clip. */
+/**
+ * Every entry, character models first, then object models, then hand, ground, wardrobe ground, and
+ * trophy models, dropping duplicate stems. A hand, ground, or trophy model expects no clip. A worn
+ * piece is no entry: it loads when a dreamer first wears it.
+ */
 export function allModelEntries(registry: ModelRegistry): ModelEntry[] {
   const entries = [
     ...registry.characterModels.map((rule) => rule.model),
     ...registry.objectModels.map((rule) => rule.model),
-    ...[...registry.handModels, ...registry.groundModels, ...registry.trophyModels].map((rule) => ({ stem: rule.stem, expectedClips: [] })),
+    ...[
+      ...registry.handModels.map((rule) => rule.stem),
+      ...registry.groundModels.map((rule) => rule.stem),
+      ...registry.wardrobe.map((row) => row.ground),
+      ...registry.trophyModels.map((rule) => rule.stem),
+    ].map((stem) => ({ stem, expectedClips: [] })),
   ];
   const seen = new Set<string>();
   const unique: typeof entries = [];
@@ -265,6 +329,112 @@ function parseStemRules<Id extends string>(raw: unknown, path: string, isKnown: 
     path,
   );
   return rules;
+}
+
+function parsePeoples(raw: unknown, characterModels: readonly CharacterModelRule[]): PeopleRule[] {
+  const peoples = requireArray(raw, 'registry.peoples').map((element, index) => {
+    const path = `registry.peoples[${index}]`;
+    const record = requireRecord(element, path);
+    const people = requireNonEmptyString(record['people'], `${path}.people`);
+    if (!isPeople(people)) throw new ModelRegistryError(`${path}.people: no people "${people}"`);
+    const model = requireNonEmptyString(record['model'], `${path}.model`);
+    if (!characterModels.some((rule) => rule.id === model)) throw new ModelRegistryError(`${path}.model: no character model "${model}"`);
+    return { people, model, scale: parseScale(record['scale'], `${path}.scale`) };
+  });
+  requireUniqueIds(
+    peoples.map((rule) => rule.people),
+    'registry.peoples',
+  );
+  const missing = PEOPLES.find((people) => !peoples.some((rule) => rule.people === people));
+  if (missing !== undefined) throw new ModelRegistryError(`registry.peoples: no body for "${missing}"`);
+  return peoples;
+}
+
+function parseScale(raw: unknown, path: string): [number, number, number] {
+  const axes = requireArray(raw, path);
+  if (axes.length !== 3) throw new ModelRegistryError(`${path}: expected three axes`);
+  return [requirePositiveNumber(axes[0], `${path}[0]`), requirePositiveNumber(axes[1], `${path}[1]`), requirePositiveNumber(axes[2], `${path}[2]`)];
+}
+
+const WARDROBE_BASES = (Object.keys(BASE_ITEMS) as BaseItemId[]).filter(isWardrobeBase);
+
+/**
+ * The wardrobe: none when absent or empty, else a row for every armour and jewellery base at every tier,
+ * each piece resolving for every people in every slot its base fits, and each base's tier-1 drop its
+ * ground model, the stem the asset pipeline's gates read it by.
+ */
+function parseWardrobe(raw: unknown, groundModels: readonly ItemModelRule[]): WardrobeRow[] {
+  if (raw === undefined) return [];
+  const rows = requireArray(raw, 'registry.wardrobe').map((element, index) => parseWardrobeRow(element, `registry.wardrobe[${index}]`));
+  if (rows.length === 0) return rows;
+  for (const base of WARDROBE_BASES) {
+    for (const tier of TIERS) {
+      const count = rows.filter((row) => row.base === base && row.tier === tier).length;
+      if (count === 0) throw new ModelRegistryError(`registry.wardrobe: no row for ${base} at tier ${tier}`);
+      if (count > 1) throw new ModelRegistryError(`registry.wardrobe: duplicate row for ${base} at tier ${tier}`);
+    }
+    const ground = rows.find((row) => row.base === base && row.tier === 1)!.ground;
+    const alias = groundModels.find((rule) => rule.id === base)?.stem;
+    if (alias !== ground) throw new ModelRegistryError(`registry.groundModels: ${base} must lie as its tier-1 wardrobe row, "${ground}"`);
+  }
+  return rows;
+}
+
+function parseWardrobeRow(raw: unknown, path: string): WardrobeRow {
+  const record = requireRecord(raw, path);
+  const base = requireNonEmptyString(record['base'], `${path}.base`);
+  if (!isBaseItemId(base) || !isWardrobeBase(base)) throw new ModelRegistryError(`${path}.base: no armour or jewellery "${base}"`);
+  const tier = requireNumber(record['tier'], `${path}.tier`);
+  if (!isTier(tier)) throw new ModelRegistryError(`${path}.tier: expected a tier from 1 to 5`);
+  const covers = requireArray(record['covers'], `${path}.covers`).map((region, index) => {
+    if (!BODY_REGIONS.includes(region as BodyRegion)) throw new ModelRegistryError(`${path}.covers[${index}]: no body region "${String(region)}"`);
+    return region as BodyRegion;
+  });
+  const wear = parseWornStems(record['wear'], `${path}.wear`);
+  const wornPerWrist = wear.wrists !== undefined;
+  if (BASE_ITEMS[base].slot === 'bracelet') {
+    if (!wornPerWrist || wear.default !== undefined || wear.peoples !== undefined) {
+      throw new ModelRegistryError(`${path}.wear: a bracelet is worn as a piece for each wrist alone`);
+    }
+  } else if (wornPerWrist) {
+    throw new ModelRegistryError(`${path}.wear: only a bracelet is worn per wrist`);
+  }
+  const row: WardrobeRow = {
+    base,
+    tier,
+    ground: requireNonEmptyString(record['ground'], `${path}.ground`),
+    covers,
+    ...(record['hairFit'] === undefined ? {} : { hairFit: requireNonEmptyString(record['hairFit'], `${path}.hairFit`) }),
+    wear,
+  };
+  for (const slot of slotsFor(base)) {
+    for (const people of PEOPLES) {
+      if (wornStem(row, people, slot) === undefined) throw new ModelRegistryError(`${path}.wear: no piece for ${people} in ${slot}`);
+    }
+  }
+  return row;
+}
+
+function parseWornStems(raw: unknown, path: string): WornStems {
+  const record = requireRecord(raw, path);
+  const wear: WornStems = {};
+  if (record['default'] !== undefined) wear.default = requireNonEmptyString(record['default'], `${path}.default`);
+  if (record['peoples'] !== undefined) {
+    const fits = requireRecord(record['peoples'], `${path}.peoples`);
+    wear.peoples = {};
+    for (const [people, stem] of Object.entries(fits)) {
+      if (!isPeople(people)) throw new ModelRegistryError(`${path}.peoples: no people "${people}"`);
+      wear.peoples[people] = requireNonEmptyString(stem, `${path}.peoples.${people}`);
+    }
+  }
+  if (record['wrists'] !== undefined) {
+    const wrists = requireRecord(record['wrists'], `${path}.wrists`);
+    wear.wrists = {
+      bracelet1: requireNonEmptyString(wrists['bracelet1'], `${path}.wrists.bracelet1`),
+      bracelet2: requireNonEmptyString(wrists['bracelet2'], `${path}.wrists.bracelet2`),
+    };
+  }
+  return wear;
 }
 
 function parseDoorAnchors(raw: unknown, path: string): DoorAnchor[] {

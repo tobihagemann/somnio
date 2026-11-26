@@ -27,7 +27,7 @@ import { attachPlayer, makeClockedSpace, makeMonsterSpawn, makeSector, makeSecto
 import type { AttachPlayerOptions } from './support/sectorFactory.ts';
 
 /** What every dreamer sharing the Ghost finds where it was driven off, in an arena with drops. */
-const DAGGER_DROP = { kind: 'item', baseId: 'dagger', rarity: 'plain' } as const;
+const DAGGER_DROP = { kind: 'item', baseId: 'dagger', tier: 1, rarity: 'plain' } as const;
 
 /** Caps enough to fill a bag, their ids in the order a dreamer came by them. */
 const FULL_BAG: ItemInstance[] = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxBagItems }, (_, index) => ({
@@ -296,15 +296,15 @@ describe("a drop from a nightmare across the world's spaces", () => {
   });
 });
 
-/** A magic cap whose stat line has to survive the ground. */
+/** A magic tier-3 cap whose tier and stat line have to survive the ground. */
 const MAGIC_CAP: ItemInstance = {
   id: '00000000-0000-7000-8000-000000000009',
   baseId: 'cap',
-  tier: 1,
+  tier: 3,
   rarity: 'magic',
   affixes: [{ affixId: 'guard', value: 2 }],
 };
-const CAP_DROP = { kind: 'item', baseId: 'cap', rarity: 'magic' } as const;
+const CAP_DROP = { kind: 'item', baseId: 'cap', tier: 3, rarity: 'magic' } as const;
 
 /** Where the dreamer in West throws the magic cap from, and where it lands thrown east in the open. */
 const DROPPER_AT = { x: 5, z: 10 };
@@ -411,24 +411,27 @@ describe('an item dropped to the ground', () => {
     const dropper = join(space, DROPPER_AT, 'dropper', carrying({ worn: [CUDGEL, MAGIC_CAP], bag: FULL_BAG }));
     const beside = join(space, { x: 5.8, z: 10 }, 'beside');
     const order = (dreamer: { sent: SomnioMessage[] }, from: number) =>
-      dreamer.sent.slice(from).flatMap(({ tag }) => (tag === 'loot' || tag === 'held' || tag === 'inventory' ? [tag] : []));
+      dreamer.sent.slice(from).flatMap(({ tag }) => (tag === 'loot' || tag === 'outfit' || tag === 'inventory' ? [tag] : []));
     const marks = [dropper.sent.length, beside.sent.length] as const;
 
     space.handleDropItem(CUDGEL.id, 90, dropper.entityId);
     expect([order(dropper, marks[0]), order(beside, marks[1])]).toEqual([
-      ['loot', 'inventory', 'held'],
-      ['loot', 'held'],
+      ['loot', 'inventory', 'outfit'],
+      ['loot', 'outfit'],
     ]);
-    const cudgel = { kind: 'item', baseId: 'cudgel', rarity: 'plain' } as const;
+    const cudgel = { kind: 'item', baseId: 'cudgel', tier: 1, rarity: 'plain' } as const;
     expect(payloads(beside.sent, 'loot').map(({ contents, from }) => [contents, from])).toEqual([
       [cudgel, { ...DROPPER_AT, entityId: dropper.entityId, hand: 'mainHand' }],
     ]);
-    expect(payloads(beside.sent, 'held').at(-1)).toEqual({ entityId: dropper.entityId, held: {} });
+    expect(payloads(beside.sent, 'outfit').at(-1)).toEqual({ entityId: dropper.entityId, outfit: [{ slot: 'head', baseId: 'cap', tier: 3 }] });
     expect(dropped(dropper)).toEqual([cudgel]);
 
     const thrown = [dropper.sent.length, beside.sent.length] as const;
     space.handleDropItem(MAGIC_CAP.id, 90, dropper.entityId);
-    expect([order(dropper, thrown[0]), order(beside, thrown[1])]).toEqual([['loot', 'inventory'], ['loot']]);
+    expect([order(dropper, thrown[0]), order(beside, thrown[1])]).toEqual([
+      ['loot', 'inventory', 'outfit'],
+      ['loot', 'outfit'],
+    ]);
     expect(payloads(beside.sent, 'loot').at(-1)!.from).toEqual({ ...DROPPER_AT, entityId: dropper.entityId });
     expect(space.snapshotForPlayer(dropper.entityId)!.inventory).toEqual(carrying({ bag: FULL_BAG }));
   });

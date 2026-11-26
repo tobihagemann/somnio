@@ -134,30 +134,6 @@
   box-shadow: 0 0 0 2px var(--hud-tint, var(--hud-line));
 }
 
-/* The people's sigil on a badge at the portrait's foot. */
-.hud-sigil {
-  position: absolute;
-  right: -7px;
-  bottom: -7px;
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: #0c0a10;
-  box-shadow: 0 0 0 1.5px var(--hud-tint, var(--hud-line));
-  color: var(--hud-line);
-}
-
-.hud-sigil:empty {
-  display: none;
-}
-
-.hud-sigil .fantasy-icon {
-  width: 15px;
-  height: 15px;
-}
-
 .hud-unit--target {
   left: 50%;
   max-width: calc(100% - 2 * (var(--somnio-edge-left) + var(--somnio-self-frame-width) + 8px));
@@ -1571,6 +1547,10 @@
   font-size: 9px;
   line-height: 1.1;
   text-align: center;
+  /* A name too wide for its place breaks onto a second line rather than past the edge. German breaks
+     by hyphenation. English breaks at the catalog's soft hyphen, since Chrome leaves a capitalized
+     English word whole. */
+  hyphens: auto;
 }
 
 /* A filled place: its line in its rarity's colour over a plate tinted by it, and its icon inside the edge. */
@@ -2025,18 +2005,6 @@
 
 .hud--coarse .hud-unit--self {
   padding: 8px 14px 8px var(--hud-portrait-left);
-}
-
-.hud--coarse .hud-sigil {
-  right: -6px;
-  bottom: -6px;
-  width: 18px;
-  height: 18px;
-}
-
-.hud--coarse .hud-sigil .fantasy-icon {
-  width: 11px;
-  height: 11px;
 }
 
 .hud--coarse .hud-unit__name {

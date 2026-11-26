@@ -6,8 +6,9 @@ import { SOMNIO_PROTOCOL_CONSTANTS, decodeSomnioMessage, encodeSomnioMessage } f
 import type { EntityMessage, Locale, SomnioMessage } from '@somnio/protocol';
 import { fakeSocketFactory } from './helpers/fakeSocket';
 import type { FakeSocket } from './helpers/fakeSocket';
+import { peopleBody } from '@somnio/core';
 import { TEST_REGISTRY, interiorSector, outdoorSector } from '../../core/test/support/worldFixture.ts';
-import { enterSpaceFrame, entityFrame, makeDoor, sectorFrame } from './helpers/worldFixture';
+import { enterSpaceFrame, entityFrame, makeDoor, outfit, sectorFrame } from './helpers/worldFixture';
 
 /** In-memory storage so the session tests never touch a real `localStorage`. */
 class MemoryStorage implements SessionStorageLike {
@@ -206,7 +207,7 @@ describe('the character card', () => {
     expect(rig.controller.awaitingCharacterAnswer).toBe(false);
   });
 
-  /** Every join names the player's people, so the HUD's sigil never depends on the card having been shown. */
+  /** Every join names the player's people, so the HUD's own frame never depends on the card having been shown. */
   it("takes the player's own people from each join, and runs the world clock on from the join", () => {
     const now = vi.spyOn(performance, 'now').mockReturnValue(1000);
     try {
@@ -216,7 +217,7 @@ describe('the character card', () => {
       rig.deliver({ tag: 'enterSpace', payload: { spaceId: 'outdoors', selfId: 'ida', people: 'umbrae', worldSeconds: 3600 } });
       expect(rig.controller.selfPeople).toBe('umbrae');
 
-      // A people this client does not know draws no sigil.
+      // A people this client does not know is named nowhere.
       rig.deliver({ tag: 'enterSpace', payload: { spaceId: 'EdariaInn', selfId: 'ida', people: 'somnia', worldSeconds: 3600 } });
       expect(rig.controller.selfPeople).toBeUndefined();
       // Four world seconds to each wall second: a world minute every 15 s.
@@ -1095,22 +1096,37 @@ describe('leave removes a departed peer', () => {
   });
 });
 
-describe('what a dreamer holds', () => {
-  it('keeps the hands a peer joined with, and draws what they hold once they change', () => {
-    const drawn: unknown[] = [];
-    const rig = makeRig({ renderSurface: { ...noopRenderSurface, updateHeld: (entityId, held) => drawn.push([entityId, held]) } });
+describe('what a dreamer wears', () => {
+  function joined(renderSurface: Partial<WorldRenderSurface> = {}): Rig {
+    const rig = makeRig({ renderSurface: { ...noopRenderSurface, ...renderSurface } });
     rig.controller.connect({ kind: 'login', credentials: { email: 'a@example.com', password: 'b', rememberMe: false } });
     rig.socket().open();
     rig.deliver(hello());
     rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
     rig.deliver(enterSpaceFrame());
-    rig.deliver(peer({ held: { mainHand: 'sword' } }));
-    expect(rig.controller.entities.get('peer')?.held).toEqual({ mainHand: 'sword' });
+    return rig;
+  }
 
-    rig.deliver({ tag: 'held', payload: { entityId: 'peer', held: { offHand: 'moonstone' } } });
+  it('keeps the outfit a peer joined with, and draws it on them once it changes', () => {
+    const drawn: unknown[] = [];
+    const rig = joined({ updateOutfit: (entityId, worn) => drawn.push([entityId, worn]) });
+    rig.deliver(peer({ outfit: outfit({ mainHand: 'sword' }) }));
+    expect(rig.controller.entities.get('peer')?.outfit).toEqual(outfit({ mainHand: 'sword' }));
 
-    expect(rig.controller.entities.get('peer')?.held).toEqual({ offHand: 'moonstone' });
-    expect(drawn).toEqual([['peer', { offHand: 'moonstone' }]]);
+    const changed = [...outfit({ offHand: 'moonstone' }), { slot: 'chest' as const, baseId: 'tunic', tier: 3 }];
+    rig.deliver({ tag: 'outfit', payload: { entityId: 'peer', outfit: changed } });
+
+    expect(rig.controller.entities.get('peer')?.outfit).toEqual(changed);
+    expect(drawn).toEqual([['peer', changed]]);
+  });
+
+  it("draws a dreamer in their people's body, and in the placeholder for a people this build does not know", () => {
+    const rig = joined();
+    rig.deliver(peer({ people: 'sopors' }));
+    expect(rig.controller.entities.get('peer')).toMatchObject({ people: 'sopors', characterModelId: peopleBody(TEST_REGISTRY, 'sopors') });
+
+    rig.deliver(peer({ people: 'somnia' }));
+    expect(rig.controller.entities.get('peer')).toMatchObject({ people: undefined, characterModelId: '' });
   });
 });
 

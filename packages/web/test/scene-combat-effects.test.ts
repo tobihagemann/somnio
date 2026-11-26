@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { boltFlightSeconds, effectSeconds, headingFromVector, headingRadians } from '@somnio/core';
-import type { ModelRegistry, Point } from '@somnio/core';
+import type { ModelRegistry, People, Point } from '@somnio/core';
 import { RARITIES } from '@somnio/protocol';
 import type { Condition } from '@somnio/protocol';
 import { t } from '@/i18n';
@@ -18,7 +18,7 @@ import { PORTRAIT_LAYERS } from '@/scene/portraits';
 import type { ClientEntity } from '@/client';
 import { TEST_REGISTRY } from '../../core/test/support/worldFixture.ts';
 import { programVariants, recordingCompiler } from './helpers/programVariants';
-import { clientEntity } from './helpers/worldFixture';
+import { clientEntity, outfit } from './helpers/worldFixture';
 
 const CLIP_SECONDS = 1;
 const SLICE = 'Melee_1H_Attack_Slice_Horizontal';
@@ -104,6 +104,8 @@ function combatScene(
     ground: () => options.ground?.(),
     trophy: () => options.trophy?.(),
     object: () => undefined,
+    wear: () => Promise.resolve(undefined),
+    retryWear: () => {},
     clipsFor: (root) => (options.clipless?.includes(models.indexOf(root)) === true ? CLIPS.slice(0, 1) : CLIPS),
     prototypeMeshes: () => undefined,
   };
@@ -2046,7 +2048,7 @@ describe('Veil', () => {
 });
 
 describe('a thrown drop', () => {
-  const CAP = { kind: 'item', baseId: 'cap', rarity: 'rare' } as const;
+  const CAP = { kind: 'item', baseId: 'cap', tier: 1, rarity: 'rare' } as const;
   /** Where the dreamer at (10, 10) throws the cap, east of them. */
   const LANDS = { x: 11.3, z: 10 };
 
@@ -2240,7 +2242,7 @@ describe('a thrown drop', () => {
   });
 
   describe('from a hand', () => {
-    const SWORD = { kind: 'item', baseId: 'sword', rarity: 'rare' } as const;
+    const SWORD = { kind: 'item', baseId: 'sword', tier: 1, rarity: 'rare' } as const;
     const FROM_HAND = { x: 10, z: 10, entityId: 'self', hand: 'mainHand' } as const;
     /** A blade, as a hand model holds it: its grip half turned in its node, as the pack's are. */
     const BLADE = new THREE.BoxGeometry(0.08, 1, 0.03).translate(0, 0.4, 0);
@@ -2256,12 +2258,19 @@ describe('a thrown drop', () => {
       new THREE.Vector3().setScalar(CHARACTER_SCALE),
     );
 
+    /** Every people drawn at the plain scale but the Sopors, drawn wider than tall, as the pack's are. */
+    const SOPORS_REGISTRY: ModelRegistry = {
+      ...TEST_REGISTRY,
+      peoples: TEST_REGISTRY.peoples.map((rule) => (rule.people === 'sopors' ? { ...rule, scale: [1.27, 1.18, 1.13] } : rule)),
+    };
+
     /**
      * A scene where `self` stands at (10, 10) holding a sword and a shield, whose hand models are
      * kept in `props`, and the sword lies on the ground as `lying`, the same blade laid down, or,
-     * `mirrored`, the blade laid down as its mirror image, which is not one piece with it.
+     * `mirrored`, the blade laid down as its mirror image, which is not one piece with it. A `people`
+     * draws them in that people's body, the Sopors' scaled unevenly.
      */
-    function throwingFromHand(options: { reducedMotion?: boolean; mirrored?: boolean } = {}) {
+    function throwingFromHand(options: { reducedMotion?: boolean; mirrored?: boolean; people?: People | undefined } = {}) {
       const props: Record<string, THREE.Mesh> = {};
       const hand = (baseId: string): THREE.Object3D => {
         const mesh = new THREE.Mesh(BLADE);
@@ -2271,8 +2280,8 @@ describe('a thrown drop', () => {
       };
       const mirror = new THREE.Matrix4().makeScale(options.mirrored === true ? -1 : 1, 1, 1);
       const lying = new THREE.Mesh(BLADE.clone().applyMatrix4(LAID_DOWN.clone().multiply(mirror).multiply(GRIP)));
-      const combat = combatScene({ ...options, hand, ground: () => new THREE.Group().add(lying) });
-      place(combat.scene, 'self', { x: 10, z: 10 }, { held: { mainHand: 'sword', offHand: 'shield' } });
+      const combat = combatScene({ ...options, hand, ground: () => new THREE.Group().add(lying), registry: SOPORS_REGISTRY });
+      place(combat.scene, 'self', { x: 10, z: 10 }, { outfit: outfit({ mainHand: 'sword', offHand: 'shield' }), people: options.people });
       combat.scene.tick(0.01);
       const bones = { mainHand: combat.models[0]!.getObjectByName('handslotr')!, offHand: combat.models[0]!.getObjectByName('handslotl')! };
       /** What each hand draws. */
@@ -2291,38 +2300,44 @@ describe('a thrown drop', () => {
       return Math.max(...from.map((corner, index) => corner.distanceTo(to[index]!)));
     }
 
-    it('keeps the item on the hand through the wind-up, though the hands are shown emptied, and flies it from where and as it was drawn as it leaves the hand, the other hand emptied at once', () => {
-      const { scene, props, lying, inHands, drawnAt } = throwingFromHand();
-      const sword = props.sword!;
-      scene.showLoot({ lootId: 'loot-1', ...LANDS, contents: SWORD, shared: true, from: FROM_HAND });
-      scene.updateHeld('self', {});
-      expect(inHands()).toEqual({ mainHand: 1, offHand: 0 });
+    it.each<[string, People | undefined]>([
+      ['', undefined],
+      [' under a body scaled unevenly, which shears the hand', 'sopors'],
+    ])(
+      'keeps the item on the hand through the wind-up, though the hands are shown emptied, and flies it from where and as it was drawn as it leaves the hand, the other hand emptied at once%s',
+      (_label, people) => {
+        const { scene, props, lying, inHands, drawnAt } = throwingFromHand({ people });
+        const sword = props.sword!;
+        scene.showLoot({ lootId: 'loot-1', ...LANDS, contents: SWORD, shared: true, from: FROM_HAND });
+        scene.updateOutfit('self', []);
+        expect(inHands()).toEqual({ mainHand: 1, offHand: 0 });
 
-      run(scene, 0.2);
-      expect([inHands(), isDrawn(lying)]).toEqual([{ mainHand: 1, offHand: 0 }, false]);
+        run(scene, 0.2);
+        expect([inHands(), isDrawn(lying)]).toEqual([{ mainHand: 1, offHand: 0 }, false]);
 
-      let held = drawnAt(sword);
-      let ticks = 0;
-      for (; sword.parent!.parent !== null && ticks < 10; ticks += 1) {
-        held = drawnAt(sword);
+        let held = drawnAt(sword);
+        let ticks = 0;
+        for (; sword.parent!.parent !== null && ticks < 10; ticks += 1) {
+          held = drawnAt(sword);
+          scene.tick(0.01);
+        }
+        expect(ticks).toBeLessThan(10);
+        // On the frame the sword leaves the hand, the drop is drawn where it was, turned as it was.
+        expect([inHands(), isDrawn(lying)]).toEqual([{ mainHand: 0, offHand: 0 }, true]);
+        expect(farthest(held, drawnAt(lying))).toBeLessThan(1e-5);
         scene.tick(0.01);
-      }
-      expect(ticks).toBeLessThan(10);
-      // On the frame the sword leaves the hand, the drop is drawn where it was, turned as it was.
-      expect([inHands(), isDrawn(lying)]).toEqual([{ mainHand: 0, offHand: 0 }, true]);
-      expect(farthest(held, drawnAt(lying))).toBeLessThan(1e-5);
-      scene.tick(0.01);
-      expect(farthest(held, drawnAt(lying))).toBeGreaterThan(1e-3);
+        expect(farthest(held, drawnAt(lying))).toBeGreaterThan(1e-3);
 
-      run(scene, 1);
-      expect(lying.getWorldPosition(new THREE.Vector3())).toEqual(new THREE.Vector3(LANDS.x, 0, LANDS.z));
-    });
+        run(scene, 1);
+        expect(lying.getWorldPosition(new THREE.Vector3())).toEqual(new THREE.Vector3(LANDS.x, 0, LANDS.z));
+      },
+    );
 
     it("flies an item whose hand model and ground model are not one piece from the hand's bone, the hand's model gone as it leaves", () => {
       const { scene, props, lying, bones, inHands } = throwingFromHand({ mirrored: true });
       const sword = props.sword!;
       scene.showLoot({ lootId: 'loot-1', ...LANDS, contents: SWORD, shared: true, from: FROM_HAND });
-      scene.updateHeld('self', {});
+      scene.updateOutfit('self', []);
       run(scene, 0.2);
       let ticks = 0;
       for (; sword.parent!.parent !== null && ticks < 10; ticks += 1) scene.tick(0.01);
@@ -2349,7 +2364,7 @@ describe('a thrown drop', () => {
       const combat = throwingFromHand(options);
       before(combat);
       combat.scene.showLoot({ lootId: 'loot-1', ...LANDS, contents: SWORD, shared: true, from: FROM_HAND });
-      combat.scene.updateHeld('self', {});
+      combat.scene.updateOutfit('self', []);
       expect([combat.inHands(), isDrawn(combat.lying), combat.lying.getWorldPosition(new THREE.Vector3())]).toEqual([
         { mainHand: 0, offHand: 0 },
         true,
@@ -2360,7 +2375,7 @@ describe('a thrown drop', () => {
     it('lets go of the hand and lays the drop where it lies once the tab stalls in the wind-up', () => {
       const { scene, hide, inHands, lying } = throwingFromHand();
       scene.showLoot({ lootId: 'loot-1', ...LANDS, contents: SWORD, shared: true, from: FROM_HAND });
-      scene.updateHeld('self', {});
+      scene.updateOutfit('self', []);
       run(scene, 0.1);
       hide(2000);
       scene.tick(0.01);
@@ -2757,7 +2772,7 @@ describe('the pools and the programs', () => {
     await scene.prewarm({ compileAsync });
     expect(compileAsync).toHaveBeenCalledWith(loot, scene.camera, scene.scene);
 
-    for (const rarity of RARITIES) scene.showLoot({ lootId: `loot-${rarity}`, x: 12, z: 10, contents: { kind: 'item', baseId: 'cap', rarity } });
+    for (const rarity of RARITIES) scene.showLoot({ lootId: `loot-${rarity}`, x: 12, z: 10, contents: { kind: 'item', baseId: 'cap', tier: 1, rarity } });
     expect(uncompiled(loot)).toEqual([]);
     expect(lights()).toBe(before);
   });
@@ -2775,7 +2790,7 @@ describe('the pools and the programs', () => {
 
     place(scene, 'monster:1', { x: 10, z: 10 });
     scene.fadeEntity('monster:1');
-    for (const rarity of RARITIES) scene.showLoot({ lootId: `loot-${rarity}`, x: 12, z: 10, contents: { kind: 'item', baseId: 'cap', rarity } });
+    for (const rarity of RARITIES) scene.showLoot({ lootId: `loot-${rarity}`, x: 12, z: 10, contents: { kind: 'item', baseId: 'cap', tier: 1, rarity } });
     scene.showLoot({ lootId: 'wisp', x: 14, z: 10, contents: { kind: 'trophy', monsterKind: 'ghost' } });
     for (const rarity of RARITIES) scene.removeLoot(`loot-${rarity}`, false);
     scene.removeLoot('wisp', false);
@@ -2791,7 +2806,7 @@ describe('the pools and the programs', () => {
     await scene.prewarm({ compileAsync });
 
     place(scene, 'monster:1', { x: 10, z: 10 });
-    place(scene, 'peer', { x: 12, z: 10 }, { held: { mainHand: 'sword' } });
+    place(scene, 'peer', { x: 12, z: 10 }, { outfit: outfit({ mainHand: 'sword' }) });
     scene.tick(0.01);
     expect(uncompiled(...models.slice(-2))).toEqual([]);
   });

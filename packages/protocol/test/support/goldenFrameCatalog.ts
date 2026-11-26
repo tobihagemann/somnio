@@ -23,7 +23,7 @@ const BOARD_ID = 'fixture:EdariaSquare/fixture-1';
 const SWORD_ID = '0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b';
 const MOONSTONE_ID = '0190a1b2-c3d5-7a1b-9c2d-3e4f5a6b7c8d';
 const CAP_ID = '0190a1b2-c3d6-7b2c-8d3e-4f5a6b7c8d9e';
-const RING_ID = '0190a1b2-c3d7-7c3d-8e4f-5a6b7c8d9eaf';
+const BRACELET_ID = '0190a1b2-c3d7-7c3d-8e4f-5a6b7c8d9eaf';
 const LOOT_ID = 'loot-12';
 const BOUNTY_ID = 'bounty:168000:Graveyard:skeleton-warrior:collect';
 const BOUNTY = {
@@ -126,7 +126,7 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
   { name: 'clientSay', message: { tag: 'clientSay', payload: { text: 'Hallo Welt', kind: 'say' } } },
   { name: 'clientSay-yell', message: { tag: 'clientSay', payload: { text: 'Hilfe!', kind: 'yell' } } },
   { name: 'equip', message: { tag: 'equip', payload: { itemId: SWORD_ID } } },
-  { name: 'equip-into-slot', message: { tag: 'equip', payload: { itemId: RING_ID, slot: 'ring2' } } },
+  { name: 'equip-into-slot', message: { tag: 'equip', payload: { itemId: BRACELET_ID, slot: 'bracelet2' } } },
   { name: 'unequip', message: { tag: 'unequip', payload: { slot: 'offHand' } } },
   { name: 'moveItem', message: { tag: 'moveItem', payload: { itemId: CAP_ID, place: 7 } } },
   { name: 'dropItem', message: { tag: 'dropItem', payload: { itemId: CAP_ID, heading: 247.5 } } },
@@ -206,7 +206,7 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
       payload: {
         id: OTHER_PLAYER_ID,
         kind: 'player',
-        characterModelId: 'dreamer',
+        people: 'sopors',
         name: 'Alice',
         radius: 0.3,
         x: 12.5,
@@ -214,7 +214,13 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
         facing: 90,
         gait: 'run',
         condition: 'grazed',
-        held: { mainHand: 'sword', offHand: 'moonstone' },
+        outfit: [
+          { slot: 'mainHand', baseId: 'sword', tier: 1 },
+          { slot: 'offHand', baseId: 'moonstone', tier: 1 },
+          { slot: 'head', baseId: 'cap', tier: 3 },
+          { slot: 'chest', baseId: 'tunic', tier: 2 },
+          { slot: 'bracelet2', baseId: 'bracelet', tier: 5 },
+        ],
       },
     },
   },
@@ -385,7 +391,7 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
         coins: 105,
         equipped: [],
         bag: [],
-        trade: { kind: 'sold', baseId: 'cap', rarity: 'magic', coins: 25 },
+        trade: { kind: 'sold', baseId: 'cap', tier: 1, rarity: 'magic', coins: 25 },
         buyBack: [{ id: CAP_ID, baseId: 'cap', tier: 1, rarity: 'magic', affixes: [{ affixId: 'guard', value: 2 }] }],
       },
     },
@@ -398,7 +404,7 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
         coins: 80,
         equipped: [],
         bag: [{ place: 0, item: { id: CAP_ID, baseId: 'cap', tier: 1, rarity: 'magic', affixes: [{ affixId: 'guard', value: 2 }] } }],
-        trade: { kind: 'boughtBack', baseId: 'cap', rarity: 'magic', coins: 25 },
+        trade: { kind: 'boughtBack', baseId: 'cap', tier: 1, rarity: 'magic', coins: 25 },
       },
     },
   },
@@ -406,7 +412,7 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
     name: 'inventory-after-drop',
     message: {
       tag: 'inventory',
-      payload: { coins: 100, equipped: [], bag: [], dropped: { kind: 'item', baseId: 'cap', rarity: 'magic' } },
+      payload: { coins: 100, equipped: [], bag: [], dropped: { kind: 'item', baseId: 'cap', tier: 1, rarity: 'magic' } },
     },
   },
   {
@@ -417,7 +423,7 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
         coins: 100,
         equipped: [],
         bag: [{ place: 3, item: { id: CAP_ID, baseId: 'cap', tier: 1, rarity: 'magic', affixes: [{ affixId: 'guard', value: 2 }] } }],
-        pickedUp: { kind: 'item', baseId: 'cap', rarity: 'magic' },
+        pickedUp: { kind: 'item', baseId: 'cap', tier: 1, rarity: 'magic' },
       },
     },
   },
@@ -429,7 +435,7 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
         coins: 172,
         equipped: [],
         bag: [{ place: 0, item: { id: CAP_ID, baseId: 'cap', tier: 3, rarity: 'rare', affixes: [{ affixId: 'guard', value: 5 }] } }],
-        rewarded: [{ kind: 'item', baseId: 'cap', rarity: 'rare' }],
+        rewarded: [{ kind: 'item', baseId: 'cap', tier: 3, rarity: 'rare' }],
       },
     },
   },
@@ -437,7 +443,10 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
     name: 'inventory-after-trophy',
     message: { tag: 'inventory', payload: { coins: 100, equipped: [], bag: [], pickedUp: { kind: 'trophy', monsterKind: 'skeleton-warrior' } } },
   },
-  { name: 'loot', message: { tag: 'loot', payload: { lootId: LOOT_ID, x: 31.5, z: -12.25, contents: { kind: 'item', baseId: 'cap', rarity: 'magic' } } } },
+  {
+    name: 'loot',
+    message: { tag: 'loot', payload: { lootId: LOOT_ID, x: 31.5, z: -12.25, contents: { kind: 'item', baseId: 'cap', tier: 2, rarity: 'magic' } } },
+  },
   {
     name: 'loot-trophy',
     message: {
@@ -447,7 +456,10 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
   },
   {
     name: 'loot-shared',
-    message: { tag: 'loot', payload: { lootId: LOOT_ID, x: 31.5, z: -12.25, contents: { kind: 'item', baseId: 'cap', rarity: 'magic' }, shared: true } },
+    message: {
+      tag: 'loot',
+      payload: { lootId: LOOT_ID, x: 31.5, z: -12.25, contents: { kind: 'item', baseId: 'cap', tier: 2, rarity: 'magic' }, shared: true },
+    },
   },
   {
     name: 'loot-thrown',
@@ -457,7 +469,7 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
         lootId: LOOT_ID,
         x: 31.5,
         z: -12.25,
-        contents: { kind: 'item', baseId: 'cap', rarity: 'magic' },
+        contents: { kind: 'item', baseId: 'cap', tier: 2, rarity: 'magic' },
         shared: true,
         from: { x: 32.25, z: -11.5, entityId: PLAYER_ID },
       },
@@ -471,7 +483,7 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
         lootId: LOOT_ID,
         x: 31.5,
         z: -12.25,
-        contents: { kind: 'item', baseId: 'sword', rarity: 'rare' },
+        contents: { kind: 'item', baseId: 'sword', tier: 1, rarity: 'rare' },
         shared: true,
         from: { x: 32.25, z: -11.5, entityId: PLAYER_ID, hand: 'mainHand' },
       },
@@ -481,7 +493,7 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
     name: 'loot-scattered',
     message: {
       tag: 'loot',
-      payload: { lootId: LOOT_ID, x: 31.5, z: -12.25, contents: { kind: 'item', baseId: 'cap', rarity: 'rare' }, from: { x: 31, z: -12 } },
+      payload: { lootId: LOOT_ID, x: 31.5, z: -12.25, contents: { kind: 'item', baseId: 'cap', tier: 4, rarity: 'rare' }, from: { x: 31, z: -12 } },
     },
   },
   { name: 'lootGone', message: { tag: 'lootGone', payload: { lootId: LOOT_ID } } },
@@ -555,7 +567,20 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
   { name: 'questShareAnswer-log-full', message: { tag: 'questShareAnswer', payload: { questId: BOUNTY_ID, name: 'Mira', outcome: 'logFull' } } },
   { name: 'bountiesRanOut', message: { tag: 'bountiesRanOut', payload: { count: 2 } } },
   { name: 'condition', message: { tag: 'condition', payload: { entityId: 'monster:7', condition: 'hurt' } } },
-  { name: 'held', message: { tag: 'held', payload: { entityId: OTHER_PLAYER_ID, held: { mainHand: 'dagger' } } } },
+  {
+    name: 'outfit',
+    message: {
+      tag: 'outfit',
+      payload: {
+        entityId: OTHER_PLAYER_ID,
+        outfit: [
+          { slot: 'mainHand', baseId: 'dagger', tier: 1 },
+          { slot: 'chest', baseId: 'tunic', tier: 3 },
+        ],
+      },
+    },
+  },
+  { name: 'outfit-empty', message: { tag: 'outfit', payload: { entityId: OTHER_PLAYER_ID, outfit: [] } } },
   { name: 'vitals', message: { tag: 'vitals', payload: { entityId: 'monster:7', health: 0.42 } } },
   { name: 'effects', message: { tag: 'effects', payload: { entityId: PLAYER_ID, effects: [{ effectId: 'braced', seconds: 3.25 }] } } },
   {

@@ -22,8 +22,11 @@ const CORE_KEYS = [
   '%@ of the Bulwark',
   "A newcomer's errand",
   'A word for Memor',
-  'Amulet',
+  'Antler tine',
   'Balance recovery',
+  'Bark-grip gloves',
+  'Bear claw',
+  'Beech leaf',
   'Bind',
   'Boar',
   "Boar's tusk",
@@ -32,16 +35,25 @@ const CORE_KEYS = [
   'Bone dagger',
   'Bounty: %@',
   'Brace',
+  'Brush trousers',
   'Buckler',
   'Calm',
   'Challenge',
   'Cleave',
+  'Climbing boots',
+  'Compass rose',
+  'Courier shoulders',
+  'Courier straw hat',
+  'Courier tunic',
   'Cracked skull',
   'Cracked skulls',
   'Cudgel',
   'Dagger',
+  'Deck boots',
   'Deep mend',
   'Depth',
+  'Dispatch gloves',
+  'Dispatch wristband',
   'Drawing back',
   'Dream-bolt',
   'Drive off %@ Boars there.',
@@ -54,11 +66,16 @@ const CORE_KEYS = [
   'Drive off 4 Skeletons in the Graveyard.',
   'Drive off a nightmare.',
   'Drive off the Necromancer in the burial chamber.',
+  'Fen boots',
+  'Ferry guards',
+  "Ferryman's raincoat",
+  'Field trousers',
   'Fighter',
   'Find Memor in the Graveyard.',
   "Find the Mystics' tower on the square.",
   'Find the hidden places Tacita speaks of.',
   'Follow-through',
+  "Forester's feather band",
   "Gather %@ boar's tusks from Boars.",
   "Gather %@ bogey's knots from Bogeys.",
   'Gather %@ cracked skulls from Skeleton Warriors.',
@@ -70,32 +87,37 @@ const CORE_KEYS = [
   'Ghostly wisp',
   'Guard',
   'Healer',
+  'Hide mitts',
   'Into the crypt',
   'Iron buckler',
-  'Iron ring',
-  'Leather boots',
-  'Leather cap',
-  'Leather gloves',
-  'Leather trousers',
+  'Lantern cage',
+  'Leaf gaiters',
+  'Leaf shoulder',
   'Lumina',
   'Lunge',
   'Mace',
+  'Maple twig',
   'Meet Pugnax and Sana in their halls.',
   'Mend 60 health on other dreamers.',
   'Mending others',
   'Moonstone',
   'Mystic',
+  "Navigator's epaulettes",
   'Necromancer',
   "Necromancer's sigil",
+  'Oiled storm brim',
   'Old bone',
-  'Padded tunic',
+  'Pelt guards',
   'Radiance',
   'Rally',
   'Read the bounty board on the square.',
+  'Reed knot',
+  'Reedwork gloves',
   'Renewal',
   'Restless graves',
   'Round shield',
   'Sabre',
+  "Sailmaker's gloves",
   'Sense the fallen',
   'Shielded Boar',
   'Shielded Bogey',
@@ -103,12 +125,14 @@ const CORE_KEYS = [
   'Shielded Skeleton',
   'Shielded Skeleton Warrior',
   'Shielded Wolf',
+  'Shore coat',
   'Short sword',
   'Skeleton',
   'Skeleton Warrior',
   'Skull shield',
   'Skull staff',
   'Sopors',
+  'Sounding weight',
   'Spirit deepening',
   'Stony Boar',
   'Stony Bogey',
@@ -116,35 +140,64 @@ const CORE_KEYS = [
   'Stony Skeleton',
   'Stony Skeleton Warrior',
   'Stony Wolf',
+  'Storm trousers',
   'Strike',
+  'Tarred reed brim',
   "The Fighters' trial",
   "The Healers' trial",
   "The Mystics' trial",
   'Three without a fall',
   'Touch',
   'Toughening',
+  'Trail boots',
+  'Trail cape',
+  'Trail leathers',
+  "Trapper's baldric",
+  "Trapper's hide band",
   'Umbrae',
   'Veil',
   'Vigils',
   'Visit Mercus in his shop.',
+  'Wader trousers',
   'Walk to the North Wood and come back.',
   'Wand',
   'War axe',
   'Ward',
   'Weaken',
+  'Wheat-ear pendant',
   'Wolf',
   "Wolf's fang",
 ];
 
 describe('items', () => {
-  it('resolves the cudgel', () => {
-    expect(itemLabelKey('cudgel')).toBe('Cudgel');
+  it('resolves the cudgel by its base, whatever its tier', () => {
+    expect(itemLabelKey('cudgel', 1)).toBe('Cudgel');
+    expect(itemLabelKey('cudgel', 3)).toBe('Cudgel');
   });
 
-  it('resolves nothing for an unknown id, the purse and inherited object keys included', () => {
-    expect(itemLabelKey('longsword')).toBeUndefined();
-    expect(itemLabelKey('purse')).toBeUndefined();
-    expect(itemLabelKey('toString')).toBeUndefined();
+  it('resolves armour and jewellery by their design at each tier', () => {
+    expect(
+      (['cap', 'shoulders', 'tunic', 'gloves', 'trousers', 'boots', 'amulet', 'bracelet'] as const).map((baseId) =>
+        [1, 2, 3, 4, 5].map((tier) => itemLabelKey(baseId, tier)),
+      ),
+    ).toEqual([
+      ['Courier straw hat', "Forester's feather band", 'Tarred reed brim', "Trapper's hide band", 'Oiled storm brim'],
+      ['Courier shoulders', 'Leaf shoulder', 'Ferry guards', 'Pelt guards', "Navigator's epaulettes"],
+      ['Courier tunic', 'Trail cape', "Ferryman's raincoat", "Trapper's baldric", 'Shore coat'],
+      ['Dispatch gloves', 'Bark-grip gloves', 'Reedwork gloves', 'Hide mitts', "Sailmaker's gloves"],
+      ['Field trousers', 'Brush trousers', 'Wader trousers', 'Trail leathers', 'Storm trousers'],
+      ['Trail boots', 'Leaf gaiters', 'Fen boots', 'Climbing boots', 'Deck boots'],
+      ['Wheat-ear pendant', 'Beech leaf', 'Lantern cage', 'Bear claw', 'Compass rose'],
+      ['Dispatch wristband', 'Maple twig', 'Reed knot', 'Antler tine', 'Sounding weight'],
+    ]);
+  });
+
+  it('resolves nothing for an unknown id, the purse and inherited object keys included, or for a tier no design is made in', () => {
+    expect(itemLabelKey('longsword', 1)).toBeUndefined();
+    expect(itemLabelKey('purse', 1)).toBeUndefined();
+    expect(itemLabelKey('toString', 1)).toBeUndefined();
+    expect(itemLabelKey('ring', 1)).toBeUndefined();
+    expect(itemLabelKey('tunic', 6)).toBeUndefined();
   });
 
   it('names each new item by a UUIDv7, so items sort by id in the order they were made', () => {
@@ -174,7 +227,7 @@ describe('core catalog', () => {
 
   it('holds exactly the labels of the items and their suffixes, the peoples, the roles, the teachings, the nightmares, elites included, the quests and their objectives, the bounties, and the trophies', () => {
     const labels = [
-      ...Object.values(BASE_ITEMS).map((item) => item.labelKey),
+      ...Object.values(BASE_ITEMS).flatMap((item) => ('tierLabelKeys' in item ? Object.values(item.tierLabelKeys) : [item.labelKey])),
       ...Object.values(AFFIXES).map((line) => line.nameKey),
       ...PEOPLES.map(peopleLabelKey),
       ...ROLES.map(roleLabelKey),

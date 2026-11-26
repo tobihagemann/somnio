@@ -33,7 +33,9 @@ describe('the bag', () => {
     expect(grantPlace({ coins: 0, equipped: {}, bag: capsOf(SOMNIO_PROTOCOL_CONSTANTS.maxBagItems) }, 'moonstone')).toBe('offHand');
     expect(grantPlace({ coins: 0, equipped: wand, bag: capsOf(SOMNIO_PROTOCOL_CONSTANTS.maxBagItems - 1) }, 'moonstone')).toBe('bag');
     expect(grantPlace({ coins: 0, equipped: wand, bag: capsOf(SOMNIO_PROTOCOL_CONSTANTS.maxBagItems) }, 'moonstone')).toBeUndefined();
-    expect(grantPlace({ coins: 0, equipped: { ring1: plainInstance('ring') }, bag: capsOf(SOMNIO_PROTOCOL_CONSTANTS.maxBagItems) }, 'ring')).toBe('ring2');
+    expect(grantPlace({ coins: 0, equipped: { bracelet1: plainInstance('bracelet') }, bag: capsOf(SOMNIO_PROTOCOL_CONSTANTS.maxBagItems) }, 'bracelet')).toBe(
+      'bracelet2',
+    );
   });
 
   it('gives an item into its empty slot with the bag full and leaves the bag as it was, into the bag else, and nowhere with room in neither', () => {
@@ -136,18 +138,24 @@ describe('equipping and unequipping', () => {
     expect([worn.equipped.mainHand, placesOf(worn)]).toEqual([sword, [[6, 'dagger']]]);
   });
 
-  it('wears a ring in the slot asked for, and moves a worn ring to the other ring slot, the two changing slots', () => {
-    const [first, second, third] = [item('ring', 'first'), item('ring', 'second'), item('ring', 'third')];
-    expect(equipItem({ coins: 0, equipped: {}, bag: bagOf([first]) }, 'first', 'ring2')!.equipped).toEqual({ ring2: first });
-    expect(equipItem({ coins: 0, equipped: { ring1: first }, bag: [] }, 'first', 'ring2')!.equipped).toEqual({ ring2: first });
-    expect(equipItem({ coins: 0, equipped: { ring1: first, ring2: second }, bag: [] }, 'first', 'ring2')!.equipped).toEqual({ ring1: second, ring2: first });
-    expect(equipItem({ coins: 0, equipped: { ring1: first, ring2: second }, bag: bagOf([third]) }, 'third')!.equipped).toEqual({ ring1: third, ring2: second });
+  it('wears a bracelet in the slot asked for, and moves a worn bracelet to the other bracelet slot, the two changing slots', () => {
+    const [first, second, third] = [item('bracelet', 'first'), item('bracelet', 'second'), item('bracelet', 'third')];
+    expect(equipItem({ coins: 0, equipped: {}, bag: bagOf([first]) }, 'first', 'bracelet2')!.equipped).toEqual({ bracelet2: first });
+    expect(equipItem({ coins: 0, equipped: { bracelet1: first }, bag: [] }, 'first', 'bracelet2')!.equipped).toEqual({ bracelet2: first });
+    expect(equipItem({ coins: 0, equipped: { bracelet1: first, bracelet2: second }, bag: [] }, 'first', 'bracelet2')!.equipped).toEqual({
+      bracelet1: second,
+      bracelet2: first,
+    });
+    expect(equipItem({ coins: 0, equipped: { bracelet1: first, bracelet2: second }, bag: bagOf([third]) }, 'third')!.equipped).toEqual({
+      bracelet1: third,
+      bracelet2: second,
+    });
   });
 
   it('refuses a slot the base does not fit and an item the dreamer does not have', () => {
-    const ring = item('ring', 'ring');
-    expect(equipItem({ coins: 0, equipped: {}, bag: bagOf([ring]) }, 'ring', 'neck')).toBeUndefined();
-    expect(equipItem({ coins: 0, equipped: {}, bag: [] }, 'ring')).toBeUndefined();
+    const bracelet = item('bracelet', 'bracelet');
+    expect(equipItem({ coins: 0, equipped: {}, bag: bagOf([bracelet]) }, 'bracelet', 'neck')).toBeUndefined();
+    expect(equipItem({ coins: 0, equipped: {}, bag: [] }, 'bracelet')).toBeUndefined();
   });
 
   it('puts a worn item at the first free place, and refuses in a full bag', () => {
@@ -166,24 +174,25 @@ describe('equipping and unequipping', () => {
 });
 
 describe('the slots', () => {
-  it('wear a ring on either ring slot and every other base in the one slot of its kind', () => {
-    expect((['ring', 'amulet', 'tunic', 'trousers', 'sword'] as const).map((baseId) => slotsFor(baseId))).toEqual([
-      ['ring1', 'ring2'],
+  it('wear a bracelet on either bracelet slot and every other base in the one slot of its kind', () => {
+    expect((['bracelet', 'amulet', 'shoulders', 'tunic', 'trousers', 'sword'] as const).map((baseId) => slotsFor(baseId))).toEqual([
+      ['bracelet1', 'bracelet2'],
       ['neck'],
+      ['shoulders'],
       ['chest'],
       ['legs'],
       ['mainHand'],
     ]);
   });
 
-  it('equip a ring into the free ring slot, else into the first, and any other base into its own slot', () => {
-    const ring = plainInstance('ring');
+  it('equip a bracelet into the free bracelet slot, else into the first, and any other base into its own slot', () => {
+    const bracelet = plainInstance('bracelet');
     expect([
-      equipSlot({}, 'ring'),
-      equipSlot({ ring1: ring }, 'ring'),
-      equipSlot({ ring1: ring, ring2: ring }, 'ring'),
-      equipSlot({ ring2: ring }, 'ring'),
-    ]).toEqual(['ring1', 'ring2', 'ring1', 'ring1']);
+      equipSlot({}, 'bracelet'),
+      equipSlot({ bracelet1: bracelet }, 'bracelet'),
+      equipSlot({ bracelet1: bracelet, bracelet2: bracelet }, 'bracelet'),
+      equipSlot({ bracelet2: bracelet }, 'bracelet'),
+    ]).toEqual(['bracelet1', 'bracelet2', 'bracelet1', 'bracelet1']);
     expect(equipSlot({ neck: plainInstance('amulet') }, 'amulet')).toBe('neck');
   });
 });
@@ -192,14 +201,14 @@ describe('the inventory frame', () => {
   const sword = { ...plainInstance('sword'), rarity: 'magic' as const, affixes: [{ affixId: 'damage' as const, value: 2 }] };
   const inventory: Inventory = {
     coins: 42,
-    equipped: { ring2: plainInstance('ring'), offHand: plainInstance('moonstone'), mainHand: sword },
+    equipped: { bracelet2: plainInstance('bracelet'), offHand: plainInstance('moonstone'), mainHand: sword },
     bag: [{ place: 3, item: plainInstance('cap') }],
   };
 
   it('carries the worn items in slot order, the bag at its places, and reads back what it carries', () => {
-    const message = inventoryMessage(inventory, { trade: { kind: 'bought', baseId: 'cap', rarity: 'plain', coins: 5 } });
-    expect(message.equipped.map(({ slot }) => slot)).toEqual(['mainHand', 'offHand', 'ring2']);
-    expect(message.trade).toEqual({ kind: 'bought', baseId: 'cap', rarity: 'plain', coins: 5 });
+    const message = inventoryMessage(inventory, { trade: { kind: 'bought', baseId: 'cap', tier: 1, rarity: 'plain', coins: 5 } });
+    expect(message.equipped.map(({ slot }) => slot)).toEqual(['mainHand', 'offHand', 'bracelet2']);
+    expect(message.trade).toEqual({ kind: 'bought', baseId: 'cap', tier: 1, rarity: 'plain', coins: 5 });
     expect(inventoryOf(message)).toEqual(inventory);
   });
 
@@ -210,7 +219,7 @@ describe('the inventory frame', () => {
     const { item: cap } = bagged;
     const read = inventoryOf({
       ...message,
-      equipped: [...message.equipped, { slot: 'head', item: { ...cap, baseId: 'sword' } }, { slot: 'neck', item: { ...cap, baseId: 'ring' } }],
+      equipped: [...message.equipped, { slot: 'head', item: { ...cap, baseId: 'sword' } }, { slot: 'neck', item: { ...cap, baseId: 'bracelet' } }],
       bag: [
         bagged,
         { place: 4, item: { ...cap, baseId: 'longsword' } },

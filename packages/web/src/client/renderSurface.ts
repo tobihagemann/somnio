@@ -1,6 +1,6 @@
 import { clamp, raiseWorkOver } from '@somnio/core';
 import type { AbilityId, EffectId, Heading, Point, QuestMarker } from '@somnio/core';
-import type { AbilityPhase, Condition, Gait, Held, LootMessage, SectorView, SensedBearingMessage, SpeechKind, TelegraphMessage } from '@somnio/protocol';
+import type { AbilityPhase, Condition, Gait, LootMessage, Outfit, SectorView, SensedBearingMessage, SpeechKind, TelegraphMessage } from '@somnio/protocol';
 import type { ClientEntity, ClientWorld } from './clientWorld';
 
 /** A line to show as a bubble: round its speaker's head while that is drawn on screen, and placed toward the voice otherwise. */
@@ -75,8 +75,14 @@ export interface WorldRenderSurface {
   updatePosition(entityId: string, position: Point, facing: Heading, travel: Heading | undefined): void;
   updateGait(entityId: string, gait: Gait): void;
   updateCondition(entityId: string, condition: Condition): void;
-  /** What a dreamer's hands hold, drawn in them. */
-  updateHeld(entityId: string, held: Held | undefined): void;
+  /** What a dreamer wears, drawn on their body, and holds, drawn in their hands. */
+  updateOutfit(entityId: string, outfit: Outfit | undefined): void;
+  /**
+   * Whether the local player is drawn in all they wear in the space on screen: placed there, with
+   * every worn piece loaded or failed and their last join run. A placeholder body has nothing to wear,
+   * and a body that wears nothing counts as dressed before its first bake, which only dresses it bare.
+   */
+  ownBodyDressed(): boolean;
   /**
    * One swing or strike: the attacker swings, and as the swing lands the target flinches or is
    * missed, or, with `evaded`, is evaded by the nightmare struck.
@@ -138,7 +144,9 @@ export const noopRenderSurface: WorldRenderSurface = {
   updatePosition: () => {},
   updateGait: () => {},
   updateCondition: () => {},
-  updateHeld: () => {},
+  updateOutfit: () => {},
+  // Nothing is drawn, so nothing waits to be dressed.
+  ownBodyDressed: () => true,
   showBlow: () => {},
   showAbility: () => {},
   showEffects: () => {},

@@ -12,7 +12,7 @@ import { STRIKE_AT } from '@/scene/combatEffects';
 import { ELITE_AURA_NAME, ELITE_AURA_POOL_SIZE, ELITE_TRAIT_COLORS } from '@/scene/eliteAuras';
 import { QUEST_MARKER_NAME, QUEST_MARKER_POOL_SIZE } from '@/scene/questMarkers';
 import { PORTRAIT_LAYERS } from '@/scene/portraits';
-import { LOOT_BEAM_NAME, LOOT_FADE_SECONDS, LOOT_GLOW_NAME, LOOT_MARKERS_NAME, LOOT_MARKER_POOL_SIZE, RARITY_COLORS } from '@/scene/lootMarkers';
+import { LOOT_BEAM_NAME, LOOT_FADE_SECONDS, LOOT_GLOW_NAME, LOOT_MARKERS_NAME, LOOT_MARKER_POOL_SIZE, LootMarkers, RARITY_COLORS } from '@/scene/lootMarkers';
 import { CHARACTER_SCALE, PLACEHOLDER_HEIGHT } from '@/scene/placement';
 import { GrassSpring } from '@/scene/grassSpring';
 import { rasterizeGround } from '@/scene/groundField';
@@ -36,7 +36,7 @@ import { paintBubbles } from '@/scene/bubbleLayer';
 import type { PlacedBubble } from '@/scene/bubbleLayer';
 import { tailTip } from '@/scene/bubbleLayout';
 import type { ScreenPoint } from '@/scene/bubbleLayout';
-import { groundHeightAt, parseModelRegistry } from '@somnio/core';
+import { PEOPLES, groundHeightAt, parseModelRegistry } from '@somnio/core';
 import type { Point } from '@somnio/core';
 import { RARITIES } from '@somnio/protocol';
 import type { LootMessage, Rarity, SectorView, SpeechKind } from '@somnio/protocol';
@@ -45,7 +45,7 @@ import type { ClientEntity, SpeechBubbleRequest, TargetMark } from '@/client';
 import { TEST_REGISTRY, interiorSector, outdoorSector } from '../../core/test/support/worldFixture.ts';
 import { heldJobs } from './helpers/heldJobs';
 import { recordingCompiler } from './helpers/programVariants';
-import { clientEntity } from './helpers/worldFixture';
+import { clientEntity, outfit } from './helpers/worldFixture';
 import { setLocale } from '@/i18n';
 
 /**
@@ -62,6 +62,8 @@ function emptyAssets(): ModelAssets {
     ground: () => undefined,
     trophy: () => undefined,
     object: () => undefined,
+    wear: () => Promise.resolve(undefined),
+    retryWear: () => {},
     clipsFor: () => [],
     prototypeMeshes: () => undefined,
   };
@@ -75,6 +77,8 @@ function resolvingAssets(): ModelAssets {
     ground: () => undefined,
     trophy: () => undefined,
     object: () => new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1)),
+    wear: () => Promise.resolve(undefined),
+    retryWear: () => {},
     clipsFor: () => [],
     prototypeMeshes: () => undefined,
   };
@@ -678,14 +682,33 @@ describe('placeholders', () => {
     });
     const held = () => ({ mainHand: bones.mainHand.children.map(({ name }) => name), offHand: bones.offHand.children.map(({ name }) => name) });
 
-    scene.placeEntity(player({ held: { mainHand: 'sword', offHand: 'shield' } }));
+    scene.placeEntity(player({ outfit: outfit({ mainHand: 'sword', offHand: 'shield' }) }));
     expect(held()).toEqual({ mainHand: ['sword'], offHand: ['shield'] });
 
-    scene.updateHeld('self', { mainHand: 'mace' });
+    scene.updateOutfit('self', outfit({ mainHand: 'mace' }));
     expect(held()).toEqual({ mainHand: ['mace'], offHand: [] });
 
-    scene.placeEntity(player({ held: { offHand: 'unknown' } }));
+    scene.placeEntity(player({ outfit: outfit({ offHand: 'unknown' }) }));
     expect(held()).toEqual({ mainHand: [], offHand: [] });
+  });
+
+  it('dresses the body again only when what it wears changes, slot, base, or tier, and leaves it dressed when only the hands change', () => {
+    const model = new THREE.Object3D();
+    const bone = Object.assign(new THREE.Bone(), { name: 'handslotr' });
+    model.add(bone);
+    const scene = makeScene({ ...emptyAssets(), character: () => model, hand: (baseId) => Object.assign(new THREE.Object3D(), { name: baseId }) });
+    scene.placeEntity(player({ outfit: outfit({ mainHand: 'sword', chest: 'tunic' }) }));
+    const dressBody = vi.spyOn(scene as unknown as { dressBody: (state: unknown) => void }, 'dressBody');
+
+    scene.updateOutfit('self', outfit({ mainHand: 'mace', chest: 'tunic' }));
+    expect(bone.children.map(({ name }) => name)).toEqual(['mace']);
+    expect(dressBody).not.toHaveBeenCalled();
+
+    scene.updateOutfit('self', [...outfit({ mainHand: 'mace' }), { slot: 'chest', baseId: 'tunic', tier: 3 }]);
+    scene.placeEntity(player({ outfit: outfit({ mainHand: 'mace', chest: 'tunic', feet: 'boots' }) }));
+    scene.updateOutfit('self', outfit({ mainHand: 'mace', feet: 'boots' }));
+    expect(dressBody).toHaveBeenCalledTimes(3);
+    expect(bone.children.map(({ name }) => name)).toEqual(['mace']);
   });
 });
 
@@ -870,7 +893,7 @@ describe('room lights', () => {
   /** A candle, a lamp, and a torch, and a threshold whose door opens into the room it stands in. */
   const registry = parseModelRegistry({
     characterModels: [{ id: 'hero', model: { stem: 'Hero', expectedClips: ['Idle'] } }],
-    playerModel: 'hero',
+    peoples: PEOPLES.map((people) => ({ people, model: 'hero', scale: [1, 1, 1] })),
     objectModels: [
       { id: 'candle', model: prop('Candle'), footprint: { width: 0.2, depth: 0.2 }, colliders: [], light: { x: 0.05, y: 0.4, z: 0, kind: 'candle' } },
       { id: 'lamp', model: prop('Lamp'), footprint: { width: 0.4, depth: 0.4 }, light: { x: 0, y: 0.9, z: 0, kind: 'lamp' } },
@@ -1552,6 +1575,83 @@ describe('the model pack', () => {
     expect(meshes).toHaveLength(3);
     expect(assets.trophy('wolf')).toBeUndefined();
   });
+
+  it("lays armour as its design at the tier it rolled at, and a weapon as its base's ground model", async () => {
+    vi.stubGlobal('fetch', (input: RequestInfo | URL) =>
+      Promise.resolve(
+        String(input instanceof Request ? input.url : input).includes('GroundTunic.glb') ? new Response(null, { status: 404 }) : new Response(skinnedGLB()),
+      ),
+    );
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const assets = new HttpModelAssets({
+      ...TEST_REGISTRY,
+      characterModels: [],
+      handModels: [],
+      // The tier-1 alias does not load, so a tier that fell back to it would lie as nothing.
+      groundModels: [
+        { id: 'dagger', stem: 'GroundDagger' },
+        { id: 'tunic', stem: 'GroundTunic' },
+      ],
+      wardrobe: [{ base: 'tunic', tier: 3, ground: 'GroundTunicT3', covers: [], wear: { default: 'WearTunicT3' } }],
+      trophyModels: [],
+      objectModels: [],
+    });
+    await assets.prewarm();
+
+    expect([assets.ground('tunic', 3), assets.ground('tunic', 1), assets.ground('dagger', 3)].map((model) => model !== undefined)).toEqual([true, false, true]);
+  });
+
+  it("loads a worn piece again under a URL of its own on a retry, and answers every wait for it with the newer load's model, however late the first comes", async () => {
+    const requested: string[] = [];
+    let answerFirst!: () => void;
+    vi.stubGlobal('fetch', (input: RequestInfo | URL) => {
+      requested.push(String(input instanceof Request ? input.url : input));
+      if (requested.length > 1) return Promise.resolve(new Response(skinnedGLB()));
+      return new Promise<Response>((resolve) => (answerFirst = () => resolve(new Response(skinnedGLB()))));
+    });
+    const assets = new HttpModelAssets(TEST_REGISTRY);
+
+    const first = assets.wear('WearCapT1Vigils');
+    assets.retryWear(['WearCapT1Vigils']);
+    // The first request still stalls: the wait asked for before the retry is answered by the retry.
+    const retried = await first;
+    answerFirst();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(requested).toEqual([
+      expect.stringMatching(/\/assets\/Models\/WearCapT1Vigils\.glb$/),
+      expect.stringMatching(/\/assets\/Models\/WearCapT1Vigils\.glb\?retry=1$/),
+    ]);
+    expect(retried).toBeInstanceOf(THREE.Object3D);
+    expect(await assets.wear('WearCapT1Vigils')).toBe(retried);
+  });
+
+  it("answers a wait with the retry's model when the first request fails while the retry is still on its way", async () => {
+    const answers: (() => void)[] = [];
+    vi.stubGlobal('fetch', () => {
+      const failing = answers.length === 0;
+      return new Promise<Response>((resolve) => answers.push(() => resolve(failing ? new Response('', { status: 404 }) : new Response(skinnedGLB()))));
+    });
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const assets = new HttpModelAssets(TEST_REGISTRY);
+
+    const wait = assets.wear('WearCapT1Vigils');
+    assets.retryWear(['WearCapT1Vigils']);
+    answers[0]!();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    answers[1]!();
+
+    expect(await wait).toBeInstanceOf(THREE.Object3D);
+  });
+
+  it('answers a wait with no model when its only request fails', async () => {
+    vi.stubGlobal('fetch', () => Promise.resolve(new Response('', { status: 404 })));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const assets = new HttpModelAssets(TEST_REGISTRY);
+
+    expect(await assets.wear('WearCapT1Vigils')).toBeUndefined();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('"WearCapT1Vigils" unavailable'));
+  });
 });
 
 /**
@@ -1940,7 +2040,7 @@ describe('what a pointer is over, and the target', () => {
     const blade = (): THREE.Object3D => new THREE.Mesh(new THREE.BoxGeometry(1 / CHARACTER_SCALE, 0.02, 0.02).translate(0.5 / CHARACTER_SCALE, 0, 0));
     const scene = makeScene({ ...emptyAssets(), character: (id) => (id === 'wide' ? root : undefined), hand: blade, clipsFor: () => [idle] });
     scene.placeEntity(player());
-    scene.placeEntity(player({ id: 'peer', kind: 'peer', characterModelId: 'wide', position: { x: 13, z: 10 }, held: { mainHand: 'sword' } }));
+    scene.placeEntity(player({ id: 'peer', kind: 'peer', characterModelId: 'wide', position: { x: 13, z: 10 }, outfit: outfit({ mainHand: 'sword' }) }));
     for (const [metres, picked] of [
       [0.45, 'peer'],
       [-0.45, 'peer'],
@@ -2004,7 +2104,7 @@ describe('what a pointer is over, and the target', () => {
       lootId,
       x,
       z,
-      contents: { kind: 'item', baseId: 'dagger', rarity },
+      contents: { kind: 'item', baseId: 'dagger', tier: 1, rarity },
     });
 
     /** A dagger as its ground model lies: low and long, its ground bounds centred on its origin. */
@@ -2106,6 +2206,24 @@ describe('what a pointer is over, and the target', () => {
       await scene.prewarm();
       const model = scene._viewportPointOfLoot('open', 'model')!;
       expect(scene.pressTargetAt(model.x, model.y)).toEqual({ kind: 'loot', lootId: 'open' });
+    });
+
+    it("lays armour as its design's ground model at the tier it rolled", () => {
+      const scene = makeScene({ ...emptyAssets(), ground: (baseId, tier) => Object.assign(lyingDagger(), { name: `${baseId}:${tier}` }) });
+      scene.enterSpace(world());
+      scene.placeEntity(player());
+      scene.showLoot({ lootId: 'tunic', x: 13, z: 10, contents: { kind: 'item', baseId: 'tunic', tier: 1, rarity: 'plain' } });
+      scene.showLoot({ lootId: 'raincoat', x: 10, z: 13, contents: { kind: 'item', baseId: 'tunic', tier: 3, rarity: 'plain' } });
+      expect([shown(scene, 'tunic:1').length, shown(scene, 'tunic:3').length]).toEqual([1, 1]);
+    });
+
+    it('names a drop of armour after its design at the tier it rolled', () => {
+      const named = vi.spyOn(LootMarkers.prototype, 'show');
+      const scene = makeScene(emptyAssets());
+      scene.enterSpace(world());
+      scene.placeEntity(player());
+      scene.showLoot({ lootId: 'raincoat', x: 10, z: 13, contents: { kind: 'item', baseId: 'tunic', tier: 3, rarity: 'plain' } });
+      expect(named.mock.calls.map(([drop]) => drop.name)).toEqual(["Ferryman's raincoat"]);
     });
 
     it("lays a trophy as its kind's model, and one whose kind has none as its name alone", () => {
@@ -4016,7 +4134,7 @@ describe('scatter', () => {
     // A meadow grows grass and flowers, a wood grass and pebbles.
     scene.addSector(outdoorSector('West', { x: 0, z: 0 }, { placements: [placement('box-1', 'box', { x: 10, z: 10 })] }));
     scene.addSector(outdoorSector('Wood', { x: 20, z: 0 }, { ground: { backgroundMaterialId: 'forest-floor', marks: [] } }));
-    scene.showLoot({ lootId: 'cap', x: 12, z: 12, contents: { kind: 'item', baseId: 'cap', rarity: 'plain' } });
+    scene.showLoot({ lootId: 'cap', x: 12, z: 12, contents: { kind: 'item', baseId: 'cap', tier: 1, rarity: 'plain' } });
     scene.showLoot({ lootId: 'wisp', x: 14, z: 12, contents: { kind: 'trophy', monsterKind: 'ghost' } });
     scene.showPressMarker({ x: 5, z: 5 });
     for (let frame = 0; frame < 3; frame += 1) scene.tick(0.016);
@@ -4261,7 +4379,7 @@ describe('scatter', () => {
       model.add(hand);
       const sword = (): THREE.Object3D => new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.6, 0.04).translate(0, -0.3, 0));
       const { scene, root, bent } = grown({ character: () => model, hand: sword });
-      scene.placeEntity(player({ id: 'peer-1', kind: 'peer', position: { x: root.x + 0.02, z: root.z }, held: { mainHand: 'sword' } }));
+      scene.placeEntity(player({ id: 'peer-1', kind: 'peer', position: { x: root.x + 0.02, z: root.z }, outfit: outfit({ mainHand: 'sword' }) }));
       for (let frame = 0; frame < 10; frame += 1) scene.tick(1 / 60);
       expect(bent(), `hand at ${handHeight} m`).toBe(bends);
     }
@@ -4273,7 +4391,7 @@ describe('scatter', () => {
     lootId,
     x: at.x,
     z: at.z,
-    contents: { kind: 'item', baseId: 'dagger', rarity: 'plain' },
+    contents: { kind: 'item', baseId: 'dagger', tier: 1, rarity: 'plain' },
     ...overrides,
   });
 
@@ -4310,12 +4428,23 @@ describe('scatter', () => {
   /** Another kind's trophy as its ground model lies: low, round, and wider than a wisp. */
   const lyingFang = (): THREE.Object3D => new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.05, 0.5).translate(0, 0.025, 0));
 
-  /** Each lying model is measured under its own key, an item's apart from a trophy's and one kind's trophy apart from another's, so none takes another's reach. */
-  it("presses the grass by each lying model's own reach, a dagger and two kinds of trophy at once", () => {
-    const { scene } = grown({ ground: lyingDagger, trophy: (monsterKind) => (monsterKind === 'wolf' ? lyingFang() : lyingWisp()) });
+  /** A tunic as its design lies at the tier: low and square, a further tier's wider. */
+  const lyingTunic = (tier: number): THREE.Object3D => new THREE.Mesh(new THREE.BoxGeometry(0.2 * tier, 0.05, 0.2 * tier).translate(0, 0.025, 0));
+
+  /**
+   * Each lying model is measured under its own key, an item's apart from a trophy's, one kind's
+   * trophy apart from another's, and one tier's design apart from another's, so none takes another's reach.
+   */
+  it("presses the grass by each lying model's own reach, a dagger, two kinds of trophy, and a tunic at two tiers at once", () => {
+    const { scene } = grown({
+      ground: (baseId, tier) => (baseId === 'tunic' ? lyingTunic(tier) : lyingDagger()),
+      trophy: (monsterKind) => (monsterKind === 'wolf' ? lyingFang() : lyingWisp()),
+    });
     scene.showLoot(dagger('dagger', { x: 2, z: 4 }));
     scene.showLoot(wisp('wisp', { x: 5, z: 4 }));
     scene.showLoot({ ...wisp('fang', { x: 8, z: 4 }), contents: { kind: 'trophy', monsterKind: 'wolf' } });
+    scene.showLoot(dagger('tunic', { x: 11, z: 4 }, { contents: { kind: 'item', baseId: 'tunic', tier: 1, rarity: 'plain' } }));
+    scene.showLoot(dagger('raincoat', { x: 14, z: 4 }, { contents: { kind: 'item', baseId: 'tunic', tier: 3, rarity: 'plain' } }));
     const step = vi.spyOn(GrassSpring.prototype, 'step');
     scene.tick(1 / 60);
     const [contacts] = step.mock.calls[0]!;
@@ -4324,6 +4453,8 @@ describe('scatter', () => {
       { x: 2, radius: expect.closeTo(0.05, 6) },
       { x: 5, radius: expect.closeTo(0.15, 6) },
       { x: 8, radius: expect.closeTo(0.25, 6) },
+      { x: 11, radius: expect.closeTo(0.1, 6) },
+      { x: 14, radius: expect.closeTo(0.3, 6) },
     ]);
   });
 
@@ -4353,7 +4484,7 @@ describe('scatter', () => {
     const model = footed(0.2);
     model.add(Object.assign(new THREE.Bone(), { name: 'handslotr' }), Object.assign(new THREE.Bone(), { name: 'handslotl' }));
     const { scene, root } = grown({ ground: lyingDagger, character: () => model, hand: () => new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.1)) });
-    scene.placeEntity(player({ id: 'peer-1', kind: 'peer', position: { x: root.x, z: root.z }, held: { mainHand: 'sword', offHand: 'shield' } }));
+    scene.placeEntity(player({ id: 'peer-1', kind: 'peer', position: { x: root.x, z: root.z }, outfit: outfit({ mainHand: 'sword', offHand: 'shield' }) }));
     for (let index = 0; index <= LOOT_MARKER_POOL_SIZE; index += 1) scene.showLoot(dagger(`loot-${index}`, { x: 2 + index, z: 4 }));
     const step = vi.spyOn(GrassSpring.prototype, 'step');
     scene.tick(1 / 60);

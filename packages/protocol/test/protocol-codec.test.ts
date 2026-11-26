@@ -135,7 +135,8 @@ describe('runtime validation the erased types cannot do', () => {
   const item = { id: '0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b', baseId: 'sword', tier: 1, rarity: 'magic', affixes: [{ affixId: 'damage', value: 2 }] };
   const bagged = { place: 0, item };
   const inventory = { coins: 100, equipped: [], bag: [bagged] };
-  const loot = { lootId: 'loot-1', x: 1, z: 2, contents: { kind: 'item', baseId: 'cap', rarity: 'magic' } };
+  const loot = { lootId: 'loot-1', x: 1, z: 2, contents: { kind: 'item', baseId: 'cap', tier: 1, rarity: 'magic' } };
+  const outfitPiece = { slot: 'chest', baseId: 'tunic', tier: 3 };
   const character = { id: 'c', name: 'Saibot', people: 'vigils' };
   const say = { entityId: 'a', name: 'Alice', kind: 'say', text: 'hallo', clarity: 1, x: 0, z: 0 };
   const raising = { targetId: 'b', healerIds: ['a'], state: 'holding', progress: 0, seconds: 6 };
@@ -186,7 +187,7 @@ describe('runtime validation the erased types cannot do', () => {
     ['a coordinate past the metre cap', 'move', { ...move, x: SOMNIO_PROTOCOL_CONSTANTS.maxCoordinateMetres + 1 }, /x: exceeds 10000 metres/],
     ['a negative coordinate past the metre cap', 'correction', { x: 0, z: -10_000.5 }, /z: exceeds 10000 metres/],
     ['an item id outside the id alphabet on an equip', 'equip', { itemId: 'Sword 1' }, /itemId: expected an id/],
-    ['an unknown slot on an equip', 'equip', { itemId: 'ring-1', slot: 'charm' }, /slot: unknown value "charm"/],
+    ['a ring slot, which is no equip slot, on an equip', 'equip', { itemId: 'bracelet-1', slot: 'ring1' }, /slot: unknown value "ring1"/],
     ['a bag place below 0 on a move', 'moveItem', { itemId: 'cap-1', place: -1 }, /place: expected a bag place from 0 to 23, got -1/],
     ['a bag place past the bag on a move', 'moveItem', { itemId: 'cap-1', place: 24 }, /place: expected a bag place from 0 to 23, got 24/],
     ['a fractional bag place on a move', 'moveItem', { itemId: 'cap-1', place: 1.5 }, /place: expected Int32/],
@@ -276,7 +277,7 @@ describe('runtime validation the erased types cannot do', () => {
       'inventory',
       // The first is no object, so only a count checked before the items reports the cap.
       { ...inventory, equipped: [7, ...EQUIP_SLOTS.map((slot) => ({ slot, item }))] },
-      /equipped: exceeds 10 records \(got 11\)/,
+      /equipped: exceeds 11 records \(got 12\)/,
     ],
     [
       'more bag items than the cap',
@@ -291,13 +292,13 @@ describe('runtime validation the erased types cannot do', () => {
     [
       'an unknown trade',
       'inventory',
-      { ...inventory, trade: { kind: 'stolen', baseId: 'dagger', rarity: 'plain', coins: 60 } },
+      { ...inventory, trade: { kind: 'stolen', baseId: 'dagger', tier: 1, rarity: 'plain', coins: 60 } },
       /trade\.kind: unknown value "stolen"/,
     ],
     [
       'a trade for negative coins',
       'inventory',
-      { ...inventory, trade: { kind: 'sold', baseId: 'dagger', rarity: 'plain', coins: -1 } },
+      { ...inventory, trade: { kind: 'sold', baseId: 'dagger', tier: 1, rarity: 'plain', coins: -1 } },
       /trade\.coins: expected a non-negative number/,
     ],
     ['an unknown kind of pick-up', 'inventory', { ...inventory, pickedUp: { kind: 'relic', baseId: 'cap' } }, /pickedUp\.kind: unknown value "relic"/],
@@ -305,7 +306,10 @@ describe('runtime validation the erased types cannot do', () => {
     [
       'more rewards than a bag holds',
       'inventory',
-      { ...inventory, rewarded: Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxBagItems + 1 }, () => ({ kind: 'item', baseId: 'cap', rarity: 'magic' })) },
+      {
+        ...inventory,
+        rewarded: Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxBagItems + 1 }, () => ({ kind: 'item', baseId: 'cap', tier: 1, rarity: 'magic' })),
+      },
       /rewarded: exceeds 24 records \(got 25\)/,
     ],
     [
@@ -329,6 +333,7 @@ describe('runtime validation the erased types cannot do', () => {
       { ...loot, contents: { kind: 'trophy', monsterKind: 'Skeleton Warrior' } },
       /contents\.monsterKind: expected an id/,
     ],
+    ['an item drop of no tier', 'loot', { ...loot, contents: { kind: 'item', baseId: 'cap', rarity: 'magic' } }, /contents\.tier: expected Int32, got nothing/],
     ['loot of an unknown rarity', 'loot', { ...loot, contents: { ...loot.contents, rarity: 'legendary' } }, /contents\.rarity: unknown value "legendary"/],
     ['loot shared by a string', 'loot', { ...loot, shared: 'yes' }, /shared: expected a bool/],
     ['loot without its contents', 'loot', { lootId: 'loot-1', x: 1, z: 2 }, /contents: expected an object/],
@@ -343,7 +348,24 @@ describe('runtime validation the erased types cannot do', () => {
     ['loot thrown from an unknown hand', 'loot', { ...loot, from: { x: 0, z: 0, entityId: 'a', hand: 'head' } }, /from\.hand: unknown value "head"/],
     ['loot gone without its id', 'lootGone', {}, /lootId: expected a string, got nothing/],
     ['an over-cap ware on a buy', 'buy', { carrierId: 'npc:a/b', baseId: overCapId }, /baseId: exceeds 64 UTF-8 bytes/],
-    ['an unknown held hand item', 'held', { entityId: 'a', held: { mainHand: 'Short Sword' } }, /held\.mainHand: expected an id/],
+    [
+      'an outfit of more pieces than there are slots',
+      'outfit',
+      // The first piece is no object, so only a count checked before the pieces reports the cap.
+      { entityId: 'a', outfit: [7, ...Array.from({ length: EQUIP_SLOTS.length }, () => outfitPiece)] },
+      /outfit: exceeds 11 records \(got 12\)/,
+    ],
+    ['an outfit wearing one slot twice', 'outfit', { entityId: 'a', outfit: [outfitPiece, outfitPiece] }, /outfit\[1\]\.slot: slot "chest" worn twice/],
+    ['an outfit piece in a ring slot', 'outfit', { entityId: 'a', outfit: [{ ...outfitPiece, slot: 'ring1' }] }, /outfit\[0\]\.slot: unknown value "ring1"/],
+    ['an outfit piece of tier 0', 'outfit', { entityId: 'a', outfit: [{ ...outfitPiece, tier: 0 }] }, /outfit\[0\]\.tier: expected a tier of 1 or more/],
+    ['an outfit piece of a base outside the id alphabet', 'outfit', { entityId: 'a', outfit: [{ ...outfitPiece, baseId: 'Tunic' }] }, /baseId: expected an id/],
+    [
+      'a player without a people',
+      'entity',
+      { ...entity, id: 'a', kind: 'player', characterModelId: 'dreamer-vigils' },
+      /people: expected a string, got nothing/,
+    ],
+    ['a nightmare without a model', 'entity', { ...entity, characterModelId: undefined, people: 'vigils' }, /characterModelId: expected a string, got nothing/],
     ['a ware outside the id alphabet on a sell', 'sell', { carrierId: 'npc:a/b', itemId: 'Short Sword' }, /itemId: expected an id/],
     ['a sell without its shopkeeper', 'sell', { itemId: 'dagger' }, /carrierId: expected a string, got nothing/],
     ['an item id outside the id alphabet on a buy-back', 'buyBack', { carrierId: 'npc:a/b', itemId: 'Short Sword' }, /itemId: expected an id/],
@@ -685,7 +707,8 @@ describe('round trips', () => {
       frame('entity', { id: 'a', kind: 'npc', characterModelId: 'libus', name: 'Libus', radius: 0.3, x: 0, z: 0, facing: 0, gait: 'walk', condition: 'hale' }),
     );
     expect('service' in decoded.payload).toBe(false);
-    expect('held' in decoded.payload).toBe(false);
+    expect('people' in decoded.payload).toBe(false);
+    expect('outfit' in decoded.payload).toBe(false);
     expect('rank' in decoded.payload).toBe(false);
     expect('trait' in decoded.payload).toBe(false);
   });
@@ -701,12 +724,6 @@ describe('round trips', () => {
     const decoded = decodeSomnioMessage(frame('inventory', { ...inventory, trade: null }));
     expect(decoded).toEqual({ tag: 'inventory', payload: inventory });
     expect('trade' in decoded.payload).toBe(false);
-  });
-
-  /** An empty hand is left out, so it must stay absent rather than decode to an empty id. */
-  it('held decodes empty hands without their keys', () => {
-    const decoded = decodeSomnioMessage(frame('held', { entityId: 'a', held: { mainHand: null, offHand: 'moonstone' } }));
-    expect(decoded).toEqual({ tag: 'held', payload: { entityId: 'a', held: { offHand: 'moonstone' } } });
   });
 
   /** World time is fractional and far past what an integer or a narrowed float field could carry. */
@@ -774,7 +791,7 @@ describe('string literal sets', () => {
   });
 
   it('pins EquipSlot', () => {
-    expect(EQUIP_SLOTS).toEqual(['mainHand', 'offHand', 'head', 'chest', 'hands', 'legs', 'feet', 'neck', 'ring1', 'ring2']);
+    expect(EQUIP_SLOTS).toEqual(['mainHand', 'offHand', 'head', 'shoulders', 'chest', 'hands', 'legs', 'feet', 'neck', 'bracelet1', 'bracelet2']);
   });
 
   it('pins Hand', () => {
@@ -860,7 +877,7 @@ describe('string literal sets', () => {
  */
 describe('protocol constants', () => {
   it('pins the frame and handshake constants', () => {
-    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(25);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(26);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxFrameLength).toBe(1_048_576);
     expect(SOMNIO_PROTOCOL_CONSTANTS.frameSizeSlack).toBe(64);
     expect(MAX_WIRE_FRAME_SIZE).toBe(1_048_640);

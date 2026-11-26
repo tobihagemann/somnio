@@ -1,6 +1,7 @@
-import { sectorView } from '@somnio/core';
+import { baseItem, isBaseItemId, sectorView } from '@somnio/core';
 import type { Point, Sector } from '@somnio/core';
-import type { Door, EntityMessage, SomnioMessage } from '@somnio/protocol';
+import { EQUIP_SLOTS } from '@somnio/protocol';
+import type { Door, EntityMessage, EquipSlot, Outfit, SomnioMessage } from '@somnio/protocol';
 import type { ClientEntity } from '@/client';
 
 export function clientEntity(overrides: Partial<ClientEntity> = {}): ClientEntity {
@@ -15,11 +16,20 @@ export function clientEntity(overrides: Partial<ClientEntity> = {}): ClientEntit
     gait: 'jog',
     condition: 'hale',
     service: undefined,
-    held: undefined,
+    people: undefined,
+    outfit: undefined,
     rank: undefined,
     trait: undefined,
     ...overrides,
   };
+}
+
+/** An outfit of `pieces`, each at its base's own tier, in `EQUIP_SLOTS` order. */
+export function outfit(pieces: Partial<Record<EquipSlot, string>>): Outfit {
+  return EQUIP_SLOTS.flatMap((slot) => {
+    const baseId = pieces[slot];
+    return baseId === undefined ? [] : [{ slot, baseId, tier: isBaseItemId(baseId) ? baseItem(baseId).tier : 1 }];
+  });
 }
 
 /**
@@ -50,6 +60,7 @@ export function entityFrame(overrides: Partial<EntityMessage> = {}): SomnioMessa
       id: 'self',
       kind: 'player',
       characterModelId: 'hero',
+      people: 'vigils',
       name: 'Tester',
       radius: 0.3,
       x: 10,

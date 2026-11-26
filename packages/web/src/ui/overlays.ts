@@ -581,6 +581,11 @@ export class BlockingNotices {
     });
   }
 
+  /** Whether a notice stands over the page, so nothing behind it is to take the keyboard. */
+  get standing(): boolean {
+    return [this.webglView, this.uprightView, this.loadingView].some((view) => !view.classList.contains('hidden'));
+  }
+
   showWebGLUnavailable(): void {
     setHidden(this.webglView, false);
   }

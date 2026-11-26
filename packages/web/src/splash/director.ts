@@ -42,14 +42,15 @@ interface ActorState {
   condition: Condition;
 }
 
-/** The longest a newly staged world is held in the dark waiting to settle, so a field that never arrives cannot stop the reel. */
+/** The longest a newly staged shot is held in the dark waiting to settle, so a field or a piece that never arrives cannot stop the reel. */
 const SETTLE_LIMIT_SECONDS = 3;
 
 /**
  * Plays the splash reel on the scene behind the pre-login screens: each shot staged from the
  * committed sectors, its figures walked along their paths and its beats fired on time, joined to
  * the next by a dip to dark. A world staged afresh stays in the dark, its shot waiting, until the
- * scene has painted its ground and grown its scatter, so it never builds up on screen.
+ * scene has painted its ground, grown its scatter, and dressed its dreamers, so it never builds up
+ * on screen. A shot that places a dreamer in the world already staged waits in the dark the same way.
  *
  * `waiting` wants a start and `running` plays. `halted` follows an attached session or any throw,
  * and stays still until `restart`. A splash failure must never stand between a player and the
@@ -70,7 +71,7 @@ export class SplashDirector {
   private dip = 0;
   /** `rising` toward the cut at the shot's end, `falling` after it. */
   private dipPhase: 'rising' | 'falling' | undefined;
-  /** How long the world staged afresh has waited to settle, or `undefined` once it has. */
+  /** How long the shot staged has waited to settle, or `undefined` once it has. */
   private settling: number | undefined;
   private space: string | undefined;
   private readonly actors = new Map<string, ActorState>();
@@ -198,10 +199,9 @@ export class SplashDirector {
         this.actors.delete(id);
       }
     }
-    for (const actor of shot.actors) {
-      if (actor.carried && this.actors.has(actor.id)) continue;
-      this.place(actor);
-    }
+    const placed = shot.actors.filter((actor) => !(actor.carried && this.actors.has(actor.id)));
+    for (const actor of placed) this.place(actor);
+    if (this.settling === undefined && placed.some((actor) => actor.kind === 'peer') && !this.surface.isSettled()) this.settling = 0;
     this.direct(shot);
   }
 
@@ -217,7 +217,8 @@ export class SplashDirector {
       gait: actor.gait,
       condition: actor.condition,
       service: undefined,
-      held: undefined,
+      people: actor.people,
+      outfit: actor.outfit,
       rank: undefined,
       trait: undefined,
     });

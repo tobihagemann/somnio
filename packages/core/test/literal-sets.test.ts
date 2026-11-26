@@ -7,7 +7,7 @@ import { MOVE_ALLOWANCE_SECONDS, gaitMetresPerSecond } from '../src/gait.ts';
 import { AFFIXES, rollItem } from '../src/affixes.ts';
 import { BOUNTY_KINDS } from '../src/bounties.ts';
 import { hashString, seededSequence } from '../src/hash.ts';
-import { BASE_ITEMS } from '../src/items.ts';
+import { BASE_ITEMS, BRACELET_SLOTS, TIERS } from '../src/items.ts';
 import { FIRST_TEACHING, TEACHINGS, TEACHING_IDS, TRIAL_QUESTS, isTeachingId, teaching } from '../src/lucidity.ts';
 import { BOSS_MOVES, ELITE_TRAITS, ELITE_TRAIT_IDS, MONSTER_KINDS, MONSTER_KIND_IDS, bossMoves, isEliteTraitId, monsterKind } from '../src/monsterKinds.ts';
 import { LISTENER_ROLES, QUEST_STANDINGS } from '../src/npcDialog.ts';
@@ -23,6 +23,11 @@ import { SPEECH, SPEECH_PACE } from '../src/speech.ts';
 describe('literal sets', () => {
   it('pins the peoples', () => {
     expect(PEOPLES).toEqual(['vigils', 'sopors', 'umbrae', 'lumina']);
+  });
+
+  it('pins the tiers and the bracelet slots', () => {
+    expect(TIERS).toEqual([1, 2, 3, 4, 5]);
+    expect(BRACELET_SLOTS).toEqual(['bracelet1', 'bracelet2']);
   });
 
   it('pins the base items', () => {
@@ -41,13 +46,62 @@ describe('literal sets', () => {
       'iron-buckler': { labelKey: 'Iron buckler', slot: 'offHand', tier: 3, value: 100, implicit: { guard: 5 } },
       'skull-shield': { labelKey: 'Skull shield', slot: 'offHand', tier: 3, value: 225, implicit: { guard: 9 } },
       'skull-staff': { labelKey: 'Skull staff', slot: 'offHand', tier: 3, value: 200, focus: true, implicit: { spiritMax: 10 } },
-      cap: { labelKey: 'Leather cap', slot: 'head', tier: 1, value: 25, implicit: { spiritRecovery: 5 } },
-      tunic: { labelKey: 'Padded tunic', slot: 'chest', tier: 1, value: 50, implicit: { guard: 3 } },
-      gloves: { labelKey: 'Leather gloves', slot: 'hands', tier: 1, value: 25, implicit: { swingSpeed: 4 } },
-      trousers: { labelKey: 'Leather trousers', slot: 'legs', tier: 1, value: 40, implicit: { healthMax: 6 } },
-      boots: { labelKey: 'Leather boots', slot: 'feet', tier: 1, value: 25, implicit: { balanceMax: 5 } },
-      amulet: { labelKey: 'Amulet', slot: 'neck', tier: 1, value: 70, implicit: { spiritMax: 5 } },
-      ring: { labelKey: 'Iron ring', slot: 'ring', tier: 1, value: 50, implicit: { damage: 1 } },
+      cap: {
+        tierLabelKeys: { 1: 'Courier straw hat', 2: "Forester's feather band", 3: 'Tarred reed brim', 4: "Trapper's hide band", 5: 'Oiled storm brim' },
+        slot: 'head',
+        tier: 1,
+        value: 25,
+        implicit: { spiritRecovery: 5 },
+      },
+      shoulders: {
+        tierLabelKeys: { 1: 'Courier shoulders', 2: 'Leaf shoulder', 3: 'Ferry guards', 4: 'Pelt guards', 5: "Navigator's epaulettes" },
+        slot: 'shoulders',
+        tier: 1,
+        value: 40,
+        implicit: { balanceRecovery: 10 },
+      },
+      tunic: {
+        tierLabelKeys: { 1: 'Courier tunic', 2: 'Trail cape', 3: "Ferryman's raincoat", 4: "Trapper's baldric", 5: 'Shore coat' },
+        slot: 'chest',
+        tier: 1,
+        value: 50,
+        implicit: { guard: 3 },
+      },
+      gloves: {
+        tierLabelKeys: { 1: 'Dispatch gloves', 2: 'Bark-grip gloves', 3: 'Reedwork gloves', 4: 'Hide mitts', 5: "Sailmaker's gloves" },
+        slot: 'hands',
+        tier: 1,
+        value: 25,
+        implicit: { swingSpeed: 4 },
+      },
+      trousers: {
+        tierLabelKeys: { 1: 'Field trousers', 2: 'Brush trousers', 3: 'Wader trousers', 4: 'Trail leathers', 5: 'Storm trousers' },
+        slot: 'legs',
+        tier: 1,
+        value: 40,
+        implicit: { healthMax: 6 },
+      },
+      boots: {
+        tierLabelKeys: { 1: 'Trail boots', 2: 'Leaf gaiters', 3: 'Fen boots', 4: 'Climbing boots', 5: 'Deck boots' },
+        slot: 'feet',
+        tier: 1,
+        value: 25,
+        implicit: { balanceMax: 5 },
+      },
+      amulet: {
+        tierLabelKeys: { 1: 'Wheat-ear pendant', 2: 'Beech leaf', 3: 'Lantern cage', 4: 'Bear claw', 5: 'Compass rose' },
+        slot: 'neck',
+        tier: 1,
+        value: 70,
+        implicit: { spiritMax: 5 },
+      },
+      bracelet: {
+        tierLabelKeys: { 1: 'Dispatch wristband', 2: 'Maple twig', 3: 'Reed knot', 4: 'Antler tine', 5: 'Sounding weight' },
+        slot: 'bracelet',
+        tier: 1,
+        value: 50,
+        implicit: { damage: 1 },
+      },
     });
   });
 
@@ -57,23 +111,29 @@ describe('literal sets', () => {
         stat: 'healthMax',
         worth: 5,
         nameKey: '%@ of Vigour',
-        slots: ['offHand', 'head', 'chest', 'hands', 'legs', 'feet'],
+        slots: ['offHand', 'head', 'shoulders', 'chest', 'hands', 'legs', 'feet'],
         tiers: { 1: [3, 8], 2: [6, 13], 3: [10, 18] },
       },
       balance: {
         stat: 'balanceMax',
         worth: 5,
         nameKey: '%@ of Poise',
-        slots: ['mainHand', 'head', 'chest', 'hands', 'legs', 'feet'],
+        slots: ['mainHand', 'head', 'shoulders', 'chest', 'hands', 'legs', 'feet'],
         tiers: { 1: [3, 8], 2: [6, 13], 3: [10, 18] },
       },
-      spirit: { stat: 'spiritMax', worth: 5, nameKey: '%@ of Reverie', slots: ['offHand', 'neck', 'ring'], tiers: { 1: [3, 8], 2: [6, 13], 3: [10, 18] } },
-      damage: { stat: 'damage', worth: 13, nameKey: '%@ of Might', slots: ['mainHand', 'hands', 'neck', 'ring'], tiers: { 1: [1, 3], 2: [2, 5], 3: [4, 7] } },
+      spirit: { stat: 'spiritMax', worth: 5, nameKey: '%@ of Reverie', slots: ['offHand', 'neck', 'bracelet'], tiers: { 1: [3, 8], 2: [6, 13], 3: [10, 18] } },
+      damage: {
+        stat: 'damage',
+        worth: 13,
+        nameKey: '%@ of Might',
+        slots: ['mainHand', 'hands', 'neck', 'bracelet'],
+        tiers: { 1: [1, 3], 2: [2, 5], 3: [4, 7] },
+      },
       guard: {
         stat: 'guard',
         worth: 13,
         nameKey: '%@ of the Bulwark',
-        slots: ['offHand', 'head', 'chest', 'hands', 'legs', 'feet'],
+        slots: ['offHand', 'head', 'shoulders', 'chest', 'hands', 'legs', 'feet'],
         tiers: { 1: [1, 3], 2: [2, 5], 3: [4, 7] },
       },
       'swing-speed': { stat: 'swingSpeed', worth: 5, nameKey: '%@ of Haste', slots: ['mainHand', 'hands'], tiers: { 1: [3, 8], 2: [6, 11], 3: [9, 14] } },
@@ -81,22 +141,28 @@ describe('literal sets', () => {
         stat: 'balanceRecovery',
         worth: 3,
         nameKey: '%@ of Steadiness',
-        slots: ['mainHand', 'head', 'chest', 'legs', 'feet', 'neck', 'ring'],
+        slots: ['mainHand', 'head', 'shoulders', 'chest', 'legs', 'feet', 'neck', 'bracelet'],
         tiers: { 1: [5, 15], 2: [10, 22], 3: [16, 30] },
       },
       'spirit-recovery': {
         stat: 'spiritRecovery',
         worth: 3,
         nameKey: '%@ of Stillness',
-        slots: ['offHand', 'neck', 'ring'],
+        slots: ['offHand', 'neck', 'bracelet'],
         tiers: { 1: [5, 15], 2: [10, 22], 3: [16, 30] },
       },
-      'mend-depth': { stat: 'mendDepth', worth: 13, nameKey: '%@ of Mending', slots: ['offHand', 'neck', 'ring'], tiers: { 1: [1, 3], 2: [2, 5], 3: [4, 7] } },
+      'mend-depth': {
+        stat: 'mendDepth',
+        worth: 13,
+        nameKey: '%@ of Mending',
+        slots: ['offHand', 'neck', 'bracelet'],
+        tiers: { 1: [1, 3], 2: [2, 5], 3: [4, 7] },
+      },
       'ward-strength': {
         stat: 'wardStrength',
         worth: 3,
         nameKey: '%@ of Warding',
-        slots: ['offHand', 'neck', 'ring'],
+        slots: ['offHand', 'neck', 'bracelet'],
         tiers: { 1: [5, 15], 2: [10, 22], 3: [16, 30] },
       },
     });

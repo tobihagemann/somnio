@@ -419,6 +419,18 @@
     "en": "Braced",
     "de": "Standfest"
   },
+  "Bracelet": {
+    "en": "Brace\u00adlet",
+    "de": "Armband"
+  },
+  "Bracelet 1": {
+    "en": "Bracelet 1",
+    "de": "Armband 1"
+  },
+  "Bracelet 2": {
+    "en": "Bracelet 2",
+    "de": "Armband 2"
+  },
   "Broadcast message: %@": {
     "en": "Broadcast message: %@",
     "de": "Broadcast Nachricht: %@"
@@ -1091,18 +1103,6 @@
     "en": "Right-click or double-click to unequip.",
     "de": "Rechtsklick oder Doppelklick zum Ablegen."
   },
-  "Ring": {
-    "en": "Ring",
-    "de": "Ring"
-  },
-  "Ring 1": {
-    "en": "Ring 1",
-    "de": "Ring 1"
-  },
-  "Ring 2": {
-    "en": "Ring 2",
-    "de": "Ring 2"
-  },
   "Run": {
     "en": "Run",
     "de": "Rennen"
@@ -1162,6 +1162,10 @@
   "Shopkeeper": {
     "en": "Shopkeeper",
     "de": "Krämer"
+  },
+  "Shoulders": {
+    "en": "Shoul\u00adders",
+    "de": "Schultern"
   },
   "Shout to give balance back to every dreamer who hears you. Each rank gives back more.": {
     "en": "Shout to give balance back to every dreamer who hears you. Each rank gives back more.",
@@ -1590,6 +1594,10 @@
   "Your dreamer, wearing what is equipped. Drag to turn.": {
     "en": "Your dreamer, wearing what is equipped. Drag to turn.",
     "de": "Dein Träumer mit allem, was er trägt. Ziehen zum Drehen."
+  },
+  "Your gear is still loading.": {
+    "en": "Your gear is still loading.",
+    "de": "Deine Ausrüstung wird noch geladen."
   },
   "Your health gives out. You fall.": {
     "en": "Your health gives out. You fall.",

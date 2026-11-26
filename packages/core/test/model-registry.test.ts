@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BODY_REGIONS,
   LIGHT_KINDS,
   ModelRegistryError,
   PLACEHOLDER_REGISTRY,
@@ -12,10 +13,15 @@ import {
   modelForObjectId,
   objectModel,
   parseModelRegistry,
+  peopleBody,
+  peopleScale,
   trophyModelStem,
+  wardrobeRow,
+  wornStem,
 } from '../src/modelRegistry.ts';
 import { BASE_ITEMS } from '../src/items.ts';
 import { MONSTER_KIND_IDS, MONSTER_KINDS } from '../src/monsterKinds.ts';
+import { PEOPLES } from '../src/people.ts';
 import registryJSON from '../data/ModelRegistry.json' with { type: 'json' };
 import { loadSectorFixtures } from './support/sectorFixture.ts';
 
@@ -32,11 +38,19 @@ describe('the committed registry parses', () => {
     expect(bundledModelRegistry()).not.toEqual(PLACEHOLDER_REGISTRY);
   });
 
-  it('resolves the player model', () => {
-    const model = modelForCharacter(registry, registry.playerModel);
-    expect(model?.stem).toBe('Dreamer');
-    expect(model?.expectedClips).toContain('Walking_A');
-    expect(model?.expectedClips).toContain('Running_Strafe_Left');
+  it('draws each people in its own body, at its own scale', () => {
+    expect(PEOPLES.map((people) => modelForCharacter(registry, peopleBody(registry, people) ?? '')?.stem)).toEqual([
+      'DreamerVigils',
+      'DreamerSopors',
+      'DreamerUmbrae',
+      'DreamerLumina',
+    ]);
+    for (const people of PEOPLES) {
+      const model = modelForCharacter(registry, peopleBody(registry, people) ?? '');
+      expect(model?.expectedClips).toEqual(modelForCharacter(registry, 'dreamer')?.expectedClips);
+    }
+    expect(peopleScale(registry, 'sopors')).toEqual([1.27, 1.18, 1.13]);
+    expect(peopleBody(registry, 'giants')).toBeUndefined();
   });
 
   it('resolves the NPC and monster models by id', () => {
@@ -103,6 +117,28 @@ describe('the committed registry parses', () => {
     expect(groundModelStem(registry, 'cap')).toBe('GroundCap');
   });
 
+  it('names the body regions a worn piece covers', () => {
+    expect(BODY_REGIONS).toEqual(['BootL', 'BootR', 'Crown', 'Face', 'HandL', 'HandR', 'SleeveL', 'SleeveR', 'ThighL', 'ThighR', 'Torso']);
+  });
+
+  it("wears a bracelet on each wrist as that wrist's own piece", () => {
+    for (let tier = 1; tier <= 5; tier += 1) {
+      const row = wardrobeRow(registry, 'bracelet', tier)!;
+      for (const people of PEOPLES) {
+        expect(wornStem(row, people, 'bracelet1')).toBe(`WearBraceletT${tier}Left`);
+        expect(wornStem(row, people, 'bracelet2')).toBe(`WearBraceletT${tier}Right`);
+      }
+    }
+  });
+
+  it('fits a piece to a people where the design is fitted, and gives every people the one piece otherwise', () => {
+    const tunic = wardrobeRow(registry, 'tunic', 3)!;
+    expect(PEOPLES.map((people) => wornStem(tunic, people, 'chest'))).toEqual(['WearTunicT3', 'WearTunicT3Sopors', 'WearTunicT3Umbrae', 'WearTunicT3Lumina']);
+    const boots = wardrobeRow(registry, 'boots', 2)!;
+    expect(PEOPLES.map((people) => wornStem(boots, people, 'feet'))).toEqual(Array(PEOPLES.length).fill('WearBootsT2'));
+    expect(wardrobeRow(registry, 'sword', 1)).toBeUndefined();
+  });
+
   /** A nightmare kind added without a trophy model would drop its trophy as a bare name. */
   it("lays every nightmare's trophy as its own ground model", () => {
     expect(registry.trophyModels).toEqual([
@@ -126,9 +162,20 @@ describe('the committed registry parses', () => {
     const lastCharacterIndex = Math.max(...registry.characterModels.map((rule) => stems.indexOf(rule.model.stem)));
     const firstPropIndex = Math.min(...registry.objectModels.map((rule) => stems.indexOf(rule.model.stem)));
     expect(lastCharacterIndex).toBeLessThan(firstPropIndex);
-    // Hand, ground, and trophy models are loaded with the rest, in that order, expecting no clip.
-    const staticModels = [...registry.handModels, ...registry.groundModels, ...registry.trophyModels];
-    expect(allModelEntries(registry).slice(-staticModels.length)).toEqual(staticModels.map(({ stem }) => ({ stem, expectedClips: [] })));
+    // Hand, ground, wardrobe ground, and trophy models are loaded with the rest, in that order,
+    // expecting no clip. A tier-1 wardrobe drop is its base's ground model, listed once.
+    const staticStems = [
+      ...new Set([
+        ...registry.handModels.map((rule) => rule.stem),
+        ...registry.groundModels.map((rule) => rule.stem),
+        ...registry.wardrobe.map((row) => row.ground),
+        ...registry.trophyModels.map((rule) => rule.stem),
+      ]),
+    ];
+    expect(allModelEntries(registry).slice(-staticStems.length)).toEqual(staticStems.map((stem) => ({ stem, expectedClips: [] })));
+    expect(stems).toContain('GroundTunicT5');
+    // A worn piece loads when a dreamer first wears it.
+    expect(stems.some((stem) => stem.startsWith('Wear'))).toBe(false);
   });
 
   it('gives every prop an empty clip contract and every character a non-empty one', () => {
@@ -179,12 +226,29 @@ describe('the committed registry parses', () => {
 });
 
 describe('structural invariants the JSON shape cannot express', () => {
+  const wardrobeBases = ['cap', 'shoulders', 'tunic', 'gloves', 'trousers', 'boots', 'amulet', 'bracelet'];
+  interface RawWardrobeRow {
+    base: string;
+    tier: number;
+    ground: string;
+    covers: string[];
+    wear: { default?: string; peoples?: Record<string, string>; wrists?: Record<string, string> };
+  }
   const valid = {
     characterModels: [{ id: 'hero', model: { stem: 'A', expectedClips: ['Idle'] } }],
-    playerModel: 'hero',
+    peoples: PEOPLES.map((people: string) => ({ people, model: 'hero', scale: [1, 1, 1] })),
     handModels: [{ id: 'sword', stem: 'HandSword' }],
-    groundModels: [{ id: 'sword', stem: 'GroundSword' }],
+    groundModels: [{ id: 'sword', stem: 'GroundSword' }, ...wardrobeBases.map((base) => ({ id: base, stem: `Ground-${base}-1` }))],
     trophyModels: [{ id: 'ghost', stem: 'GroundGhostlyWisp' }],
+    wardrobe: wardrobeBases.flatMap((base) =>
+      [1, 2, 3, 4, 5].map((tier): RawWardrobeRow => ({
+        base,
+        tier,
+        ground: `Ground-${base}-${tier}`,
+        covers: base === 'tunic' ? ['Torso'] : [],
+        wear: base === 'bracelet' ? { wrists: { bracelet1: `Left${tier}`, bracelet2: `Right${tier}` } } : { default: `Wear-${base}-${tier}` },
+      })),
+    ),
     objectModels: [
       {
         id: 'house',
@@ -207,6 +271,10 @@ describe('structural invariants the JSON shape cannot express', () => {
     return copy;
   }
 
+  function row(registry: typeof valid, base: string, tier: number): RawWardrobeRow {
+    return registry.wardrobe.find((candidate) => candidate.base === base && candidate.tier === tier)!;
+  }
+
   it('accepts the valid shape, walk surfaces that touch included', () => {
     expect(() => parseModelRegistry(valid)).not.toThrow();
   });
@@ -220,7 +288,16 @@ describe('structural invariants the JSON shape cannot express', () => {
     // A character model with no expected clips would pass the pipeline's clip-presence gate
     // vacuously — the exact failure that gate exists to catch.
     ['a character model expecting no clips', (registry: typeof valid) => (registry.characterModels[0]!.model.expectedClips = []), /must expect a clip/],
-    ['a player model that is no character model', (registry: typeof valid) => (registry.playerModel = 'nobody'), /no character model "nobody"/],
+    ['a body of no people', (registry: typeof valid) => (registry.peoples[0]!.people = 'giants'), /peoples\[0\]\.people: no people "giants"/],
+    ['a people without a body', (registry: typeof valid) => registry.peoples.pop(), /no body for "lumina"/],
+    ['a duplicate people', (registry: typeof valid) => (registry.peoples[3]!.people = 'vigils'), /duplicate id "vigils"/],
+    [
+      'a body that is no character model',
+      (registry: typeof valid) => (registry.peoples[0]!.model = 'nobody'),
+      /peoples\[0\]\.model: no character model "nobody"/,
+    ],
+    ['a body scale that is not positive', (registry: typeof valid) => (registry.peoples[0]!.scale[1] = 0), /scale\[1\]: expected a positive number/],
+    ['a body scale of two axes', (registry: typeof valid) => registry.peoples[0]!.scale.pop(), /scale: expected three axes/],
     ['a hand model of no item', (registry: typeof valid) => (registry.handModels[0]!.id = 'halberd'), /handModels\[0\]\.id: no item "halberd"/],
     ['a hand model without a stem', (registry: typeof valid) => (registry.handModels[0]!.stem = ''), /handModels\[0\]\.stem: expected a non-empty string/],
     ['a duplicate hand model', (registry: typeof valid) => registry.handModels.push(registry.handModels[0]!), /duplicate id "sword"/],
@@ -229,6 +306,54 @@ describe('structural invariants the JSON shape cannot express', () => {
       'a trophy model of no nightmare kind',
       (registry: typeof valid) => (registry.trophyModels[0]!.id = 'dragon'),
       /trophyModels\[0\]\.id: no nightmare kind "dragon"/,
+    ],
+    [
+      'a wardrobe missing a tier',
+      (registry: typeof valid) => (registry.wardrobe = registry.wardrobe.filter((candidate) => candidate !== row(registry, 'tunic', 3))),
+      /no row for tunic at tier 3/,
+    ],
+    ['a duplicate wardrobe row', (registry: typeof valid) => registry.wardrobe.push(row(registry, 'cap', 2)), /duplicate row for cap at tier 2/],
+    ['a wardrobe row of no tier', (registry: typeof valid) => (row(registry, 'cap', 5).tier = 6), /wardrobe\[4\]\.tier: expected a tier from 1 to 5/],
+    [
+      'a wardrobe row of a held item',
+      (registry: typeof valid) => (row(registry, 'cap', 1).base = 'sword'),
+      /wardrobe\[0\]\.base: no armour or jewellery "sword"/,
+    ],
+    [
+      'a bracelet row missing a wrist',
+      (registry: typeof valid) => delete row(registry, 'bracelet', 2).wear.wrists!['bracelet2'],
+      /wear\.wrists\.bracelet2: expected a non-empty string/,
+    ],
+    [
+      'a bracelet row worn as one piece',
+      (registry: typeof valid) => (row(registry, 'bracelet', 1).wear = { default: 'WearBracelet' }),
+      /a bracelet is worn as a piece for each wrist alone/,
+    ],
+    [
+      'a row with wrists that is no bracelet',
+      (registry: typeof valid) => (row(registry, 'gloves', 1).wear.wrists = { bracelet1: 'L', bracelet2: 'R' }),
+      /only a bracelet is worn per wrist/,
+    ],
+    [
+      'a row that leaves a people without a piece',
+      (registry: typeof valid) => (row(registry, 'cap', 1).wear = { peoples: { vigils: 'WearCapVigils' } }),
+      /wardrobe\[0\]\.wear: no piece for sopors in head/,
+    ],
+    [
+      'a piece fitted to no people',
+      (registry: typeof valid) => (row(registry, 'cap', 1).wear.peoples = { giants: 'WearCapGiants' }),
+      /wear\.peoples: no people "giants"/,
+    ],
+    ['a cover of no body region', (registry: typeof valid) => (row(registry, 'tunic', 1).covers = ['Tail']), /covers\[0\]: no body region "Tail"/],
+    [
+      'a wardrobe base with no tier-1 ground model',
+      (registry: typeof valid) => (registry.groundModels = registry.groundModels.filter((rule) => rule.id !== 'cap')),
+      /groundModels: cap must lie as its tier-1 wardrobe row, "Ground-cap-1"/,
+    ],
+    [
+      'a tier-1 ground model other than its wardrobe row',
+      (registry: typeof valid) => (registry.groundModels.find((rule) => rule.id === 'boots')!.stem = 'GroundBootsT2'),
+      /groundModels: boots must lie as its tier-1 wardrobe row, "Ground-boots-1"/,
     ],
     ['a footprint without extent', (registry: typeof valid) => (registry.objectModels[0]!.footprint.depth = 0), /footprint\.depth: expected a positive number/],
     [
@@ -261,11 +386,13 @@ describe('structural invariants the JSON shape cannot express', () => {
     expect(parseModelRegistry(bare).objectModels[0]).toMatchObject({ walkSurfaces: [], doors: [] });
   });
 
-  it('reads absent hand, ground, and trophy models as none', () => {
-    expect(parseModelRegistry({ ...valid, handModels: undefined, groundModels: undefined, trophyModels: undefined })).toMatchObject({
+  it('reads absent hand, ground, and trophy models and an absent or empty wardrobe as none', () => {
+    expect(parseModelRegistry({ ...valid, wardrobe: [] }).wardrobe).toEqual([]);
+    expect(parseModelRegistry({ ...valid, handModels: undefined, groundModels: undefined, trophyModels: undefined, wardrobe: undefined })).toMatchObject({
       handModels: [],
       groundModels: [],
       trophyModels: [],
+      wardrobe: [],
     });
   });
 

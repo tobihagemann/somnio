@@ -12,13 +12,29 @@ const purse = (coins: number): Inventory => ({ coins, equipped: {}, bag: [] });
 
 describe('the shop', () => {
   it('shelves every base of tier 1 but the Moonstone, in order', () => {
-    expect(WARES).toEqual(['dagger', 'cudgel', 'sword', 'mace', 'buckler', 'shield', 'wand', 'cap', 'tunic', 'gloves', 'trousers', 'boots', 'amulet', 'ring']);
+    expect(WARES).toEqual([
+      'dagger',
+      'cudgel',
+      'sword',
+      'mace',
+      'buckler',
+      'shield',
+      'wand',
+      'cap',
+      'shoulders',
+      'tunic',
+      'gloves',
+      'trousers',
+      'boots',
+      'amulet',
+      'bracelet',
+    ]);
     expect((Object.keys(BASE_ITEMS) as BaseItemId[]).filter((baseId) => baseItem(baseId).tier === 1 && !isWare(baseId))).toEqual(['moonstone']);
     expect(WARES.every((ware) => baseItem(ware).tier === 1)).toBe(true);
   });
 
   it('sells each ware at its base value', () => {
-    expect(WARES.map(price)).toEqual([60, 30, 150, 240, 40, 90, 80, 25, 50, 25, 40, 25, 70, 50]);
+    expect(WARES.map(price)).toEqual([60, 30, 150, 240, 40, 90, 80, 25, 40, 50, 25, 40, 25, 70, 50]);
   });
 
   it('pays half an item value, rounded down', () => {

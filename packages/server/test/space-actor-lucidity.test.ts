@@ -269,7 +269,7 @@ describe('a trial', () => {
       coins: 100,
       equipped: [{ slot: 'offHand', item: { id: expect.any(String), ...plain('moonstone') } }],
       bag: [],
-      rewarded: [{ kind: 'item', baseId: 'moonstone', rarity: 'plain' }],
+      rewarded: [{ kind: 'item', baseId: 'moonstone', tier: 1, rarity: 'plain' }],
     });
     // The Moonstone follows the role in what the dreamer is sent.
     const order = messages.flatMap((message) => (message.tag === 'inventory' || message.tag === 'lucidity' ? [message.tag] : []));
@@ -304,7 +304,7 @@ describe('a trial', () => {
       coins: 100,
       equipped: [{ slot: 'offHand', item: { id: expect.any(String), ...plain('wand') } }],
       bag: [],
-      rewarded: [{ kind: 'item', baseId: 'wand', rarity: 'plain' }],
+      rewarded: [{ kind: 'item', baseId: 'wand', tier: 1, rarity: 'plain' }],
     });
   });
 
@@ -708,7 +708,7 @@ describe('a quest', () => {
     // The frame says what the turn-in gave, so the dreamer is told of the gear.
     expect(payloads(await collectMessages(alice.outbox), 'inventory').at(-1)).toMatchObject({
       coins: COINS + 250,
-      rewarded: [{ kind: 'item', baseId: gear.baseId, rarity: gear.rarity }],
+      rewarded: [{ kind: 'item', baseId: gear.baseId, tier: 3, rarity: gear.rarity }],
     });
   });
 

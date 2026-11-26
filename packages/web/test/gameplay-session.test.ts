@@ -1011,12 +1011,12 @@ describe('the Bag', () => {
     rig.controller.connectionState = 'attached';
 
     rig.session.equip('moonstone-1');
-    rig.session.equip('ring-1', 'ring2');
+    rig.session.equip('bracelet-1', 'bracelet2');
     rig.session.unequip('head');
 
     expect(rig.sent).toEqual([
       { tag: 'equip', payload: { itemId: 'moonstone-1' } },
-      { tag: 'equip', payload: { itemId: 'ring-1', slot: 'ring2' } },
+      { tag: 'equip', payload: { itemId: 'bracelet-1', slot: 'bracelet2' } },
       { tag: 'unequip', payload: { slot: 'head' } },
     ]);
   });
@@ -1100,13 +1100,13 @@ describe('the Bag', () => {
   it('announces what was dropped', () => {
     const rig = makeRig();
     rig.controller.dispatch(inventoryFrame(carrying({ bag: [item('cap')] })));
-    rig.controller.dispatch(inventoryFrame(carrying(), { dropped: { kind: 'item', baseId: 'cap', rarity: 'plain' } }));
-    expect(rig.controller.chatHistory).toEqual([{ kind: 'dropped', contents: { kind: 'item', baseId: 'cap', rarity: 'plain' } }]);
+    rig.controller.dispatch(inventoryFrame(carrying(), { dropped: { kind: 'item', baseId: 'cap', tier: 1, rarity: 'plain' } }));
+    expect(rig.controller.chatHistory).toEqual([{ kind: 'dropped', contents: { kind: 'item', baseId: 'cap', tier: 1, rarity: 'plain' } }]);
   });
 });
 
 describe('a drop', () => {
-  const DAGGER_DROP = { kind: 'item', baseId: 'dagger', rarity: 'magic' } as const;
+  const DAGGER_DROP = { kind: 'item', baseId: 'dagger', tier: 1, rarity: 'magic' } as const;
   const lootFrame = (lootId: string, at: { x: number; z: number }): SomnioMessage => ({ tag: 'loot', payload: { lootId, ...at, contents: DAGGER_DROP } });
   const pickUps = (rig: Rig) => rig.sent.filter((message) => message.tag === 'pickUp');
   const at = (rig: Rig) => rig.controller.entities.get('self')!.position;
@@ -1640,7 +1640,7 @@ describe('chat lines from what changed', () => {
     const rig = makeRig();
     rig.controller.dispatch(enterSpaceFrame());
     rig.controller.dispatch(purse(100));
-    const tunic = { kind: 'item', baseId: 'tunic', rarity: 'rare' } as const;
+    const tunic = { kind: 'item', baseId: 'tunic', tier: 1, rarity: 'rare' } as const;
     rig.controller.dispatch(inventoryFrame(carrying({ coins: 160, bag: [item('tunic')] }), { rewarded: [tunic] }));
     expect(rig.controller.chatHistory).toEqual([
       { kind: 'coinsGained', coins: 60 },
@@ -1769,7 +1769,7 @@ describe('chat lines from what changed', () => {
     rig.controller.dispatch(turnedIn('into-the-crypt'));
     rig.controller.dispatch(studying(60));
     expect(news).toEqual([]);
-    const sabre = { kind: 'item', baseId: 'sabre', rarity: 'rare' } as const;
+    const sabre = { kind: 'item', baseId: 'sabre', tier: 3, rarity: 'rare' } as const;
     rig.controller.dispatch(inventoryFrame(carrying({ coins: 350, bag: [item('sabre')] }), { rewarded: [sabre] }));
     expect(news).toEqual([{ kind: 'turnedIn', held: { questId: 'into-the-crypt', progress: [1] }, study: 'strike', coins: 250, items: [sabre] }]);
     // The chat says the coins and the item as before.
@@ -2299,16 +2299,18 @@ describe('the shop', () => {
   it('announces what a trade bought, sold, or bought back, and not the coins it moved, among the item lines', () => {
     const { rig } = atMercus();
     rig.controller.dispatch(
-      inventoryFrame(carrying({ coins: 40, bag: [CUDGEL, DAGGER] }), { trade: { kind: 'bought', baseId: 'dagger', rarity: 'plain', coins: 60 } }),
+      inventoryFrame(carrying({ coins: 40, bag: [CUDGEL, DAGGER] }), { trade: { kind: 'bought', baseId: 'dagger', tier: 1, rarity: 'plain', coins: 60 } }),
     );
-    rig.controller.dispatch(inventoryFrame(carrying({ coins: 70, bag: [CUDGEL] }), { trade: { kind: 'sold', baseId: 'dagger', rarity: 'plain', coins: 30 } }));
     rig.controller.dispatch(
-      inventoryFrame(carrying({ coins: 40, bag: [CUDGEL, DAGGER] }), { trade: { kind: 'boughtBack', baseId: 'dagger', rarity: 'plain', coins: 30 } }),
+      inventoryFrame(carrying({ coins: 70, bag: [CUDGEL] }), { trade: { kind: 'sold', baseId: 'dagger', tier: 1, rarity: 'plain', coins: 30 } }),
+    );
+    rig.controller.dispatch(
+      inventoryFrame(carrying({ coins: 40, bag: [CUDGEL, DAGGER] }), { trade: { kind: 'boughtBack', baseId: 'dagger', tier: 1, rarity: 'plain', coins: 30 } }),
     );
     expect(rig.controller.chatHistory).toEqual([
-      { kind: 'bought', baseId: 'dagger', coins: 60 },
-      { kind: 'sold', baseId: 'dagger', coins: 30 },
-      { kind: 'boughtBack', baseId: 'dagger', coins: 30 },
+      { kind: 'bought', baseId: 'dagger', tier: 1, coins: 60 },
+      { kind: 'sold', baseId: 'dagger', tier: 1, coins: 30 },
+      { kind: 'boughtBack', baseId: 'dagger', tier: 1, coins: 30 },
     ]);
     expect(rig.controller.chatHistory.map(chatLineCategory)).toEqual(['itemInfo', 'itemInfo', 'itemInfo']);
   });
@@ -2317,14 +2319,14 @@ describe('the shop', () => {
     const { rig } = atMercus();
     expect(rig.session.buyBackItems).toEqual([]);
     rig.controller.dispatch(
-      inventoryFrame(carrying({ coins: 115 }), { trade: { kind: 'sold', baseId: 'cudgel', rarity: 'plain', coins: 15 } }, [
+      inventoryFrame(carrying({ coins: 115 }), { trade: { kind: 'sold', baseId: 'cudgel', tier: 1, rarity: 'plain', coins: 15 } }, [
         CUDGEL,
         { ...DAGGER, baseId: 'lantern' as 'dagger' },
       ]),
     );
     expect(rig.session.buyBackItems).toEqual([CUDGEL]);
     rig.controller.dispatch(
-      inventoryFrame(carrying({ coins: 100, bag: [CUDGEL] }), { trade: { kind: 'boughtBack', baseId: 'cudgel', rarity: 'plain', coins: 15 } }),
+      inventoryFrame(carrying({ coins: 100, bag: [CUDGEL] }), { trade: { kind: 'boughtBack', baseId: 'cudgel', tier: 1, rarity: 'plain', coins: 15 } }),
     );
     expect(rig.session.buyBackItems).toEqual([]);
   });
@@ -2341,7 +2343,7 @@ describe('the shop', () => {
 
     rig.now = 300;
     rig.controller.dispatch(
-      inventoryFrame(carrying({ coins: 40, bag: [CUDGEL, DAGGER] }), { trade: { kind: 'bought', baseId: 'dagger', rarity: 'plain', coins: 60 } }),
+      inventoryFrame(carrying({ coins: 40, bag: [CUDGEL, DAGGER] }), { trade: { kind: 'bought', baseId: 'dagger', tier: 1, rarity: 'plain', coins: 60 } }),
     );
     const answered = repaints();
     rig.now = 799;
@@ -3077,7 +3079,10 @@ describe('a left press on a body', () => {
     rig.controller.dispatch(entityFrame());
     rig.controller.dispatch(entityFrame({ id: GUARD, kind: 'npc', name: 'Guard', x: 10, z: 12.05 }));
     rig.controller.dispatch({ tag: 'energy', payload: FULL });
-    rig.controller.dispatch({ tag: 'loot', payload: { lootId: 'loot-1', x: 10, z: 11.02, contents: { kind: 'item', baseId: 'dagger', rarity: 'magic' } } });
+    rig.controller.dispatch({
+      tag: 'loot',
+      payload: { lootId: 'loot-1', x: 10, z: 11.02, contents: { kind: 'item', baseId: 'dagger', tier: 1, rarity: 'magic' } },
+    });
     rig.session.runTick(0);
     rig.session.pressEntity(GUARD);
     rig.session.pressLoot('loot-1');
@@ -4169,7 +4174,10 @@ describe('a channel', () => {
 
   it('ends the waiting walk on a press on a drop, walking the player to it and picking it up while the channel is under way', () => {
     const rig = healer();
-    rig.controller.dispatch({ tag: 'loot', payload: { lootId: 'loot-1', x: 8, z: 12, contents: { kind: 'item', baseId: 'dagger', rarity: 'magic' } } });
+    rig.controller.dispatch({
+      tag: 'loot',
+      payload: { lootId: 'loot-1', x: 8, z: 12, contents: { kind: 'item', baseId: 'dagger', tier: 1, rarity: 'magic' } },
+    });
     tapGround(rig, { x: 10, z: 14 });
     ticks(rig, 0, 300);
     rig.session.useAbility('deep-mend');

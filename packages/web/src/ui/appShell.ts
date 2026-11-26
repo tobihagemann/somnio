@@ -17,6 +17,7 @@ import { canvasWidthMeasurer } from '@/scene/speechBubbleText';
 import { SplashDirector } from '@/splash/director';
 import { catalogTables, currentLocale, renderChatLine, resolveLocale, setLocale, t } from '@/i18n';
 import { FallenNotice } from './fallenNotice';
+import { LoadingCover } from './loadingCover';
 import { QuestOfferPrompt } from './questOfferPrompt';
 import { SensedMarkers } from './sensedMarkers';
 import { FrameStats } from './frameStats';
@@ -145,6 +146,8 @@ export class AppShell {
   readonly hud: GameHUD;
   readonly servicePanel: ServicePanel;
   readonly fallenNotice: FallenNotice;
+  /** Over the world and the HUD while the player's own body is dressed on entering a space. */
+  private readonly loadingCover: LoadingCover;
   private readonly questOfferPrompt: QuestOfferPrompt;
   private readonly sensedMarkers = new SensedMarkers();
   readonly overlays: Overlays;
@@ -293,6 +296,7 @@ export class AppShell {
       (carrierId) => this.session.carrierName(carrierId),
     );
     this.hud.standUnderTarget(this.questOfferPrompt.root);
+    this.loadingCover = new LoadingCover([this.hud.root, this.servicePanel.root, this.fallenNotice.root], () => this.scene?.retryOwnOutfit());
 
     this.overlays = new Overlays({
       // The overlay stays up until the world actually arrives: `submitLogin` does not touch
@@ -361,6 +365,7 @@ export class AppShell {
       this.hud.root,
       this.servicePanel.root,
       this.fallenNotice.root,
+      this.loadingCover.root,
       this.overlays.root,
       this.notices.root,
       this.splashWordmark,
@@ -454,7 +459,10 @@ export class AppShell {
         return;
       }
       // Only while the world has the keyboard: under an overlay or in the chat field, R and 1 are typed.
-      if (event.repeat || !this.session.predictor.gateIsOpen() || this.controller.isChatInputFocused) return;
+      // Nor behind a blocking notice, such as the turn-sideways card, or while the models load under the
+      // loading notice, as a resumed player may already be placed.
+      if (event.repeat || this.scene?.warming === true || this.notices.standing || !this.session.predictor.gateIsOpen() || this.controller.isChatInputFocused)
+        return;
       // Enter opens the chat, unless a control has the keyboard and takes Enter itself, as a focused button or an item row does.
       if (event.key === 'Enter') {
         const onControl = event.target instanceof Element && event.target.closest('button, input, select, textarea, [tabindex]') !== null;
@@ -564,6 +572,7 @@ export class AppShell {
    * player's own body's included, it clears the target. On a drop or a fixture it does nothing.
    */
   private pressSecondary(event: PointerEvent): void {
+    if (this.controller.loadingCovered) return;
     const target = this.pressTargetUnder(event);
     if (target?.kind === 'entity') this.session.selectEntity(target.entityId);
     else if (target === undefined || target.kind === 'ground') this.session.clearTarget();
@@ -571,6 +580,7 @@ export class AppShell {
 
   /** A press of a mouse's left button, a finger, or a pen. With Shift, a mouse's press on a nightmare queues it instead. */
   private pressPrimary(event: PointerEvent): void {
+    if (this.controller.loadingCovered) return;
     // A primary pointer begins a new gesture, so any pointer still recorded as down lost its `pointerup`.
     if (event.isPrimary && this.downPointers.size > 0) {
       this.forgetDownPointers();
@@ -761,6 +771,11 @@ export class AppShell {
       // Nothing to resume to without a session, so Esc is inert rather than opening a menu whose
       // Resume would drop the player onto the splash.
       if (this.controller.connectionState === 'disconnected') return;
+      // What the loading cover hides stays as it is, so only the menu opens over it.
+      if (this.controller.loadingCovered) {
+        this.present({ kind: 'gameMenu' });
+        return;
+      }
       // An open chat closes first, focused or not. What the HUD has open closes next, one thing at a
       // time, then a carrier's panel, since what stands open is what the player means to put away.
       if (this.hud.chatOpen) {
@@ -968,6 +983,7 @@ export class AppShell {
     const layout = lap();
     this.hud.tick(performance.now(), this.clock());
     this.fallenNotice.tick(performance.now());
+    this.loadingCover.tick(performance.now());
     this.questOfferPrompt.tick(performance.now());
     const hud = lap();
     this.splash?.update(clamp(delta, 0, MAX_TICK_DELTA));
@@ -977,6 +993,10 @@ export class AppShell {
       this.splashDip.style.opacity = String(dipOpacity);
     }
     this.scene?.tick(clamp(delta, 0, MAX_TICK_DELTA));
+    // The player's body starts and ends dressing, and the models finish warming, with no frame from the server to
+    // repaint for, as on a resume, so the cover and the HUD come and go in the frame that draws them.
+    this.controller.settleLoadingCover();
+    if (this.controller.loadingCovered !== this.loadingCover.shown || this.hud.shown !== this.hudShown) this.render();
     const scene = lap();
     if (this.scene !== undefined && this.renderer !== undefined) {
       this.renderer.render(this.scene.scene, this.scene.camera);
@@ -1003,8 +1023,9 @@ export class AppShell {
     }
     // Deliberately not re-rendering the DOM here beyond what moves with time or the camera: the HUD's
     // clock, its seconds left on cooldowns and effects, and its tip, the chat's fading, the fallen
-    // notice's countdown, and the sensed markers. The controller's and the session's state hooks
-    // cover every path that changes what the rest shows.
+    // notice's countdown, the loading cover's word that the gear is still loading, and the sensed
+    // markers. The one full render here is the cover's and the HUD's coming and going above. The
+    // controller's and the session's state hooks cover every other path that changes what the rest shows.
   }
 
   /** Keeps what the frame cost and what it drew, skipping the first frame, which has no interval to time. */
@@ -1096,6 +1117,20 @@ export class AppShell {
     this.hud.showCharacterTab('items');
   }
 
+  /** Whether nothing stands over the world, neither an overlay nor a blocking notice such as the turn-sideways card. */
+  private get nothingOverWorld(): boolean {
+    return this.controller.presentedOverlay === undefined && !this.notices.standing;
+  }
+
+  /**
+   * Whether the HUD shows: once the player stands in the world, but not while the models load under
+   * the loading notice. A resume may already have placed the player by then, and a hidden HUD takes
+   * no key behind the notice.
+   */
+  private get hudShown(): boolean {
+    return this.controller.inWorld && this.scene?.warming !== true;
+  }
+
   private renderPass(): void {
     const overlay = this.controller.presentedOverlay;
     this.overlays.present(overlay);
@@ -1106,7 +1141,14 @@ export class AppShell {
     setHidden(this.splashVeil, inWorld);
     setHidden(this.splashWordmark, inWorld);
     this.container.classList.toggle('somnio-prelogin', !inWorld);
-    this.hud.setShown(inWorld);
+    this.hud.setShown(this.hudShown);
+    const covered = this.controller.loadingCovered;
+    // A press held as the cover rises lets go, so it does not steer on once the cover lowers.
+    if (covered && !this.loadingCover.shown) {
+      this.forgetDownPointers();
+      this.session.letGo();
+    }
+    this.loadingCover.render(covered, performance.now(), this.nothingOverWorld);
     this.overlays.setLogOutOtherBrowsersShown(inWorld && this.controller.otherSessionCount > 0);
     // The last failure says why on the login card, and a silent resume's retry under the wordmark.
     const sessionStatus = this.controller.sessionStatus;

@@ -114,8 +114,11 @@ describe('the names rendered through a core label key', () => {
       '%@ of the Bulwark',
       "A newcomer's errand",
       'A word for Memor',
-      'Amulet',
+      'Antler tine',
       'Balance recovery',
+      'Bark-grip gloves',
+      'Bear claw',
+      'Beech leaf',
       'Bind',
       'Boar',
       "Boar's tusk",
@@ -124,16 +127,25 @@ describe('the names rendered through a core label key', () => {
       'Bone dagger',
       'Bounty: %@',
       'Brace',
+      'Brush trousers',
       'Buckler',
       'Calm',
       'Challenge',
       'Cleave',
+      'Climbing boots',
+      'Compass rose',
+      'Courier shoulders',
+      'Courier straw hat',
+      'Courier tunic',
       'Cracked skull',
       'Cracked skulls',
       'Cudgel',
       'Dagger',
+      'Deck boots',
       'Deep mend',
       'Depth',
+      'Dispatch gloves',
+      'Dispatch wristband',
       'Drawing back',
       'Dream-bolt',
       'Drive off %@ Boars there.',
@@ -146,11 +158,16 @@ describe('the names rendered through a core label key', () => {
       'Drive off 4 Skeletons in the Graveyard.',
       'Drive off a nightmare.',
       'Drive off the Necromancer in the burial chamber.',
+      'Fen boots',
+      'Ferry guards',
+      "Ferryman's raincoat",
+      'Field trousers',
       'Fighter',
       'Find Memor in the Graveyard.',
       "Find the Mystics' tower on the square.",
       'Find the hidden places Tacita speaks of.',
       'Follow-through',
+      "Forester's feather band",
       "Gather %@ boar's tusks from Boars.",
       "Gather %@ bogey's knots from Bogeys.",
       'Gather %@ cracked skulls from Skeleton Warriors.',
@@ -162,32 +179,37 @@ describe('the names rendered through a core label key', () => {
       'Ghostly wisp',
       'Guard',
       'Healer',
+      'Hide mitts',
       'Into the crypt',
       'Iron buckler',
-      'Iron ring',
-      'Leather boots',
-      'Leather cap',
-      'Leather gloves',
-      'Leather trousers',
+      'Lantern cage',
+      'Leaf gaiters',
+      'Leaf shoulder',
       'Lumina',
       'Lunge',
       'Mace',
+      'Maple twig',
       'Meet Pugnax and Sana in their halls.',
       'Mend 60 health on other dreamers.',
       'Mending others',
       'Moonstone',
       'Mystic',
+      "Navigator's epaulettes",
       'Necromancer',
       "Necromancer's sigil",
+      'Oiled storm brim',
       'Old bone',
-      'Padded tunic',
+      'Pelt guards',
       'Radiance',
       'Rally',
       'Read the bounty board on the square.',
+      'Reed knot',
+      'Reedwork gloves',
       'Renewal',
       'Restless graves',
       'Round shield',
       'Sabre',
+      "Sailmaker's gloves",
       'Sense the fallen',
       'Shielded Boar',
       'Shielded Bogey',
@@ -195,12 +217,14 @@ describe('the names rendered through a core label key', () => {
       'Shielded Skeleton',
       'Shielded Skeleton Warrior',
       'Shielded Wolf',
+      'Shore coat',
       'Short sword',
       'Skeleton',
       'Skeleton Warrior',
       'Skull shield',
       'Skull staff',
       'Sopors',
+      'Sounding weight',
       'Spirit deepening',
       'Stony Boar',
       'Stony Bogey',
@@ -208,22 +232,31 @@ describe('the names rendered through a core label key', () => {
       'Stony Skeleton',
       'Stony Skeleton Warrior',
       'Stony Wolf',
+      'Storm trousers',
       'Strike',
+      'Tarred reed brim',
       "The Fighters' trial",
       "The Healers' trial",
       "The Mystics' trial",
       'Three without a fall',
       'Touch',
       'Toughening',
+      'Trail boots',
+      'Trail cape',
+      'Trail leathers',
+      "Trapper's baldric",
+      "Trapper's hide band",
       'Umbrae',
       'Veil',
       'Vigils',
       'Visit Mercus in his shop.',
+      'Wader trousers',
       'Walk to the North Wood and come back.',
       'Wand',
       'War axe',
       'Ward',
       'Weaken',
+      'Wheat-ear pendant',
       'Wolf',
       "Wolf's fang",
     ]);
@@ -341,11 +374,11 @@ describe('renderChatLine', () => {
     { kind: 'startupGreeting' },
     { kind: 'purseBalance', coins: 42 },
     { kind: 'coinsGained', coins: 4 },
-    { kind: 'bought', baseId: 'dagger', coins: 60 },
-    { kind: 'sold', baseId: 'sword', coins: 75 },
-    { kind: 'pickedUp', contents: { kind: 'item', baseId: 'cap', rarity: 'plain' } },
+    { kind: 'bought', baseId: 'dagger', tier: 1, coins: 60 },
+    { kind: 'sold', baseId: 'sword', tier: 1, coins: 75 },
+    { kind: 'pickedUp', contents: { kind: 'item', baseId: 'cap', tier: 1, rarity: 'plain' } },
     { kind: 'pickedUp', contents: { kind: 'trophy', monsterKind: 'skeleton-warrior' } },
-    { kind: 'rewarded', contents: { kind: 'item', baseId: 'tunic', rarity: 'rare' } },
+    { kind: 'rewarded', contents: { kind: 'item', baseId: 'tunic', tier: 1, rarity: 'rare' } },
     { kind: 'bagFull' },
     { kind: 'becameRole', role: 'healer' },
     { kind: 'rankGained', teachingId: 'follow-through', rank: 2 },
@@ -416,18 +449,24 @@ describe('renderChatLine', () => {
 
   /** The item is named in the line's own locale, which a lookup through the active one would miss. */
   it('names the ware traded and the coins, the item or the trophy picked up, and the item a turn-in gave', () => {
-    expect(renderChatLine({ kind: 'bought', baseId: 'dagger', coins: 60 }, catalogTables, 'en')).toBe('Dagger bought for 60c.');
-    expect(renderChatLine({ kind: 'bought', baseId: 'dagger', coins: 60 }, catalogTables, 'de')).toBe('Dolch für 60c gekauft.');
-    expect(renderChatLine({ kind: 'sold', baseId: 'sword', coins: 75 }, catalogTables, 'en')).toBe('Short sword sold for 75c.');
-    expect(renderChatLine({ kind: 'sold', baseId: 'lantern', coins: 1 }, catalogTables, 'en')).toBe('lantern sold for 1c.');
-    const cap = { kind: 'item', baseId: 'cap', rarity: 'magic' } as const;
+    expect(renderChatLine({ kind: 'bought', baseId: 'dagger', tier: 1, coins: 60 }, catalogTables, 'en')).toBe('Dagger bought for 60c.');
+    expect(renderChatLine({ kind: 'bought', baseId: 'dagger', tier: 1, coins: 60 }, catalogTables, 'de')).toBe('Dolch für 60c gekauft.');
+    expect(renderChatLine({ kind: 'sold', baseId: 'sword', tier: 1, coins: 75 }, catalogTables, 'en')).toBe('Short sword sold for 75c.');
+    expect(renderChatLine({ kind: 'sold', baseId: 'lantern', tier: 1, coins: 1 }, catalogTables, 'en')).toBe('lantern sold for 1c.');
+    const cap = { kind: 'item', baseId: 'cap', tier: 1, rarity: 'magic' } as const;
     const skull = { kind: 'trophy', monsterKind: 'skeleton-warrior' } as const;
-    expect(renderChatLine({ kind: 'pickedUp', contents: cap }, catalogTables, 'en')).toBe('Leather cap picked up.');
-    expect(renderChatLine({ kind: 'pickedUp', contents: cap }, catalogTables, 'de')).toBe('Lederkappe aufgehoben.');
+    expect(renderChatLine({ kind: 'pickedUp', contents: cap }, catalogTables, 'en')).toBe('Courier straw hat picked up.');
+    expect(renderChatLine({ kind: 'pickedUp', contents: cap }, catalogTables, 'de')).toBe('Boten-Strohhut aufgehoben.');
     expect(renderChatLine({ kind: 'pickedUp', contents: skull }, catalogTables, 'en')).toBe('Cracked skull picked up.');
     expect(renderChatLine({ kind: 'pickedUp', contents: skull }, catalogTables, 'de')).toBe('Gesprungener Schädel aufgehoben.');
-    expect(renderChatLine({ kind: 'rewarded', contents: cap }, catalogTables, 'en')).toBe('Leather cap received.');
-    expect(renderChatLine({ kind: 'rewarded', contents: cap }, catalogTables, 'de')).toBe('Lederkappe erhalten.');
+    expect(renderChatLine({ kind: 'rewarded', contents: cap }, catalogTables, 'en')).toBe('Courier straw hat received.');
+    expect(renderChatLine({ kind: 'rewarded', contents: cap }, catalogTables, 'de')).toBe('Boten-Strohhut erhalten.');
+    // Armour and jewellery are named after their design at the tier they rolled.
+    const brim = { ...cap, tier: 3 } as const;
+    expect(renderChatLine({ kind: 'bought', baseId: 'tunic', tier: 3, coins: 90 }, catalogTables, 'en')).toBe("Ferryman's raincoat bought for 90c.");
+    expect(renderChatLine({ kind: 'sold', baseId: 'tunic', tier: 3, coins: 45 }, catalogTables, 'de')).toBe('Fährmanns-Regenmantel für 45c verkauft.');
+    expect(renderChatLine({ kind: 'pickedUp', contents: brim }, catalogTables, 'en')).toBe('Tarred reed brim picked up.');
+    expect(renderChatLine({ kind: 'rewarded', contents: brim }, catalogTables, 'de')).toBe('Geteerte Schilfkrempe erhalten.');
   });
 
   it('says how many dreamers a share reached, one of them by its own line, and how many bounties ran out', () => {

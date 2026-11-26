@@ -963,8 +963,8 @@ describe('an elite', () => {
     attackGhost(space, alice.entityId);
     steps(240);
     expect(payloads(sent, 'loot').map((loot) => loot.contents)).toEqual([
-      { kind: 'item', baseId: 'dagger', rarity: 'plain' },
-      { kind: 'item', baseId: 'dagger', rarity: 'plain' },
+      { kind: 'item', baseId: 'dagger', tier: 1, rarity: 'plain' },
+      { kind: 'item', baseId: 'dagger', tier: 1, rarity: 'plain' },
     ]);
   });
 });
@@ -1661,6 +1661,8 @@ describe('slot 1 with two hands', () => {
 describe('wearing and putting away', () => {
   const CAP: ItemInstance = { id: '00000000-0000-7000-8000-000000000021', ...plain('cap') };
   const BUCKLER: ItemInstance = { id: '00000000-0000-7000-8000-000000000022', ...plain('buckler') };
+  const TUNIC: ItemInstance = { id: '00000000-0000-7000-8000-000000000023', ...plain('tunic') };
+  const FINE_TUNIC: ItemInstance = { id: '00000000-0000-7000-8000-000000000024', ...plain('tunic'), tier: 3 };
   const fullBag = (): ItemInstance[] =>
     Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxBagItems }, (_, index) => ({
       ...CAP,
@@ -1682,16 +1684,16 @@ describe('wearing and putting away', () => {
     ]);
   });
 
-  it('wears a ring in the free ring slot, else in the first, and never round the neck', () => {
-    const rings = [0, 1, 2].map((index): ItemInstance => ({ id: `00000000-0000-7000-8000-00000000003${index}`, ...plain('ring') }));
-    const [first, second, third] = rings as [ItemInstance, ItemInstance, ItemInstance];
+  it('wears a bracelet in the free bracelet slot, else in the first, and never round the neck', () => {
+    const bracelets = [0, 1, 2].map((index): ItemInstance => ({ id: `00000000-0000-7000-8000-00000000003${index}`, ...plain('bracelet') }));
+    const [first, second, third] = bracelets as [ItemInstance, ItemInstance, ItemInstance];
     const { space } = arena({}, { ghost: false });
-    const alice = attachPlayer(space, { x: 5, z: 5 }, 'alice', { inventory: carrying({ bag: rings }) });
+    const alice = attachPlayer(space, { x: 5, z: 5 }, 'alice', { inventory: carrying({ bag: bracelets }) });
     space.handleEquip(first.id, undefined, alice.entityId);
     space.handleEquip(second.id, undefined, alice.entityId);
-    expect(inventoryOf(space, alice.entityId).equipped).toEqual({ ring1: first, ring2: second });
+    expect(inventoryOf(space, alice.entityId).equipped).toEqual({ bracelet1: first, bracelet2: second });
     space.handleEquip(third.id, undefined, alice.entityId);
-    expect(inventoryOf(space, alice.entityId)).toEqual({ coins: 0, equipped: { ring1: third, ring2: second }, bag: [{ place: 2, item: first }] });
+    expect(inventoryOf(space, alice.entityId)).toEqual({ coins: 0, equipped: { bracelet1: third, bracelet2: second }, bag: [{ place: 2, item: first }] });
   });
 
   it('puts what the slot wore into the bag as another item takes it', () => {
@@ -1701,19 +1703,71 @@ describe('wearing and putting away', () => {
     expect(inventoryOf(space, alice.entityId)).toEqual(carrying({ worn: [BUCKLER], bag: [MOONSTONE] }));
   });
 
-  it('shows everyone who sees the dreamer what their hands hold, on joining and on each change of a hand', async () => {
+  it('shows a dreamer joining the people of one already there and the base and tier of everything they wear and hold', async () => {
+    const { space } = arena({}, { ghost: false });
+    const alice = attachPlayer(space, { x: 5, z: 5 }, 'alice', {
+      character: { people: 'sopors' },
+      inventory: carrying({ worn: [MOONSTONE, CAP, FINE_TUNIC] }),
+    });
+    const bob = attachPlayer(space, { x: 6, z: 5 }, 'bob');
+    const shown = entities(await collectMessages(bob.outbox)).find(({ id }) => id === alice.entityId)!;
+    expect(shown).toMatchObject({
+      people: 'sopors',
+      outfit: [
+        { slot: 'offHand', baseId: 'moonstone', tier: 1 },
+        { slot: 'head', baseId: 'cap', tier: 1 },
+        { slot: 'chest', baseId: 'tunic', tier: 3 },
+      ],
+    });
+    expect(shown).not.toHaveProperty('characterModelId');
+  });
+
+  it('shows everyone who sees the dreamer what they wear and hold on each change of a slot, a piece taken off left out', async () => {
     const { space } = arena({}, { ghost: false });
     const alice = attachPlayer(space, { x: 5, z: 5 }, 'alice', { inventory: carrying({ worn: [MOONSTONE], bag: [CUDGEL, CAP] }) });
     const bob = attachPlayer(space, { x: 6, z: 5 }, 'bob');
     space.handleEquip(CUDGEL.id, undefined, alice.entityId);
     space.handleEquip(CAP.id, undefined, alice.entityId);
-    space.handleUnequip('offHand', alice.entityId);
-    const messages = await collectMessages(bob.outbox);
-    expect(entities(messages).find(({ id }) => id === alice.entityId)?.held).toEqual({ offHand: 'moonstone' });
-    expect(payloads(messages, 'held')).toEqual([
-      { entityId: alice.entityId, held: { mainHand: 'cudgel', offHand: 'moonstone' } },
-      { entityId: alice.entityId, held: { mainHand: 'cudgel' } },
+    space.handleUnequip('head', alice.entityId);
+    const cudgel = { slot: 'mainHand', baseId: 'cudgel', tier: 1 } as const;
+    const moonstone = { slot: 'offHand', baseId: 'moonstone', tier: 1 } as const;
+    expect(payloads(await collectMessages(bob.outbox), 'outfit')).toEqual([
+      { entityId: alice.entityId, outfit: [cudgel, moonstone] },
+      { entityId: alice.entityId, outfit: [cudgel, moonstone, { slot: 'head', baseId: 'cap', tier: 1 }] },
+      { entityId: alice.entityId, outfit: [cudgel, moonstone] },
     ]);
+  });
+
+  it('shows a piece of the same base and another tier taking a slot as a change', async () => {
+    const { space } = arena({}, { ghost: false });
+    const alice = attachPlayer(space, { x: 5, z: 5 }, 'alice', { inventory: carrying({ worn: [TUNIC], bag: [FINE_TUNIC] }) });
+    const bob = attachPlayer(space, { x: 6, z: 5 }, 'bob');
+    space.handleEquip(FINE_TUNIC.id, undefined, alice.entityId);
+    expect(payloads(await collectMessages(bob.outbox), 'outfit')).toEqual([
+      { entityId: alice.entityId, outfit: [{ slot: 'chest', baseId: 'tunic', tier: 3 }] },
+    ]);
+  });
+
+  it('shows a bracelet moved to the other wrist as a change', async () => {
+    const bracelet: ItemInstance = { id: '00000000-0000-7000-8000-000000000041', ...plain('bracelet') };
+    const { space } = arena({}, { ghost: false });
+    const alice = attachPlayer(space, { x: 5, z: 5 }, 'alice', { inventory: carrying({ bag: [bracelet] }) });
+    const bob = attachPlayer(space, { x: 6, z: 5 }, 'bob');
+    space.handleEquip(bracelet.id, 'bracelet2', alice.entityId);
+    space.handleEquip(bracelet.id, 'bracelet1', alice.entityId);
+    expect(payloads(await collectMessages(bob.outbox), 'outfit')).toEqual([
+      { entityId: alice.entityId, outfit: [{ slot: 'bracelet2', baseId: 'bracelet', tier: 1 }] },
+      { entityId: alice.entityId, outfit: [{ slot: 'bracelet1', baseId: 'bracelet', tier: 1 }] },
+    ]);
+  });
+
+  it('shows no one else a move inside the bag', async () => {
+    const { space } = arena({}, { ghost: false });
+    const alice = attachPlayer(space, { x: 5, z: 5 }, 'alice', { inventory: carrying({ worn: [TUNIC], bag: [CAP] }) });
+    const bob = attachPlayer(space, { x: 6, z: 5 }, 'bob');
+    space.handleMoveItem(CAP.id, 3, alice.entityId);
+    expect(inventoryOf(space, alice.entityId).bag).toEqual([{ place: 3, item: CAP }]);
+    expect(payloads(await collectMessages(bob.outbox), 'outfit')).toEqual([]);
   });
 
   it('refuses to put a worn item into a full bag', () => {
@@ -1725,15 +1779,15 @@ describe('wearing and putting away', () => {
     expect(inventoryOf(space, alice.entityId)).toEqual(full);
   });
 
-  it('wears a ring in the ring slot asked for, and moves a worn one to the other', () => {
-    const ring: ItemInstance = { id: '00000000-0000-7000-8000-000000000040', ...plain('ring') };
+  it('wears a bracelet in the bracelet slot asked for, and moves a worn one to the other', () => {
+    const bracelet: ItemInstance = { id: '00000000-0000-7000-8000-000000000040', ...plain('bracelet') };
     const { space } = arena({}, { ghost: false });
-    const alice = attachPlayer(space, { x: 5, z: 5 }, 'alice', { inventory: carrying({ bag: [ring] }) });
-    space.handleEquip(ring.id, 'ring2', alice.entityId);
-    expect(inventoryOf(space, alice.entityId).equipped).toEqual({ ring2: ring });
-    space.handleEquip(ring.id, 'ring1', alice.entityId);
-    space.handleEquip(ring.id, 'neck', alice.entityId);
-    expect(inventoryOf(space, alice.entityId).equipped).toEqual({ ring1: ring });
+    const alice = attachPlayer(space, { x: 5, z: 5 }, 'alice', { inventory: carrying({ bag: [bracelet] }) });
+    space.handleEquip(bracelet.id, 'bracelet2', alice.entityId);
+    expect(inventoryOf(space, alice.entityId).equipped).toEqual({ bracelet2: bracelet });
+    space.handleEquip(bracelet.id, 'bracelet1', alice.entityId);
+    space.handleEquip(bracelet.id, 'neck', alice.entityId);
+    expect(inventoryOf(space, alice.entityId).equipped).toEqual({ bracelet1: bracelet });
   });
 
   it('moves a bagged item to the place asked for, swapping with the item there, and answers with the bag at its places', async () => {

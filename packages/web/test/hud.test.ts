@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GameHUD } from '@/ui/hud';
 import { CHAT_IDLE_MS } from '@/ui/chatPane';
 import { TAB_SPRING_MS } from '@/ui/characterWindow';
-import { HUD_ICONS, PEOPLE_SIGILS } from '@/ui/hudIcons';
-import { ITEM_ICONS } from '@/ui/itemIcons';
+import { HUD_ICONS } from '@/ui/hudIcons';
+import { ITEM_ICONS, WARDROBE_ICONS } from '@/ui/itemIcons';
 import { QUEST_BANNER_MS, QUEST_LINE_MS } from '@/ui/questFeedback';
 import { placeName } from '@/ui/placeNames';
 import { TRACKER_SHOWN } from '@/ui/questTracker';
@@ -368,7 +368,7 @@ describe("a mouse's HUD", () => {
     expect(study().textContent).toBe('');
   });
 
-  it("shows the player's own frame with their portrait, their people's sigil on a badge at its foot, name, people, and role, and reports a press on it", () => {
+  it("shows the player's own frame with their portrait, name, people, and role, and reports a press on it", () => {
     const { hud, $, named } = makeHUD();
     const frame = $<HTMLButtonElement>('.hud-unit--self');
     const portrait = hud.portraits.own;
@@ -376,26 +376,23 @@ describe("a mouse's HUD", () => {
     expect([portrait.className, portrait.getAttribute('aria-hidden')]).toEqual(['hud-portrait', 'true']);
 
     hud.renderSelf(HEALER);
-    expect(frame.querySelector('.hud-portrait > .hud-sigil')).not.toBeNull();
+    expect(portrait.childElementCount).toBe(0);
     expect(frame.querySelector('.hud-unit__name')?.textContent).toBe('Smokewalker');
     expect(frame.querySelector('.hud-unit__traits')?.textContent).toBe('Vigils · Healer');
-    expect(drawnGlyph(frame.querySelector('.hud-sigil'))).toBe(PEOPLE_SIGILS.vigils.image);
     expect(frame.getAttribute('aria-pressed')).toBe('false');
 
     hud.renderSelf({ ...HEALER, people: 'lumina', role: undefined, condition: 'grazed', targeted: true });
     expect(frame.querySelector('.hud-unit__traits')?.textContent).toBe('Lumina · No role yet');
-    expect(drawnGlyph(frame.querySelector('.hud-sigil'))).toBe(PEOPLE_SIGILS.lumina.image);
-    // The tint rings the portrait and its sigil. The name stays plain text, and no word names the condition.
+    // The tint rings the portrait. The name stays plain text, and no word names the condition.
     expect(frame.style.getPropertyValue('--hud-tint')).toBe('rgb(126, 201, 92)');
     expect(frame.style.getPropertyValue('--hud-tint-ink')).toBe('');
     expect(frame.querySelector('.hud-unit__name')?.getAttribute('style')).toBeNull();
     expect(frame.textContent).toBe('SmokewalkerLumina · No role yet');
     expect(frame.getAttribute('aria-pressed')).toBe('true');
 
-    // A people this client does not know draws no sigil.
+    // A people this client does not know is not named.
     hud.renderSelf({ ...HEALER, people: undefined });
     expect(frame.querySelector('.hud-unit__traits')?.textContent).toBe('Healer');
-    expect(frame.querySelector('.hud-sigil')?.childElementCount).toBe(0);
     expect(frame.querySelector('.hud-portrait')).toBe(portrait);
     expect(hud.portraits.own).toBe(portrait);
 
@@ -935,7 +932,7 @@ describe("a mouse's HUD", () => {
     ]);
 
     // A turn-in arriving while that banner shows waits its turn, and names the item it gave in its rarity's colour.
-    const sabre = { kind: 'item', baseId: 'sabre', rarity: 'rare' } as const;
+    const sabre = { kind: 'item', baseId: 'sabre', tier: 3, rarity: 'rare' } as const;
     hud.showQuestNews(turnedIn({ questId: 'into-the-crypt', progress: [1] }, { coins: 250, items: [sabre] }));
     expect(said()?.[0]).toEqual([TITLE, 'Restless graves']);
     clock += QUEST_BANNER_MS;
@@ -949,7 +946,7 @@ describe("a mouse's HUD", () => {
     // A trial says the role it makes theirs, the teaching it teaches, and the Moonstone it gives.
     clock += QUEST_BANNER_MS;
     hud.tick(clock, NO_CLOCK);
-    const moonstone = { kind: 'item', baseId: 'moonstone', rarity: 'plain' } as const;
+    const moonstone = { kind: 'item', baseId: 'moonstone', tier: 1, rarity: 'plain' } as const;
     hud.showQuestNews(turnedIn({ questId: 'healer-trial', progress: [1] }, { items: [moonstone] }));
     expect(said()).toEqual([
       [TITLE, "The Healers' trial"],
@@ -967,12 +964,12 @@ describe("a mouse's HUD", () => {
     clock += QUEST_BANNER_MS;
     hud.tick(clock, NO_CLOCK);
     const bounty = { day: 3, land: 'EdariaArena', monsterKind: 'ghost', objective: 'driveOff', count: 6, reward: { coins: 72, gear: 1 } } as const;
-    const cap = { kind: 'item', baseId: 'cap', rarity: 'magic' } as const;
+    const cap = { kind: 'item', baseId: 'cap', tier: 3, rarity: 'magic' } as const;
     hud.showQuestNews(turnedIn({ questId: bountyIdOf(bounty), progress: [6], definition: bounty }, { coins: 72, items: [cap] }));
     expect(said()).toEqual([
       [TITLE, 'Bounty: Arena'],
       [LINE, '72c'],
-      [`${LINE} hud-quest-banner__item hud-rarity--magic`, 'Leather cap'],
+      [`${LINE} hud-quest-banner__item hud-rarity--magic`, 'Tarred reed brim'],
     ]);
   });
 
@@ -1304,13 +1301,13 @@ describe('the Character window', () => {
     vi.restoreAllMocks();
   });
 
-  it("lays the doll on the bag's columns, armour down the first, the neck and rings down the last, the hands under the body, and the bag's items at their places", () => {
+  it("lays the doll on the bag's columns, armour down the first, the neck, the bracelets, and the shoulders down the last, the hands under the body, and the bag's items at their places", () => {
     const { hud, $, named } = makeHUD();
     const rare: ItemInstance = { ...item('cap'), rarity: 'rare', affixes: [{ affixId: 'health', value: 4 }] };
     hud.renderCharacter(
       {
         coins: 107,
-        equipped: { head: rare, mainHand: item('cudgel'), ring1: item('ring') },
+        equipped: { head: rare, mainHand: item('cudgel'), bracelet1: item('bracelet') },
         bag: [
           { place: 5, item: { ...item('dagger'), rarity: 'magic' } },
           { place: 0, item: item('moonstone') },
@@ -1321,15 +1318,31 @@ describe('the Character window', () => {
     );
     expect($('.hud-purse').textContent).toBe('Your purse107c');
     const grid = (node: HTMLElement): string => `${node.style.gridColumn} ${node.style.gridRow}`;
-    const slots = ['head', 'chest', 'hands', 'legs', 'feet', 'neck', 'ring1', 'ring2', 'mainHand', 'offHand'];
-    expect(slots.map((slot) => grid(slotPlace(hud.root, slot)))).toEqual(['1 1', '1 2', '1 3', '1 4', '1 5', '8 1', '8 2', '8 3', '4 5', '5 5']);
+    const slots = ['head', 'chest', 'hands', 'legs', 'feet', 'neck', 'bracelet1', 'bracelet2', 'shoulders', 'mainHand', 'offHand'];
+    expect(slots.map((slot) => grid(slotPlace(hud.root, slot)))).toEqual(['1 1', '1 2', '1 3', '1 4', '1 5', '8 1', '8 2', '8 3', '8 4', '4 5', '5 5']);
     expect(grid(hud.portraits.body)).toBe('2 / 8 1 / 5');
-    expect(slots.map((slot) => slotPlace(hud.root, slot).textContent)).toEqual(['', 'Chest', 'Hands', 'Legs', 'Feet', 'Neck', '', 'Ring', '', 'Off hand']);
-    expect([itemIn(slotPlace(hud.root, 'head')).getAttribute('aria-label'), itemIn(slotPlace(hud.root, 'ring1')).getAttribute('aria-label')]).toEqual([
-      'Head: Leather cap of Vigour',
-      'Ring 1: Iron ring',
+    expect(slots.map((slot) => slotPlace(hud.root, slot).textContent)).toEqual([
+      '',
+      'Chest',
+      'Hands',
+      'Legs',
+      'Feet',
+      'Neck',
+      '',
+      // A soft hyphen breaks each over two lines in its place, which English hyphenation leaves whole.
+      'Brace­let',
+      'Shoul­ders',
+      '',
+      'Off hand',
     ]);
-    expect([itemIn(slotPlace(hud.root, 'head')).className, drawnIcon(slotPlace(hud.root, 'head'))]).toEqual(['hud-item hud-rarity--rare', ITEM_ICONS.cap]);
+    expect([itemIn(slotPlace(hud.root, 'head')).getAttribute('aria-label'), itemIn(slotPlace(hud.root, 'bracelet1')).getAttribute('aria-label')]).toEqual([
+      'Head: Courier straw hat of Vigour',
+      'Bracelet 1: Dispatch wristband',
+    ]);
+    expect([itemIn(slotPlace(hud.root, 'head')).className, drawnIcon(slotPlace(hud.root, 'head'))]).toEqual([
+      'hud-item hud-rarity--rare',
+      WARDROBE_ICONS.cap[1],
+    ]);
     const cells = [...$('.hud-bag').children];
     expect(cells).toHaveLength(SOMNIO_PROTOCOL_CONSTANTS.maxBagItems);
     expect([0, 1, 5].map((place) => [cells[place]!.querySelector('button')?.getAttribute('aria-label'), drawnIcon(cells[place]!)])).toEqual([
@@ -1443,6 +1456,21 @@ describe('the Character window', () => {
     expect(tipSays(hud.root)?.at(-1)).toBe('Right-click or double-click to unequip.');
   });
 
+  it("draws armour as its design's icon at the tier it rolled, in its place and in its tip", () => {
+    const { hud, button } = makeHUD();
+    hud.renderCharacter(carrying({ worn: [{ ...item('tunic'), tier: 3 }], bag: [item('tunic', 'tunic-2')] }), FIGHTER, undefined);
+    button('Character').click();
+    expect([drawnIcon(slotPlace(hud.root, 'chest')), drawnIcon(bagPlace(hud.root, 0))]).toEqual([
+      '/assets/UI/Items/tunic-t3.png',
+      '/assets/UI/Items/tunic.png',
+    ]);
+    hover(itemIn(slotPlace(hud.root, 'chest')));
+    expect([tipSays(hud.root)?.[0], drawnIcon(hud.root.querySelector('[role="tooltip"] .hud-tip__top'))]).toEqual([
+      "Ferryman's raincoat",
+      '/assets/UI/Items/tunic-t3.png',
+    ]);
+  });
+
   it("totals each stat of an item's base and its rolls on one line, and names it after its strongest roll", () => {
     const { hud, button } = makeHUD();
     const trousers: ItemInstance = {
@@ -1453,12 +1481,12 @@ describe('the Character window', () => {
         { affixId: 'guard', value: 2 },
       ],
     };
-    const ring: ItemInstance = { ...item('ring'), rarity: 'magic', affixes: [{ affixId: 'damage', value: 2 }] };
-    hud.renderCharacter(carrying({ bag: [trousers, ring] }), FIGHTER, undefined);
+    const bracelet: ItemInstance = { ...item('bracelet'), rarity: 'magic', affixes: [{ affixId: 'damage', value: 2 }] };
+    hud.renderCharacter(carrying({ bag: [trousers, bracelet] }), FIGHTER, undefined);
     button('Character').click();
     hover(itemIn(bagPlace(hud.root, 0)));
     expect(tipSays(hud.root)).toEqual([
-      'Leather trousers of the Bulwark',
+      'Field trousers of the Bulwark',
       'Magic',
       'Legs',
       '+9 Health',
@@ -1467,7 +1495,14 @@ describe('the Character window', () => {
       'Right-click or double-click to equip.',
     ]);
     hover(itemIn(bagPlace(hud.root, 1)));
-    expect(tipSays(hud.root)).toEqual(['Iron ring of Might', 'Magic', 'Ring', '+3 damage', 'Sells for 38c', 'Right-click or double-click to equip.']);
+    expect(tipSays(hud.root)).toEqual([
+      'Dispatch wristband of Might',
+      'Magic',
+      'Brace­let',
+      '+3 damage',
+      'Sells for 38c',
+      'Right-click or double-click to equip.',
+    ]);
   });
 
   it("shows an item's tip on a finger's hold, without a click to act by", () => {
@@ -1487,7 +1522,7 @@ describe('the Character window', () => {
 
   it("does nothing on a mouse's single click, and wears or puts away an item on its double click or right click, never on a finger's", () => {
     const { hud, named } = makeHUD();
-    hud.renderCharacter(carrying({ worn: [item('cudgel')], bag: [item('moonstone'), item('ring')] }), FIGHTER, undefined);
+    hud.renderCharacter(carrying({ worn: [item('cudgel')], bag: [item('moonstone'), item('bracelet')] }), FIGHTER, undefined);
     pointerPress(itemIn(bagPlace(hud.root, 0)));
     expect([named('onEquip'), cardSays(hud.root)]).toEqual([[], undefined]);
 
@@ -1495,7 +1530,7 @@ describe('the Character window', () => {
     point(itemIn(bagPlace(hud.root, 1)), 'pointerdown', { button: 2 });
     itemIn(bagPlace(hud.root, 1)).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
     doubleClick(itemIn(slotPlace(hud.root, 'mainHand')));
-    expect([named('onEquip'), named('onUnequip'), cardSays(hud.root)]).toEqual([[['moonstone-1'], ['ring-1']], [['mainHand']], undefined]);
+    expect([named('onEquip'), named('onUnequip'), cardSays(hud.root)]).toEqual([[['moonstone-1'], ['bracelet-1']], [['mainHand']], undefined]);
 
     doubleClick(itemIn(bagPlace(hud.root, 0)), 'touch');
     point(itemIn(bagPlace(hud.root, 1)), 'pointerdown', { pointerType: 'touch' });
@@ -1505,7 +1540,7 @@ describe('the Character window', () => {
 
   it("sells an item from the bag on a mouse's right click or double click at the shop, and wears it elsewhere", () => {
     const { hud, button, named } = makeHUD();
-    const bag = carrying({ worn: [item('cudgel')], bag: [item('cap'), item('ring')] });
+    const bag = carrying({ worn: [item('cudgel')], bag: [item('cap'), item('bracelet')] });
     hud.renderCharacter(bag, FIGHTER, false);
     button('Character').click();
     hover(itemIn(bagPlace(hud.root, 0)));
@@ -1514,11 +1549,11 @@ describe('the Character window', () => {
     itemIn(bagPlace(hud.root, 0)).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
     doubleClick(itemIn(bagPlace(hud.root, 1)));
     doubleClick(itemIn(slotPlace(hud.root, 'mainHand')));
-    expect([named('onSell'), named('onEquip'), named('onUnequip')]).toEqual([[['cap-1'], ['ring-1']], [], [['mainHand']]]);
+    expect([named('onSell'), named('onEquip'), named('onUnequip')]).toEqual([[['cap-1'], ['bracelet-1']], [], [['mainHand']]]);
 
     hud.renderCharacter(bag, FIGHTER, undefined);
     doubleClick(itemIn(bagPlace(hud.root, 0)));
-    expect([named('onSell'), named('onEquip')]).toEqual([[['cap-1'], ['ring-1']], [['cap-1']]]);
+    expect([named('onSell'), named('onEquip')]).toEqual([[['cap-1'], ['bracelet-1']], [['cap-1']]]);
   });
 
   it('sells nothing while a trade holds the lock, and never the Moonstone, which it wears', () => {
@@ -1597,9 +1632,9 @@ describe('the Character window', () => {
     expect(cardSays(hud.root)).toBeUndefined();
     pointerPress(cap, 'touch');
     point($('.hud-item-card .hud-tip__title'), 'pointerdown', { pointerType: 'touch' });
-    expect(cardSays(hud.root)?.[0]).toBe('Leather cap');
+    expect(cardSays(hud.root)?.[0]).toBe('Courier straw hat');
     pointerPress(boots, 'touch');
-    expect(cardSays(hud.root)?.[0]).toBe('Leather boots');
+    expect(cardSays(hud.root)?.[0]).toBe('Trail boots');
     point(document.body, 'pointerdown', { pointerType: 'touch' });
     expect(cardSays(hud.root)).toBeUndefined();
 
@@ -1656,7 +1691,7 @@ describe('the Character window', () => {
     hud.renderCharacter(carrying({ bag: [item('cap'), item('boots')] }), FIGHTER, undefined);
     pointerPress(itemIn(bagPlace(hud.root, 1)), 'touch');
     hud.renderCharacter({ coins: 0, equipped: {}, bag: [{ place: 7, item: item('boots') }] }, FIGHTER, undefined);
-    expect([cardSays(hud.root)?.[0], itemIn(bagPlace(hud.root, 7)).getAttribute('aria-expanded')]).toEqual(['Leather boots', 'true']);
+    expect([cardSays(hud.root)?.[0], itemIn(bagPlace(hud.root, 7)).getAttribute('aria-expanded')]).toEqual(['Trail boots', 'true']);
     hud.renderCharacter(carrying({ worn: [item('boots')] }), FIGHTER, undefined);
     expect([cardSays(hud.root)?.at(-1), itemIn(slotPlace(hud.root, 'feet')).getAttribute('aria-expanded')]).toEqual(['Unequip', 'true']);
     hud.renderCharacter(carrying(), FIGHTER, undefined);
@@ -1680,7 +1715,7 @@ describe('the Character window', () => {
     hud.renderCharacter(carrying({ bag: [item('cap'), item('boots')] }), FIGHTER, undefined);
     lift(itemIn(bagPlace(hud.root, 0)), bagPlace(hud.root, 9));
     const ghost = hud.root.querySelector<HTMLElement>('.hud-ghost')!;
-    expect([ghost.classList.contains('hidden'), ghost.style.transform, drawnIcon(ghost)]).toEqual([false, 'translate3d(50px, 60px, 0)', ITEM_ICONS.cap]);
+    expect([ghost.classList.contains('hidden'), ghost.style.transform, drawnIcon(ghost)]).toEqual([false, 'translate3d(50px, 60px, 0)', WARDROBE_ICONS.cap[1]]);
     expect([itemIn(bagPlace(hud.root, 0)).classList.contains('hud-item--lifted'), bagPlace(hud.root, 9).classList.contains('hud-place--over')]).toEqual([
       true,
       true,
@@ -1700,19 +1735,19 @@ describe('the Character window', () => {
     ]);
   });
 
-  it('carries an item into a slot its base fits, lighting both ring slots for a ring, and wears it in the slot it was let go on', () => {
+  it('carries an item into a slot its base fits, lighting both bracelet slots for a bracelet, and wears it in the slot it was let go on', () => {
     const { hud, named } = makeHUD();
-    hud.renderCharacter(carrying({ worn: [item('ring', 'ring-0')], bag: [item('ring'), item('cap')] }), FIGHTER, undefined);
-    lift(itemIn(bagPlace(hud.root, 0)), slotPlace(hud.root, 'ring2'));
-    expect([...hud.root.querySelectorAll('.hud-place--fits')].map((node) => node.getAttribute('data-slot'))).toEqual(['ring1', 'ring2']);
+    hud.renderCharacter(carrying({ worn: [item('bracelet', 'bracelet-0')], bag: [item('bracelet'), item('cap')] }), FIGHTER, undefined);
+    lift(itemIn(bagPlace(hud.root, 0)), slotPlace(hud.root, 'bracelet2'));
+    expect([...hud.root.querySelectorAll('.hud-place--fits')].map((node) => node.getAttribute('data-slot'))).toEqual(['bracelet1', 'bracelet2']);
     point(document.body, 'pointerup', { clientX: 60, clientY: 70 });
     vi.restoreAllMocks();
-    // One ring slot to the other.
-    carry(itemIn(slotPlace(hud.root, 'ring1')), slotPlace(hud.root, 'ring2'));
+    // One bracelet slot to the other.
+    carry(itemIn(slotPlace(hud.root, 'bracelet1')), slotPlace(hud.root, 'bracelet2'));
     carry(itemIn(bagPlace(hud.root, 1)), slotPlace(hud.root, 'head'));
     expect(named('onEquip')).toEqual([
-      ['ring-1', 'ring2'],
-      ['ring-0', 'ring2'],
+      ['bracelet-1', 'bracelet2'],
+      ['bracelet-0', 'bracelet2'],
       ['cap-1', 'head'],
     ]);
   });
@@ -2008,7 +2043,6 @@ describe("a finger's HUD", () => {
     expect([...$('.hud-unit--self').querySelectorAll('.hud-bar')].map((bar) => bar.getAttribute('aria-label'))).toEqual(['Health 30/60', 'Spirit 5/10']);
     hud.renderSelf(HEALER);
     expect([hud.portraits.own.parentElement, hud.portraits.target.parentElement]).toEqual([$('.hud-unit--self'), $('.hud-unit--target')]);
-    expect(drawnGlyph(hud.portraits.own.querySelector('.hud-sigil'))).toBe(PEOPLE_SIGILS.vigils.image);
     expect($('.hud-balance--bar .hud-bar__fill').style.width).toBe('25.00%');
   });
 
