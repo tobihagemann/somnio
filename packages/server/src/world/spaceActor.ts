@@ -398,6 +398,13 @@ interface MonsterRuntime {
   effects: HeldEffect[];
   /** The threat each dreamer on its table has raised against it, by their entity id. */
   threat: Map<string, number>;
+  /**
+   * Every dreamer who fought it in this fight, by their entity id: each its table has held, each who
+   * helped one it fought, and for a boss each who fought one of its minions. It keeps them whatever
+   * drops them from the table. A fight's beginning starts it afresh from the table, and giving up
+   * forgets them all.
+   */
+  fought: Set<string>;
   /** The dreamers who struck it from within its reach since its last turn. At its next it may answer one, and forgets the rest. */
   answerDue: Set<string>;
 }
@@ -831,10 +838,17 @@ function traitEffect(trait: EliteTraitId, monsterId: string, now: number): HeldE
   return heldEffect(eliteTrait(trait).effectId, Number.POSITIVE_INFINITY, monsterId, 1, now);
 }
 
-/** Adds the threat a deed of `amount` raises against the nightmare to what it holds against the dreamer. */
+/** Adds the threat a deed of `amount` raises against the nightmare to what it holds against the dreamer, and counts them among those who fought it. */
 function addThreat(monster: MonsterRuntime, dreamer: PlayerSlot, amount: number): void {
   const id = dreamer.character.id;
   monster.threat.set(id, (monster.threat.get(id) ?? 0) + threatRaised(amount, effectIds(dreamer)));
+  joinFight(monster, id);
+}
+
+/** Counts the dreamer among those who fought the nightmare, and a minion's fighters among those who fought its boss. */
+function joinFight(monster: MonsterRuntime, dreamerId: string): void {
+  monster.fought.add(dreamerId);
+  monster.summoner?.fought.add(dreamerId);
 }
 
 /**
@@ -1712,7 +1726,9 @@ export class SpaceActor {
    * bolt and lands as it arrives, unless `evaded`. An effect goes on each of them, and on a nightmare
    * it also puts the caster on its table, so it turns on them unless it holds more against another.
    * A nightmare that evades everything (`evadesAll`) takes no effect and no threat.
-   * A restore gives each standing dreamer back some of a pool, and a heal gives each one health. A
+   * A restore gives each standing dreamer back some of a pool, and a heal gives each one health. An
+   * effect or a restore on a dreamer, as a heal does, counts the caster among those who fought each
+   * nightmare that dreamer fought (`joinFightsOf`). A
    * calm cuts the caster's threat on every table and puts its effect on them. A leap does nothing
    * here: the caster's client moves them, and each move is judged as every move is, against the
    * pace credit the use granted.
@@ -1742,11 +1758,13 @@ export class SpaceActor {
       case 'effect':
         for (const body of bodies) {
           const monster = this.monsters.get(body.id);
+          const dreamer = this.players.get(body.id);
           if (monster !== undefined) {
             if (evadesAll(monster)) continue;
             addThreat(monster, caster, 0);
           }
-          this.applyEffect(this.players.get(body.id) ?? monster!, does.effectId, rank, caster);
+          if (dreamer !== undefined) this.joinFightsOf(caster, dreamer);
+          this.applyEffect(dreamer ?? monster!, does.effectId, rank, caster);
         }
         return;
       case 'leap':
@@ -1757,6 +1775,7 @@ export class SpaceActor {
         for (const body of bodies) {
           const dreamer = this.players.get(body.id);
           if (dreamer === undefined) continue;
+          this.joinFightsOf(caster, dreamer);
           const energy = dreamer.character.energy;
           this.setEnergy(dreamer, { ...energy, [current]: Math.min(energy[max], energy[current] + amount) });
         }
@@ -1991,6 +2010,7 @@ export class SpaceActor {
       homeNearedAt: now,
       effects: origin.trait === undefined ? [] : [traitEffect(origin.trait, id, now)],
       threat: new Map(),
+      fought: new Set(),
       answerDue: new Set(),
     };
     this.monsters.set(id, monster);
@@ -2201,6 +2221,7 @@ export class SpaceActor {
       if (monster.phase.at !== 'fight') {
         if (monster.phase.at === 'rest' || monster.phase.at === 'wander') monster.home = monster.position;
         monster.phase = { at: 'fight', from: monster.position };
+        monster.fought = new Set(monster.threat.keys());
         if (monster.boss !== undefined) {
           monster.boss.wailReadyAt = now + monster.boss.moves.firstWailSeconds * 1000;
           monster.boss.callReadyAt = now;
@@ -2347,6 +2368,7 @@ export class SpaceActor {
   /** The nightmare gives its fight up: it forgets everyone and walks home evading. */
   private giveUp(monster: MonsterRuntime): void {
     monster.threat.clear();
+    monster.fought.clear();
     monster.answerDue.clear();
     this.enterReturn(monster, true);
   }
@@ -2779,20 +2801,21 @@ export class SpaceActor {
     addThreat(monster, source, landed);
     monster.health = Math.max(0, monster.health - landed);
     this.setCondition(monster);
-    if (monster.health === 0) this.driveOff(monster, source);
+    if (monster.health === 0) this.driveOff(monster);
   }
 
   /**
    * The one place a nightmare is driven off. It lies where it fell for its rank's `lieSeconds`. It is
    * set at rest, so whoever follows it goes back (`leadsToFight`). Its spawn, if it has one, has a
    * slot to refill after the kind's respawn time, counted from the fall. A boss's wail ends unstruck
-   * and its minions crumble. The standing dreamers within the share radius, and the standing dreamer
-   * whose harm drove it off from however far, split its bounty, and each earn the practice and its
-   * count toward their quests in full. Each of them rolls for drops of their own, by the nightmare's
-   * tier and rank, and finds its kind's trophy while a quest of theirs collects it. All their drops
-   * scatter fanned round where it stood.
+   * and its minions crumble. It is shared by every dreamer in the space who fought it in this fight,
+   * standing or fallen, and every standing dreamer within the share radius. They split its bounty,
+   * and each earns the practice and its count toward their quests in full, but a fallen one counts
+   * nothing toward a quest held without falling. Each of them rolls for drops of their own, by the
+   * nightmare's tier and rank, and finds its kind's trophy while a quest of theirs collects it. All
+   * their drops scatter fanned round where it stood.
    */
-  private driveOff(monster: MonsterRuntime, finisher: PlayerSlot): void {
+  private driveOff(monster: MonsterRuntime): void {
     const now = this.now();
     monster.lyingUntil = now + COMBAT.lieSeconds[nightmareRankOf(monster) ?? 'nightmare'] * 1000;
     monster.phase = { at: 'rest' };
@@ -2801,18 +2824,21 @@ export class SpaceActor {
       monster.boss.wail = undefined;
       this.dismissMinions(monster);
     }
-    const near = [...this.players.values()].filter(
-      (slot) => !isFallen(slot) && (slot === finisher || distance(slot.character.position, monster.position) <= COMBAT.shareRadius),
+    const sharers = [...this.players.values()].filter(
+      (slot) => monster.fought.has(slot.character.id) || (!isFallen(slot) && distance(slot.character.position, monster.position) <= COMBAT.shareRadius),
     );
-    const share = Math.floor(monster.kind.bounty / near.length);
+    const share = Math.floor(monster.kind.bounty / sharers.length);
     const drops: { owner: PlayerSlot; contents: LootContents }[] = [];
-    for (const slot of near) {
+    for (const slot of sharers) {
       if (share > 0) this.giveCoins(slot, share);
       for (const item of rollDrops(monster.kind.tier, nightmareRankOf(monster) ?? 'nightmare', slot.character.lucidity.role, () => randomUnit(this.lootRandom)))
         drops.push({ owner: slot, contents: { kind: 'item', item } });
       if (collectsTrophy(slot.character.quests, monster.kindId)) drops.push({ owner: slot, contents: { kind: 'trophy', monsterKind: monster.kindId } });
       this.addPractice(slot, PRACTICE.nightmare);
-      this.advanceQuests(slot, (objective, progress) => (drivesOff(objective, monster.kindId, monster.sector) ? progress + 1 : progress));
+      const fallen = isFallen(slot);
+      this.advanceQuests(slot, (objective, progress, held) =>
+        drivesOff(objective, monster.kindId, monster.sector) && !(fallen && held.withoutFalling === true) ? progress + 1 : progress,
+      );
     }
     this.scatter(monster.position, drops);
   }
@@ -2831,6 +2857,7 @@ export class SpaceActor {
    * wield the Moonstone. Beginning needs the raise's whole spirit cost on hand, so a lone Healer can
    * finish it. Joining needs a mend's worth, and room among the most Healers one raise holds. Taking
    * hold spends the touch, as a mend does, and that is the only limit on how often a Healer takes hold.
+   * It counts the Healer among those who fought each nightmare the fallen dreamer fought.
    */
   private touch(healer: PlayerSlot, target: PlayerSlot): void {
     if (!this.canMend(healer)) return;
@@ -2846,6 +2873,7 @@ export class SpaceActor {
     const needed = target.raise === undefined ? COMBAT.raise.spiritCost : COMBAT.mend.spiritCost;
     if (healer.character.energy.spiritCurrent < needed) return;
     this.spendTouch(healer);
+    this.joinFightsOf(healer, target);
     target.raise ??= { work: 0, accruedAt: this.now(), holders: [], shares: new Map() };
     target.raise.holders.push(id);
     if (!target.raise.shares.has(id)) target.raise.shares.set(id, { seconds: 0, charged: 0 });
@@ -2890,7 +2918,8 @@ export class SpaceActor {
    * they miss. Only the raise stands a fallen dreamer up, so a fallen one is given none. The threat
    * it raises against the Healer is shared among the nightmares not driven off that hold threat
    * against the dreamer, and the Healer earns practice by it: half for mending themselves, and quest
-   * progress only for mending another. A Healer no longer in the space raises nothing and earns nothing.
+   * progress only for mending another. It counts the Healer among those who fought each nightmare
+   * the dreamer fought. A Healer no longer in the space raises nothing and earns nothing.
    */
   private heal(healerId: string, target: PlayerSlot, amount: number): void {
     const energy = target.character.energy;
@@ -2899,6 +2928,7 @@ export class SpaceActor {
     this.setEnergy(target, { ...energy, healthCurrent: energy.healthCurrent + given });
     const healer = this.players.get(healerId);
     if (healer === undefined) return;
+    this.joinFightsOf(healer, target);
     const fighting = [...this.monsters.values()].filter((monster) => monster.lyingUntil === undefined && monster.threat.has(target.character.id));
     for (const monster of fighting) addThreat(monster, healer, (given * COMBAT.threatPerHealthMended) / fighting.length);
     if (healer === target) {
@@ -2907,6 +2937,13 @@ export class SpaceActor {
     }
     this.addPractice(healer, given * PRACTICE.perHealthMended);
     this.advanceQuests(healer, (objective, progress) => (objective.kind === 'mend' ? progress + given : progress));
+  }
+
+  /** Counts a dreamer who helps another among those who fought each nightmare not driven off that the other fought in this fight. */
+  private joinFightsOf(helper: PlayerSlot, helped: PlayerSlot): void {
+    for (const monster of this.monsters.values()) {
+      if (monster.lyingUntil === undefined && monster.fought.has(helped.character.id)) joinFight(monster, helper.character.id);
+    }
   }
 
   /**

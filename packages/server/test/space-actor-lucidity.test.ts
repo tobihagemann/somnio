@@ -21,6 +21,7 @@ import {
   attackGhost,
   carrying,
   characterOf,
+  coinsOf,
   energy,
   energyOf,
   engage,
@@ -496,6 +497,22 @@ describe('a gate', () => {
     expect(progressOf(world.space, alice.entityId, 'restless-graves')).toEqual([3]);
   });
 
+  it('counts nothing toward a Follow-through task for a nightmare driven off while the dreamer lies fallen from its fight, which they still share', () => {
+    const world = town();
+    world.dice.hit = true;
+    const character = { lucidity: lucidity('fighter', { strike: 5 }), quests: holding('follow-through-task', [0]), energy: energy({ healthCurrent: 9 }) };
+    const alice = attachPlayer(world.space, BESIDE_GHOST, 'alice', { character });
+    world.steps(1);
+    expect(world.space.isFallen(alice.entityId)).toBe(true);
+    const bob = attachPlayer(world.space, { x: 10, z: 9.3 }, 'bob', {
+      character: { lucidity: lucidity('fighter', { strike: 5 }) },
+      inventory: wearing(CUDGEL),
+    });
+    driveOff(world, bob.entityId, GHOST);
+    expect(coinsOf(world.space, alice.entityId)).toBeGreaterThan(0);
+    expect(progressOf(world.space, alice.entityId, 'follow-through-task')).toEqual([0]);
+  });
+
   it('counts each nightmare driven off, and no further than its goal', () => {
     const world = town();
     const character = { lucidity: lucidity('fighter', { strike: 5 }), quests: holding('follow-through-task', [2]) };
@@ -712,7 +729,7 @@ describe('a quest', () => {
     });
   });
 
-  it('shares a drive-off with every standing dreamer within the share radius, but not one who lies fallen or stands far off', () => {
+  it('shares a drive-off with every standing dreamer within the share radius, but not one who never fought it and lies fallen or stands far off', () => {
     const world = graveyard();
     const hunting = { quests: holding('restless-graves', [0]) };
     const alice = attachPlayer(world.space, BESIDE_GHOST, 'alice', {

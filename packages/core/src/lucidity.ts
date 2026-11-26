@@ -81,7 +81,7 @@ export const TRIAL_REWARDS: Partial<Record<Role, BaseItemId>> = { healer: 'moons
 
 /** What doing a thing adds toward the next rank of the teaching studied. */
 export const PRACTICE = {
-  /** For a nightmare driven off within the share radius, in full to each dreamer there. */
+  /** For a nightmare driven off, in full to each dreamer who shares it. */
   nightmare: 10,
   perHealthMended: 0.25,
   /** The share of `perHealthMended` a Healer earns mending themselves. */

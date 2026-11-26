@@ -18,6 +18,7 @@ import {
   attackGhost,
   carrying,
   characterOf,
+  coinsOf,
   energyOf,
   engage,
   face,
@@ -50,10 +51,25 @@ async function ghostNow(space: SpaceActor): Promise<Point & { facing: number; co
 }
 
 const healthOf = (space: SpaceActor, entityId: string) => energyOf(space, entityId).healthCurrent;
-const coinsOf = (space: SpaceActor, entityId: string) => space.snapshotForPlayer(entityId)!.inventory.coins;
 const sensed = (messages: readonly SomnioMessage[]) => payloads(messages, 'sensed').map(({ bearings }) => bearings);
 
 describe('Ward', () => {
+  it('counts its Mystic among those who fought each nightmare its holder fights, so they share it from beyond the share radius', () => {
+    const { clock, space } = arena();
+    const bob = attachPlayer(space, BESIDE_GHOST, 'bob', { character: STRIKER, inventory: wearing(CUDGEL) });
+    // 5.9 m from Bob, within Ward's reach, and 6.6 m from the Ghost, beyond its notice and the share radius.
+    const alice = attachPlayer(space, { x: 10, z: 16.6 }, 'alice', { character: MYSTIC, inventory: carrying({ coins: COINS, worn: [WAND] }) });
+    attackGhost(space, bob.entityId);
+    space.step(0);
+    space.handleTarget(bob.entityId, alice.entityId);
+    space.handleUseAbility('ward', alice.entityId);
+    for (let swing = 0; swing < 2; swing += 1) {
+      clock.ms += 1000;
+      space.step(0);
+    }
+    expect(coinsOf(space, alice.entityId)).toBe(COINS + monsterKind('ghost').bounty / 2);
+  });
+
   it("takes whole hits in its holder's place until it is spent, then ends, and a hit it takes all of costs no balance", async () => {
     const { space, steps } = arena();
     const alice = attachPlayer(space, BESIDE_GHOST, 'alice', { character: MYSTIC, inventory: wearing(WAND) });
@@ -159,6 +175,24 @@ describe('an effect on a nightmare', () => {
       { entityId: GHOST, effects: [{ effectId: 'weakened', seconds: 8 }] },
     ]);
   });
+
+  it('from a Veiled Mystic at rest counts them in no fight it begins after, so they share nothing of its fall', () => {
+    const { clock, space } = arena();
+    // 6.5 m off: within Weaken's reach, beyond its notice and the share radius.
+    const alice = attachPlayer(space, { x: 10, z: 16.5 }, 'alice', { character: MYSTIC, inventory: carrying({ coins: COINS, worn: [WAND] }) });
+    space.handleUseAbility('veil', alice.entityId);
+    clock.ms += 1000;
+    space.handleTarget(GHOST, alice.entityId);
+    space.handleUseAbility('weaken', alice.entityId);
+    space.step(0);
+    const bob = attachPlayer(space, BESIDE_GHOST, 'bob', { character: STRIKER, inventory: wearing(CUDGEL) });
+    attackGhost(space, bob.entityId);
+    for (let swing = 0; swing < 3; swing += 1) {
+      clock.ms += 1000;
+      space.step(0);
+    }
+    expect([alice, bob].map((player) => coinsOf(space, player.entityId))).toEqual([COINS, monsterKind('ghost').bounty]);
+  });
 });
 
 describe('Weaken', () => {
@@ -238,6 +272,21 @@ describe('Bind', () => {
     space.handleUseAbility('bind', alice.entityId);
     steps(1);
     expect(healthOf(space, bob.entityId)).toBe(91);
+  });
+
+  it('has its caster share the nightmare another drives off, from beyond the share radius', () => {
+    const { clock, space } = arena();
+    // 6.5 m off: within Bind's reach, beyond the share radius.
+    const alice = attachPlayer(space, { x: 10, z: 16.5 }, 'alice', { character: MYSTIC, inventory: carrying({ coins: COINS, worn: [WAND] }) });
+    const bob = attachPlayer(space, BESIDE_GHOST, 'bob', { character: STRIKER, inventory: wearing(CUDGEL) });
+    space.handleTarget(GHOST, alice.entityId);
+    space.handleUseAbility('bind', alice.entityId);
+    attackGhost(space, bob.entityId);
+    for (let swing = 0; swing < 3; swing += 1) {
+      space.step(0);
+      clock.ms += 1000;
+    }
+    expect(coinsOf(space, alice.entityId)).toBe(COINS + monsterKind('ghost').bounty / 2);
   });
 });
 
@@ -330,10 +379,7 @@ describe('Dream-bolt', () => {
     expect(coinsOf(space, alice.entityId)).toBe(COINS + monsterKind('ghost').bounty);
   });
 
-  it.each([
-    ['standing, shares in', 100, true],
-    ['fallen while it flew, shares nothing of', 5, false],
-  ] as const)('drives the nightmare off for a Mystic %s its bounty and practice', async (_label, healthCurrent, shares) => {
+  it('drives the nightmare off for a Mystic fallen while it flew, who still shares in its bounty and practice', async () => {
     const { space, clock, steps } = arena({}, { ground: 9 });
     const bob = attachPlayer(space, { x: 10, z: 15 }, 'bob', { character: MYSTIC, inventory: wearing(WAND) });
     space.handleTarget(GHOST, bob.entityId);
@@ -345,17 +391,17 @@ describe('Dream-bolt', () => {
     space.step(0);
     const studying = lucidity('mystic', { ward: 1, 'dream-bolt': 1 }, { study: 'ward' });
     const alice = attachPlayer(space, BESIDE_GHOST, 'alice', {
-      character: { lucidity: studying, ...wounded(healthCurrent) },
+      character: { lucidity: studying, ...wounded(5) },
       inventory: carrying({ coins: COINS, worn: [WAND] }),
     });
     space.handleTarget(GHOST, alice.entityId);
     space.handleUseAbility('dream-bolt', alice.entityId);
     steps(1);
-    expect(space.isFallen(alice.entityId)).toBe(!shares);
+    expect(space.isFallen(alice.entityId)).toBe(true);
     steps(flightSteps(0.7));
     expect((await ghostNow(space)).condition).toBe('fallen');
-    expect(coinsOf(space, alice.entityId) > COINS).toBe(shares);
-    expect(characterOf(space, alice.entityId).lucidity.ranks.some(({ practice }) => practice > 0)).toBe(shares);
+    expect(coinsOf(space, alice.entityId)).toBeGreaterThan(COINS);
+    expect(characterOf(space, alice.entityId).lucidity.ranks.some(({ practice }) => practice > 0)).toBe(true);
   });
 
   it('lands from outside the spawn area of a nightmare at rest, which then chases the Mystic', async () => {

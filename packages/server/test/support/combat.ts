@@ -3,7 +3,7 @@ import type { Character, EliteTraitId, Inventory, ItemInstance, Lucidity, Point,
 import type { Energy, SomnioMessage } from '@somnio/protocol';
 import { carrying, plain } from '../../../core/test/support/items.ts';
 import { ranks } from '../../../core/test/support/ranks.ts';
-import type { SpaceActor } from '../../src/world/spaceActor.ts';
+import type { PlayerCheckpoint, SpaceActor } from '../../src/world/spaceActor.ts';
 import { attachPlayer, landsAtCentre, makeClockedSpace, makeMonsterGround, makeMonsterSpawn, makeSector, makeWorld } from './sectorFactory.ts';
 
 export const GHOST_AT: Point = { x: 10, z: 10 };
@@ -85,14 +85,15 @@ export function arena(
 /**
  * Has a Fighter beside the Ghost strike it twice and leave, so its table empties and it gives up
  * where it stands with 14 of its 60 health. It waits there, evading everything, until it has healed
- * whole about 6 s later.
+ * whole about 6 s later. Gives back the checkpoint the Fighter left with.
  */
-export function strikeAndLeave(space: SpaceActor, steps: (count: number) => void): void {
+export function strikeAndLeave(space: SpaceActor, steps: (count: number) => void): PlayerCheckpoint {
   const striker = attachPlayer(space, BESIDE_GHOST, 'striker', { character: STRIKER, inventory: wearing(CUDGEL) });
   attackGhost(space, striker.entityId);
   steps(21);
-  space.handOver(striker.entityId, false);
+  const { checkpoint } = space.handOver(striker.entityId, false)!;
   steps(1);
+  return checkpoint;
 }
 
 /** Rolls that make every nightmare spawned an elite carrying `trait`. */
@@ -125,6 +126,10 @@ export function characterOf(space: SpaceActor, entityId: string): Character {
 
 export function energyOf(space: SpaceActor, entityId: string): Energy {
   return characterOf(space, entityId).energy;
+}
+
+export function coinsOf(space: SpaceActor, entityId: string): number {
+  return space.snapshotForPlayer(entityId)!.inventory.coins;
 }
 
 type PayloadOf<T extends SomnioMessage['tag']> = Extract<SomnioMessage, { tag: T }>['payload'];

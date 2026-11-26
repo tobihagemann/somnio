@@ -22,6 +22,7 @@ import {
   attackGhost,
   carrying,
   characterOf,
+  coinsOf,
   energy,
   energyOf,
   engage,
@@ -319,10 +320,22 @@ describe('attacking a nightmare', () => {
       space.step(0);
       clock.ms += 1000;
     }
-    const coins = (entityId: string) => space.snapshotForPlayer(entityId)!.inventory.coins;
     const practice = (entityId: string) => characterOf(space, entityId).lucidity.ranks.find((held) => held.teachingId === 'toughening')?.practice;
-    expect([striker, near, far, fallen].map((player) => coins(player.entityId))).toEqual([106, 106, 100, 100]);
+    expect([striker, near, far, fallen].map((player) => coinsOf(space, player.entityId))).toEqual([106, 106, 100, 100]);
     expect([striker, near, far, fallen].map((player) => practice(player.entityId))).toEqual([10, 10, undefined, undefined]);
+  });
+
+  it('splits the bounty only among those still in the space, not one who fought it and left', () => {
+    const { clock, space } = arena();
+    const alice = attachPlayer(space, BESIDE_GHOST, 'alice', { character: STRIKER, inventory: wearing(CUDGEL) });
+    const bob = attachPlayer(space, { x: 10, z: 9.3 }, 'bob', { character: STRIKER, inventory: wearing(CUDGEL) });
+    attackGhost(space, alice.entityId);
+    attackGhost(space, bob.entityId);
+    space.step(0);
+    space.handOver(alice.entityId, false);
+    clock.ms += 1000;
+    space.step(0);
+    expect(coinsOf(space, bob.entityId)).toBe(monsterKind('ghost').bounty);
   });
 
   it('raises the health maximum where a Toughening rank is earned, and recovery then passes the old one', async () => {
@@ -635,6 +648,19 @@ describe('threat', () => {
     space.handleMove({ x: 9.3, z: 10.3, facing: 0, gait: 'walk' }, fighter.entityId);
     steps(40);
     expect(targetsOf(await collectMessages(nearer.outbox), GHOST)).toEqual([fighter.entityId, nearer.entityId]);
+  });
+
+  it('forgets who fought it once it gives up, so one who comes back beyond its notice shares nothing of its next fight', () => {
+    const { space, steps } = arena();
+    const striker = strikeAndLeave(space, steps);
+    // Healed whole and at rest again.
+    steps(9 * 20);
+    // Back 7 m off, beyond its notice and the share radius.
+    space.attach({ ...striker.character, position: { x: 10, z: 17 } }, striker.inventory, new ConnectionOutbox(4096), 0, 'en');
+    const bob = attachPlayer(space, BESIDE_GHOST, 'bob', { character: SLAYER, inventory: wearing(CUDGEL) });
+    attackGhost(space, bob.entityId);
+    steps(1);
+    expect([striker.character.id, bob.entityId].map((entityId) => coinsOf(space, entityId))).toEqual([0, monsterKind('ghost').bounty]);
   });
 });
 
@@ -1406,6 +1432,25 @@ describe('the Necromancer', () => {
     // The bounty of 200 split six ways, and nothing for a minion.
     for (const striker of strikers) expect(payloads(striker.sent, 'inventory').at(-1)?.coins).toBe(33);
     expect(payloads(watcher.sent, 'inventory').map((inventory) => inventory.coins)).toEqual([0]);
+  });
+
+  it('shares its fall with a dreamer in its chamber who fought only a minion, past its notice and the share radius', () => {
+    const { space, steps } = lair({ high: 0.75 });
+    ringOfStrikers(space);
+    const watcher = recordingOutbox();
+    attachPlayer(space, OUTSIDE, 'watcher', { outbox: watcher.outbox });
+    steps(1);
+    const minion = minionsIn(watcher.sent)[0]!;
+    // 6.1 m south-west of it, and within a bolt's reach of every minion it calls up west of it.
+    const alice = attachPlayer(space, { x: LAIR_AT.x - 1.7, z: LAIR_AT.z + 5.9 }, 'alice', {
+      character: { lucidity: lucidity('mystic', { 'dream-bolt': 1 }) },
+      inventory: wearing(WAND),
+    }).entityId;
+    space.handleTarget(minion.id, alice);
+    space.handleUseAbility('dream-bolt', alice);
+    for (let step = 0; step < 400 && !endsOf(watcher.sent, [BOSS])[0]!.fallen; step += 1) steps(1);
+    expect(endsOf(watcher.sent, [BOSS])[0]!.fallen).toBe(true);
+    expect(coinsOf(space, alice)).toBe(Math.floor(monsterKind('necromancer').bounty / 7));
   });
 
   it("lies for a boss's lie time once driven off", () => {

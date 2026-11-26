@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ABILITIES, distance, headingFromCardinal } from '@somnio/core';
+import { ABILITIES, distance, headingFromCardinal, monsterKind } from '@somnio/core';
 import type { Character, Point } from '@somnio/core';
 import type { SpaceActor } from '../src/world/spaceActor.ts';
 import {
@@ -10,6 +10,7 @@ import {
   arena,
   attackGhost,
   characterOf,
+  coinsOf,
   energy,
   energyOf,
   face,
@@ -227,6 +228,21 @@ describe('Rally', () => {
     const rested = attachPlayer(space, { x: 4, z: 5 }, 'rested', { character: { energy: energy({ balanceCurrent: 95 }) } });
     space.handleUseAbility('rally', fighter.entityId);
     expect([fighter, near, far, fallen, rested].map((slot) => energyOf(space, slot.entityId).balanceCurrent)).toEqual([60, 70, 50, 50, 100]);
+  });
+
+  it('counts the Fighter among those who fought each nightmare a dreamer it reaches fights, so they share it from beyond the share radius', () => {
+    const { clock, space } = arena();
+    const bob = attachPlayer(space, BESIDE_GHOST, 'bob', { character: { lucidity: lucidity('fighter', { strike: 5 }) }, inventory: wearing(CUDGEL) });
+    // 6.5 m from the Ghost, beyond its notice and the share radius.
+    const alice = attachPlayer(space, { x: 10, z: 16.5 }, 'alice', { character: { lucidity: lucidity('fighter', { rally: 1 }) } });
+    attackGhost(space, bob.entityId);
+    space.step(0);
+    space.handleUseAbility('rally', alice.entityId);
+    for (let swing = 0; swing < 2; swing += 1) {
+      clock.ms += 1000;
+      space.step(0);
+    }
+    expect(coinsOf(space, alice.entityId)).toBe(monsterKind('ghost').bounty / 2);
   });
 });
 

@@ -65,7 +65,7 @@ export const COMBAT = {
 
   /** How far beyond contact a swing, a strike, or a Moonstone still reaches. */
   reachSlack: 0.25,
-  /** How far from a nightmare driven off a dreamer still shares its bounty and earns practice. */
+  /** How far a standing dreamer who did not fight a nightmare may stand from it as it is driven off and still share its bounty and practice. */
   shareRadius: 6,
   /** How long a nightmare driven off lies before it is gone, by its rank: `nightmare` for an ordinary one, else its `NightmareRank`. */
   lieSeconds: { nightmare: 30, elite: 60, boss: 120 } satisfies Record<'nightmare' | NightmareRank, number>,
