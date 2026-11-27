@@ -35,8 +35,13 @@ export const PATHFINDING = {
 const RADIUS = SOMNIO_CONSTANTS.playerRadius;
 const BODY_RADIUS = RADIUS + PATHFINDING.bodyMargin;
 const DIAGONAL = PATHFINDING.cell * Math.SQRT2;
+/**
+ * How far beyond its margin a body can stand from a cell's centre and still meet a step out of it,
+ * since a step is at most a diagonal long and `clearOfBodies` judges no body wider than its margin.
+ */
+const STEP_REACH = DIAGONAL + 1e-6;
 /** A cell clear at this radius has every edge clear, since no sample of an edge lies further than a diagonal from its centre. */
-const ROOMY_RADIUS = RADIUS + DIAGONAL + 1e-6;
+const ROOMY_RADIUS = RADIUS + STEP_REACH;
 /** The side of the tiles `isClear` is answered over, each holding only the features near it. */
 const TILE = 2;
 const TILE_REACH = ROOMY_RADIUS + 0.01;
@@ -141,6 +146,7 @@ function walkable(clear: (point: Point) => boolean, from: Point, to: Point, bodi
 }
 
 function clearOfBodies(from: Point, to: Point, bodies: readonly Body[]): boolean {
+  if (bodies.length === 0) return true;
   const radius = bodies.some((body) => distance(from, body) < BODY_RADIUS + body.radius) ? RADIUS : BODY_RADIUS;
   return !bodiesBlockLine(from, to, radius, bodies);
 }
@@ -352,13 +358,13 @@ function searchCells(
     const down = Math.abs(Math.floor(index / columns) - goalRow);
     return (Math.max(across, down) + (Math.SQRT2 - 1) * Math.min(across, down)) * PATHFINDING.cell;
   };
-  const excluded = (a: Cell, b: Cell): boolean => excludedEdges.size > 0 && excludedEdges.has(edgeKey(a, b));
+  const excluded = (a: number, b: number): boolean => excludedEdges.size > 0 && excludedEdges.has(edgeKey(cellAt(a), cellAt(b)));
 
-  const startCell = { column: cellIndex(from.x), row: cellIndex(from.z) };
+  const fromCell = (cellIndex(from.z) - window.row) * columns + cellIndex(from.x) - window.column;
   for (let row = -1; row <= 1; row += 1) {
     for (let column = -1; column <= 1; column += 1) {
-      const index = (startCell.row - window.row + row) * columns + startCell.column - window.column + column;
-      if ((cells[index]! & CLEAR) === 0 || excluded(startCell, cellAt(index))) continue;
+      const index = fromCell + row * columns + column;
+      if ((cells[index]! & CLEAR) === 0 || excluded(fromCell, index)) continue;
       const centre = centreOf(index);
       if (!leg(from, centre)) continue;
       cost[index] = distance(from, centre);
@@ -393,6 +399,7 @@ function searchCells(
     }
     const column = index % columns;
     const row = Math.floor(index / columns);
+    const bodiesInReach = bodies.filter((body) => distance(centre, body) <= BODY_RADIUS + body.radius + STEP_REACH);
     for (const step of STEPS) {
       const nextColumn = column + step.column;
       const nextRow = row + step.row;
@@ -402,7 +409,7 @@ function searchCells(
       if (step.column !== 0 && step.row !== 0 && ((cells[row * columns + nextColumn]! & CLEAR) === 0 || (cells[nextRow * columns + column]! & CLEAR) === 0))
         continue;
       const nextCost = cost[index]! + step.cost;
-      if (nextCost >= cost[next]! || excluded(cellAt(index), cellAt(next)) || !clearOfBodies(centre, centreOf(next), bodies)) continue;
+      if (nextCost >= cost[next]! || excluded(index, next) || !clearOfBodies(centre, centreOf(next), bodiesInReach)) continue;
       cost[next] = nextCost;
       parent[next] = index;
       open.push(next, nextCost + heuristic(next));

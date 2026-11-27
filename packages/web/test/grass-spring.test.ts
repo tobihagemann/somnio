@@ -81,4 +81,17 @@ describe('the grass spring', () => {
 
     expect(tilt(batch)).toBeLessThan(0.01);
   });
+
+  it('forgets a removed batch, so a contact on its tufts moves nothing, while a batch sharing their ground still leans', () => {
+    const { spring, batch } = tuft();
+    const removed = { roots: new Float32Array([5.02, 5]), halfWidths: new Float32Array([0.07]), tilts: new Float32Array(2) };
+    spring.add(removed);
+
+    spring.remove(removed);
+    const changed = spring.step([{ x: 5, z: 5, radius: 0.06 }], FRAME);
+
+    expect(changed.has(removed)).toBe(false);
+    expect(tilt(removed)).toBe(0);
+    expect(changed.has(batch)).toBe(true);
+  });
 });

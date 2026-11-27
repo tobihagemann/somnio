@@ -60,9 +60,16 @@ export class GrassSpring {
     }
   }
 
-  /** Forgets the batch's tufts; every other tuft keeps leaning or springing back as it was. */
+  /**
+   * Forgets the batch's tufts, looking only in the buckets its roots fall in, so its roots must be
+   * the ones it was added with. Every other tuft keeps leaning or springing back as it was.
+   */
   remove(batch: GrassBatch): void {
-    for (const [key, bucket] of this.buckets) {
+    const keys = new Set<string>();
+    for (let index = 0; index < batch.halfWidths.length; index += 1) keys.add(bucketKey(batch.roots[index * 2]!, batch.roots[index * 2 + 1]!));
+    for (const key of keys) {
+      const bucket = this.buckets.get(key);
+      if (bucket === undefined) continue;
       const kept = bucket.filter(([candidate]) => candidate !== batch);
       if (kept.length === 0) this.buckets.delete(key);
       else this.buckets.set(key, kept);
