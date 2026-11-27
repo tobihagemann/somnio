@@ -124,7 +124,7 @@ export class ConnectionActor {
   readonly clientAddress: string | undefined;
   state: ConnectionState = { kind: 'awaitingLogin' };
   /**
-   * The raw token this connection redeemed or was issued, the one `revokeOtherSessions` spares.
+   * The raw token this connection redeemed or was issued, `revokeOtherSessions`'s replacement included.
    * Held here rather than in `state`, because it outlives the move from `authenticated` to `attached`.
    */
   sessionToken: string | undefined;

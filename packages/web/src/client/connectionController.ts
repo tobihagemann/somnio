@@ -185,9 +185,17 @@ export class ConnectionController {
   /**
    * How many other browsers could still resume this account: the login's or resume's `otherSessions`,
    * and 0 once they are logged out. Nothing can add to it while this one is in the world, so it needs
-   * no refresh, and a 0 can hide Log Out Other Browsers for the rest of the session.
+   * no refresh.
    */
   otherSessionCount = 0;
+  /**
+   * Whether the game menu offers Log Out Other Browsers. A connection holding a token always gets it,
+   * since a copy of that token shares its session and so never shows in the count. Without a token,
+   * the action can end only what the count shows.
+   */
+  get offersLogOutOtherBrowsers(): boolean {
+    return this.otherSessionCount > 0 || this.heldToken !== undefined;
+  }
   /** The account's characters while the player chooses one on the card, the one played last first; unset off the card. */
   characters: readonly CharacterSummaryMessage[] | undefined;
   /**
@@ -230,6 +238,11 @@ export class ConnectionController {
   private pendingRegistration: RegistrationForm | undefined;
   /** Set while a `redeemSession` is in flight, so `alreadyLoggedIn` can be retried. */
   private resumingWithToken: string | undefined;
+  /**
+   * The token the server holds for this connection: the one a resume redeemed, or the last `sessionToken`
+   * taken. Kept apart from `sessionStore`, which another tab can overwrite with another account's.
+   */
+  private heldToken: string | undefined;
   private resumeAttempts = 0;
   /**
    * The card's request in flight. One at a time: a second `selectCharacter` reaching a player already
@@ -403,6 +416,7 @@ export class ConnectionController {
     this.credentials = undefined;
     this.pendingRegistration = undefined;
     this.resumingWithToken = undefined;
+    this.heldToken = undefined;
     this.chatLines = [];
     this.selfDisplayName = '';
     this.sessionStatus = undefined;
@@ -412,7 +426,7 @@ export class ConnectionController {
 
   /** Explicit logout: revoke the token server-side, then drop every credential and tear down. */
   leaveGame(): void {
-    const stored = this.sessionStore.load();
+    const held = this.heldToken;
     // Both post-login states, not `attached` alone. The server accepts `revokeSession` from the
     // moment the connection is registered, and the player can reach Leave Game in either: the game
     // menu opens whenever no overlay is presented, which a token resume is from its first frame.
@@ -420,8 +434,8 @@ export class ConnectionController {
     // clearing the store below — leaving a token that stays redeemable for its full lifetime with
     // nothing left to revoke it.
     const canRevoke = this.connectionState === 'attached' || this.connectionState === 'awaitingEnterSpace';
-    if (stored !== undefined && canRevoke) {
-      this.transport.send({ tag: 'revokeSession', payload: { token: stored.token } });
+    if (held !== undefined && canRevoke) {
+      this.transport.send({ tag: 'revokeSession', payload: { token: held } });
     }
     // Cleared regardless of whether the revoke was sent or landed. A UI that still claimed a
     // session after a failed revoke would be lying about state it cannot observe.
@@ -471,7 +485,8 @@ export class ConnectionController {
   onCharacterOutcome: ((request: CharacterRequest, result: CharacterResult) => void) | undefined;
 
   /**
-   * Ends every other browser's remembered session; the server spares the one this connection holds.
+   * Ends every other browser's remembered session, and every copy of this one's. The server replaces
+   * the token this connection holds and sends the new one as a `sessionToken` before its answer.
    * Sent only while attached, the one place the game menu offers it.
    */
   logOutOtherBrowsers(): void {
@@ -553,20 +568,25 @@ export class ConnectionController {
       case 'characterResult':
         this.handleCharacterResult(message.payload.result);
         return;
-      case 'sessionToken':
-        // Only stored when this client asked for one. Saving whatever arrives would let a future
-        // issuance change — or a compromised server — plant a 30-day credential on a machine whose
-        // user deliberately left "Remember password" unticked.
-        if (this.credentials?.rememberMe === true) {
-          // Reported rather than swallowed: the player asked to be remembered, and a
-          // storage refusal is otherwise discovered only on the next visit, as an unexplained
-          // login form. The line is a *report*, not a failure — the session itself is fine, which
-          // is why nothing here tears down.
-          if (!this.sessionStore.save(message.payload.token, message.payload.expiresInSeconds)) {
-            this.appendChat({ kind: 'credentialSaveFailed' });
-          }
+      case 'sessionToken': {
+        // Taken only when this client asked for one at login, or in place of the token this
+        // connection holds, which Log Out Other Browsers replaces. Saving whatever arrives would let
+        // a future issuance change — or a compromised server — plant a 30-day credential on a
+        // machine whose user deliberately left "Remember password" unticked.
+        const replaced = this.heldToken;
+        if (replaced === undefined && this.credentials?.rememberMe !== true) return;
+        this.heldToken = message.payload.token;
+        // A replacement is saved only over its own token: another tab may since have stored another
+        // account's, which this one must not sign that tab's next visit out of.
+        if (replaced !== undefined && this.sessionStore.load()?.token !== replaced) return;
+        // Reported rather than swallowed: the player asked to be remembered, and a storage refusal is
+        // otherwise discovered only on the next visit, as an unexplained login form. The line is a
+        // *report*, not a failure — the session itself is fine, which is why nothing here tears down.
+        if (!this.sessionStore.save(message.payload.token, message.payload.expiresInSeconds)) {
+          this.appendChat({ kind: 'credentialSaveFailed' });
         }
         return;
+      }
       case 'sessionRevoked':
         // The server has retired this token, so the identity it authenticated is over here too —
         // the same surfaces `leaveGame` drops, for the same reason.
@@ -577,7 +597,7 @@ export class ConnectionController {
         this.onOtherSessionsChanged?.();
         return;
       case 'otherSessionsRevoked':
-        // Only the other sessions ended, so unlike `sessionRevoked` the identity here stays.
+        // Unlike `sessionRevoked`, the identity here stays: this connection's token was replaced, not ended.
         if (message.payload.revoked) {
           this.otherSessionCount = 0;
           this.onOtherSessionsChanged?.();
@@ -692,6 +712,7 @@ export class ConnectionController {
     switch (result) {
       case 'ok':
         this.connectionState = 'awaitingEnterSpace';
+        if (this.resumingWithToken !== undefined) this.heldToken = this.resumingWithToken;
         return;
       case 'alreadyLoggedIn':
         this.handleAlreadyLoggedIn();
@@ -1031,6 +1052,7 @@ export class ConnectionController {
     this.characters = undefined;
     this.characterRequest = undefined;
     this.resumingWithToken = undefined;
+    this.heldToken = undefined;
     // Cleared here, not only on `connect`'s early-return branch — that branch runs only when a
     // socket was already open, i.e. never after a teardown. Left set, a registration submitted
     // against an unreachable server survives to the next login and re-issues `register` instead,

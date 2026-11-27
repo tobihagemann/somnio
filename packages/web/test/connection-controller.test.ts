@@ -650,8 +650,8 @@ describe('token failure and revocation', () => {
     expect(lastSentEnvelope(rig)).toEqual({ tag: 'revokeOtherSessions', payload: {} });
   });
 
-  /** Only the other browsers' sessions ended, so unlike after `sessionRevoked` this browser keeps its stored token and stays in the world. */
-  it('reports otherSessionsRevoked in chat and keeps the session', () => {
+  /** This browser's token is replaced rather than ended, so unlike after `sessionRevoked` it stays remembered and in the world. */
+  it('reports otherSessionsRevoked in chat and keeps the session under its replaced token', () => {
     const storage = new MemoryStorage();
     const rig = makeRig({ storage });
     rig.controller.connect({ kind: 'login', credentials: { email: 'a@example.com', password: 'b', rememberMe: true } });
@@ -663,12 +663,65 @@ describe('token failure and revocation', () => {
     rig.deliver({ tag: 'sessionToken', payload: { token: 'tok', expiresInSeconds: 100 } });
     const lines = rig.controller.chatHistory.length;
 
+    rig.deliver({ tag: 'sessionToken', payload: { token: 'fresh', expiresInSeconds: 100 } });
     rig.deliver({ tag: 'otherSessionsRevoked', payload: { revoked: true, count: 2 } });
 
     expect(rig.controller.chatHistory.slice(lines)).toEqual([{ kind: 'loggedOutOtherBrowsers', count: 2 }]);
-    expect(rig.controller.sessionStore.load()?.token).toBe('tok');
+    expect(rig.controller.sessionStore.load()?.token).toBe('fresh');
     expect(rig.controller.presentedOverlay).toBeUndefined();
     expect(rig.controller.inWorld).toBe(true);
+  });
+
+  /** A resume carries no credentials, so only the token it holds lets this browser keep the one Log Out Other Browsers replaces it with. */
+  it('saves the token that replaces a resumed session over the one it held', () => {
+    const storage = new MemoryStorage();
+    storage.setItem('somnio.sessionToken', JSON.stringify({ token: 'tok', expiresAt: Date.now() + 60_000 }));
+    const rig = makeRig({ storage });
+    rig.controller.connect({ kind: 'resume' });
+    rig.socket().open();
+    rig.deliver(hello());
+    rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
+    rig.deliver(enterSpaceFrame());
+    rig.deliver(entityFrame());
+
+    rig.deliver({ tag: 'sessionToken', payload: { token: 'fresh', expiresInSeconds: 60 } });
+    rig.deliver({ tag: 'otherSessionsRevoked', payload: { revoked: true, count: 0 } });
+
+    expect(rig.controller.sessionStore.load()?.token).toBe('fresh');
+    expect(rig.controller.inWorld).toBe(true);
+  });
+
+  /** Another tab may log another account in with "Remember password" while this one plays. */
+  it("leaves another tab's stored token in place of this session's replacement", () => {
+    const storage = new MemoryStorage();
+    storage.setItem('somnio.sessionToken', JSON.stringify({ token: 'tok', expiresAt: Date.now() + 60_000 }));
+    const rig = makeRig({ storage });
+    rig.controller.connect({ kind: 'resume' });
+    rig.socket().open();
+    rig.deliver(hello());
+    rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
+    rig.deliver(enterSpaceFrame());
+    storage.setItem('somnio.sessionToken', JSON.stringify({ token: 'other-account', expiresAt: Date.now() + 60_000 }));
+
+    rig.deliver({ tag: 'sessionToken', payload: { token: 'fresh', expiresInSeconds: 60 } });
+
+    expect(rig.controller.sessionStore.load()?.token).toBe('other-account');
+  });
+
+  it('revokes the token this session holds on Leave Game, not one another tab stored', () => {
+    const storage = new MemoryStorage();
+    storage.setItem('somnio.sessionToken', JSON.stringify({ token: 'tok', expiresAt: Date.now() + 60_000 }));
+    const rig = makeRig({ storage });
+    rig.controller.connect({ kind: 'resume' });
+    rig.socket().open();
+    rig.deliver(hello());
+    rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
+    rig.deliver(enterSpaceFrame());
+    storage.setItem('somnio.sessionToken', JSON.stringify({ token: 'other-account', expiresAt: Date.now() + 60_000 }));
+
+    rig.controller.leaveGame();
+
+    expect(lastSentEnvelope(rig)).toEqual({ tag: 'revokeSession', payload: { token: 'tok' } });
   });
 
   /** Nothing can add to the count while attached, so only a revoke or the end of the session changes it. */

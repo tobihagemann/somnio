@@ -1160,18 +1160,23 @@ describe("the game menu's Log Out Other Browsers", () => {
 
   afterEach(() => {
     container.remove();
+    localStorage.removeItem('somnio.sessionToken');
   });
 
-  /** A login answered up to the join, with the player's own body placed only when `placed`, and `others` other browsers remembered. */
-  function joined(placed: boolean, others = 1) {
+  /**
+   * A login answered up to the join, with the player's own body placed only when `placed`, `others`
+   * other browsers remembered, and this one remembered too only when `rememberMe`.
+   */
+  function joined(placed: boolean, { others = 1, rememberMe = false }: { others?: number; rememberMe?: boolean } = {}) {
     const { factory, latest } = fakeSocketFactory();
     const shell = new AppShell({ container, capabilities: { hasWebGL: true }, startRendering: false, socketFactory: factory });
-    shell.controller.beginSession({ kind: 'login', credentials: { email: 'ida@example.com', password: 'hunter2-long', rememberMe: false } });
+    shell.controller.beginSession({ kind: 'login', credentials: { email: 'ida@example.com', password: 'hunter2-long', rememberMe } });
     const socket = latest();
     const deliver = (message: SomnioMessage): void => socket.deliverText(encodeSomnioMessage(message));
     socket.open();
     deliver({ tag: 'hello', payload: { protocolVersion: SOMNIO_PROTOCOL_CONSTANTS.helloVersion } });
     deliver({ tag: 'loginResult', payload: { result: 'ok' } });
+    if (rememberMe) deliver({ tag: 'sessionToken', payload: { token: 'tok', expiresInSeconds: 60 } });
     deliver(enterSpaceFrame());
     if (placed) deliver(entityFrame());
     deliver({ tag: 'otherSessions', payload: { count: others } });
@@ -1190,15 +1195,25 @@ describe("the game menu's Log Out Other Browsers", () => {
     expect(g.visible()).toEqual(['Resume', 'Options', 'Leave Game', 'About Somnio']);
   });
 
-  it('is not offered when no other browser remembers the account', () => {
-    const g = joined(true, 0);
+  it('is not offered on a browser that holds no token when no other browser remembers the account', () => {
+    const g = joined(true, { others: 0 });
     g.escape();
     expect(g.visible()).toEqual(['Resume', 'Options', 'Leave Game', 'About Somnio']);
   });
 
+  /** A copy of this browser's token shares its session, so no count shows it, and only this action ends it while the player stays in. */
+  it('is offered on a remembered browser when no other browser remembers the account, and stays after the action', () => {
+    const g = joined(true, { others: 0, rememberMe: true });
+    g.escape();
+    expect(g.visible()).toEqual(['Resume', 'Options', 'Leave Game', 'Log Out Other Browsers', 'About Somnio']);
+    g.deliver({ tag: 'sessionToken', payload: { token: 'fresh', expiresInSeconds: 60 } });
+    g.deliver({ tag: 'otherSessionsRevoked', payload: { revoked: true, count: 0 } });
+    expect(g.visible()).toContain('Log Out Other Browsers');
+  });
+
   /** The count is the join's last frame, so a menu opened as the world arrives is up before it lands. */
   it('appears in a menu already open when the count arrives', () => {
-    const g = joined(false, 0);
+    const g = joined(false, { others: 0 });
     g.escape();
     g.deliver(entityFrame());
     expect(g.visible()).not.toContain('Log Out Other Browsers');

@@ -82,46 +82,47 @@ describe('session repository', () => {
     expect(await sessions.redeem(second.token)).toBeDefined();
   });
 
-  it("revokes the account's other sessions and keeps the one named", async () => {
+  it('revokes every session of the account and reissues the held one with its expiry', async () => {
     const accountId = await makeAccount('others-user');
     const bystanderAccount = await makeAccount('others-bystander');
-    const kept = await sessions.issue(accountId, 3600);
+    const held = await sessions.issue(accountId, 3600);
     const first = await sessions.issue(accountId, 3600);
     const second = await sessions.issue(accountId, 3600);
     const bystander = await sessions.issue(bystanderAccount, 3600);
-    expect(await sessions.revokeAllExcept(accountId, kept.token)).toBe(2);
-    expect(await sessions.redeem(kept.token)).toBeDefined();
-    expect(await sessions.redeem(first.token)).toBeUndefined();
-    expect(await sessions.redeem(second.token)).toBeUndefined();
+    const { ended, reissued } = await sessions.revokeAllAndReissue(accountId, held.token);
+    expect(ended).toBe(2);
+    expect(reissued?.token).not.toBe(held.token);
+    expect(reissued?.expiresAt).toEqual(held.expiresAt);
+    expect(await sessions.redeem(reissued?.token ?? '')).toEqual({ accountId, expiresAt: held.expiresAt });
+    for (const revoked of [held, first, second]) expect(await sessions.redeem(revoked.token)).toBeUndefined();
     expect(await sessions.redeem(bystander.token)).toBeDefined();
   });
 
-  it('revokes every session of the account when none is kept', async () => {
-    const accountId = await makeAccount('others-none-kept');
+  it('revokes every session of the account and reissues none when none is held', async () => {
+    const accountId = await makeAccount('others-none-held');
     const first = await sessions.issue(accountId, 3600);
     const second = await sessions.issue(accountId, 3600);
-    expect(await sessions.revokeAllExcept(accountId, undefined)).toBe(2);
+    expect(await sessions.revokeAllAndReissue(accountId, undefined)).toEqual({ ended: 2, reissued: undefined });
     expect(await sessions.redeem(first.token)).toBeUndefined();
     expect(await sessions.redeem(second.token)).toBeUndefined();
   });
 
-  it('keeps the named row even once it has expired', async () => {
-    const accountId = await makeAccount('others-expired-kept');
+  it('reissues nothing for a held row that has expired', async () => {
+    const accountId = await makeAccount('others-expired-held');
     const expired = await sessions.issue(accountId, -60);
     const live = await sessions.issue(accountId, 3600);
-    expect(await sessions.revokeAllExcept(accountId, expired.token)).toBe(1);
+    expect(await sessions.revokeAllAndReissue(accountId, expired.token)).toEqual({ ended: 1, reissued: undefined });
     expect(await sessions.redeem(live.token)).toBeUndefined();
-    // `redeem` filters expired rows out, so only the table shows the kept row is still there.
     const rows = await sql<{ token_digest: string }>`SELECT token_digest FROM sessions WHERE account_id = ${accountId}`.execute(harness.db);
-    expect(rows.rows).toHaveLength(1);
+    expect(rows.rows).toHaveLength(0);
   });
 
   it('deletes an expired sibling without counting it as a session ended', async () => {
     const accountId = await makeAccount('others-expired-sibling');
-    const kept = await sessions.issue(accountId, 3600);
+    const held = await sessions.issue(accountId, 3600);
     await sessions.issue(accountId, 3600);
     await sessions.issue(accountId, -60);
-    expect(await sessions.revokeAllExcept(accountId, kept.token)).toBe(1);
+    expect((await sessions.revokeAllAndReissue(accountId, held.token)).ended).toBe(1);
     const rows = await sql<{ token_digest: string }>`SELECT token_digest FROM sessions WHERE account_id = ${accountId}`.execute(harness.db);
     expect(rows.rows).toHaveLength(1);
   });

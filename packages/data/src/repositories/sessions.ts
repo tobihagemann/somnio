@@ -7,6 +7,12 @@ export interface IssuedSession {
   expiresAt: Date;
 }
 
+/** How many other live sessions `revokeAllAndReissue` ended, and the token that replaced the held one, when one did. */
+export interface RevokedSessions {
+  ended: number;
+  reissued: IssuedSession | undefined;
+}
+
 /** A redeemed session resolved back to its owner. */
 export interface ResolvedSession {
   accountId: string;
@@ -25,14 +31,14 @@ export interface SessionRepository {
    */
   revoke(token: string, accountId: string): Promise<boolean>;
   /**
-   * Deletes every row of `accountId` but the one for `keepToken`, and returns how many of them were
-   * still unexpired: the sessions it ended, as `countAllExcept` counts them. The kept row is spared
-   * whatever its expiry: an expired one cannot be redeemed, and `deleteExpired` collects it. A
-   * `keepToken` with no row in this account spares nothing.
+   * Deletes every row of `accountId`, including `heldToken`'s, so no copy of any of them can be
+   * redeemed again. When `heldToken` had a live row in this account, a fresh token replaces it in the
+   * same transaction with the same expiry. The connection that held it stays remembered exactly as
+   * long as before. `ended` counts the other unexpired rows, as `countAllExcept` counts them.
    */
-  revokeAllExcept(accountId: string, keepToken: string | undefined): Promise<number>;
-  /** How many of `accountId`'s unexpired rows `revokeAllExcept` would end: the sessions other browsers could still resume. */
-  countAllExcept(accountId: string, keepToken: string | undefined): Promise<number>;
+  revokeAllAndReissue(accountId: string, heldToken: string | undefined): Promise<RevokedSessions>;
+  /** How many of `accountId`'s unexpired rows other than `heldToken`'s there are: the sessions other browsers could still resume. */
+  countAllExcept(accountId: string, heldToken: string | undefined): Promise<number>;
   /** Bulk cleanup of expired rows; expiry is already enforced on the read path. */
   deleteExpired(asOf: Date): Promise<number>;
 }
@@ -49,13 +55,9 @@ export class PostgresSessionRepository implements SessionRepository {
    * never sent would hold a cap slot for its whole lifetime and evict a token the player is using.
    */
   async issue(accountId: string, lifetimeSeconds: number): Promise<IssuedSession> {
-    const token = makeSessionToken();
     const expiresAt = new Date(Date.now() + lifetimeSeconds * 1000);
-    await this.db.transaction().execute(async (transaction) => {
-      await transaction
-        .insertInto('sessions')
-        .values({ token_digest: sessionTokenDigest(token), account_id: accountId, expires_at: expiresAt })
-        .execute();
+    return await this.db.transaction().execute(async (transaction) => {
+      const issued = await insertSession(transaction, accountId, expiresAt);
       // Ordered by `expires_at` (indexed) rather than `created_at`: callers pass one lifetime, so
       // the two order identically, and with mixed lifetimes the cap evicts the soonest to expire.
       await transaction
@@ -70,8 +72,8 @@ export class PostgresSessionRepository implements SessionRepository {
             .limit(SESSION_POLICY.maxPerAccount),
         )
         .execute();
+      return issued;
     });
-    return { token, expiresAt };
   }
 
   /** Expiry is filtered in SQL against a bound timestamp, so one clock decides for issue, redeem, and cleanup. */
@@ -95,21 +97,25 @@ export class PostgresSessionRepository implements SessionRepository {
     return deleted.length > 0;
   }
 
-  async revokeAllExcept(accountId: string, keepToken: string | undefined): Promise<number> {
+  async revokeAllAndReissue(accountId: string, heldToken: string | undefined): Promise<RevokedSessions> {
     const now = new Date();
-    let query = this.db.deleteFrom('sessions').where('account_id', '=', accountId);
-    if (keepToken !== undefined) query = query.where('token_digest', '!=', sessionTokenDigest(keepToken));
-    const deleted = await query.returning('expires_at').execute();
-    return deleted.filter((row) => row.expires_at > now).length;
+    const heldDigest = heldToken === undefined ? undefined : sessionTokenDigest(heldToken);
+    return await this.db.transaction().execute(async (transaction) => {
+      const deleted = await transaction.deleteFrom('sessions').where('account_id', '=', accountId).returning(['token_digest', 'expires_at']).execute();
+      const live = deleted.filter((row) => row.expires_at > now);
+      const held = live.find((row) => row.token_digest === heldDigest);
+      if (held === undefined) return { ended: live.length, reissued: undefined };
+      return { ended: live.length - 1, reissued: await insertSession(transaction, accountId, held.expires_at) };
+    });
   }
 
-  async countAllExcept(accountId: string, keepToken: string | undefined): Promise<number> {
+  async countAllExcept(accountId: string, heldToken: string | undefined): Promise<number> {
     let query = this.db
       .selectFrom('sessions')
       .select((eb) => eb.fn.countAll<string>().as('count'))
       .where('account_id', '=', accountId)
       .where('expires_at', '>', new Date());
-    if (keepToken !== undefined) query = query.where('token_digest', '!=', sessionTokenDigest(keepToken));
+    if (heldToken !== undefined) query = query.where('token_digest', '!=', sessionTokenDigest(heldToken));
     const row = await query.executeTakeFirstOrThrow();
     return Number(row.count);
   }
@@ -118,4 +124,14 @@ export class PostgresSessionRepository implements SessionRepository {
     const deleted = await this.db.deleteFrom('sessions').where('expires_at', '<=', asOf).returning('token_digest').execute();
     return deleted.length;
   }
+}
+
+/** Mints a token and stores its digest, inside the caller's transaction. */
+async function insertSession(db: SomnioDatabase, accountId: string, expiresAt: Date): Promise<IssuedSession> {
+  const token = makeSessionToken();
+  await db
+    .insertInto('sessions')
+    .values({ token_digest: sessionTokenDigest(token), account_id: accountId, expires_at: expiresAt })
+    .execute();
+  return { token, expiresAt };
 }

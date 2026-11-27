@@ -4,7 +4,7 @@ import type { CloseDecision, ConnectionActor } from '../connection/connectionAct
 import type { ConnectionDependencies } from '../connection/dependencies.ts';
 import type { ConnectionOutbox } from '../connection/outbox.ts';
 import type { Logger } from '../logging.ts';
-import { completeAuthentication, sendLoginResult } from './login.ts';
+import { completeAuthentication, holdSessionToken, sendLoginResult } from './login.ts';
 
 /**
  * Redeeming a token in place of a password login. Every failure — unknown, expired, revoked —
@@ -62,15 +62,19 @@ export async function handleRevoke(
 }
 
 /**
- * Spares the token this connection redeemed or was issued, the one this browser holds. The server
- * records it rather than the client naming it, so the request needs no token the client may not
- * have saved yet.
+ * Ends the other sessions and also the token this connection redeemed or was issued, so a copy taken
+ * from this browser ends with them. When that token was still live, its replacement reaches this
+ * browser before the answer, and the player stays in the world. The server records the held token
+ * rather than the client naming it, so the request needs no token the client may not have saved yet.
  */
 export async function handleRevokeOthers(accountId: string, connection: ConnectionActor, dependencies: ConnectionDependencies): Promise<void> {
   const outbox = connection.outbox;
   const logger = dependencies.logger;
   try {
-    sendOtherSessionsRevoked(outbox, true, await dependencies.sessions.revokeAllExcept(accountId, connection.sessionToken), logger);
+    const { ended, reissued } = await dependencies.sessions.revokeAllAndReissue(accountId, connection.sessionToken);
+    if (reissued === undefined) connection.sessionToken = undefined;
+    else holdSessionToken(reissued, connection, logger);
+    sendOtherSessionsRevoked(outbox, true, ended, logger);
   } catch (error) {
     logger.error({ error: String(error) }, 'other sessions revocation failed');
     sendOtherSessionsRevoked(outbox, false, 0, logger);

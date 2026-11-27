@@ -1,6 +1,7 @@
 import { SOMNIO_PROTOCOL_CONSTANTS, utf8ByteLength } from '@somnio/protocol';
 import type { Locale, LoginMessage, LoginResult } from '@somnio/protocol';
 import { SESSION_POLICY, hasBeenPlayed, postgresNormalizedKey, verifyAccountPassword } from '@somnio/data';
+import type { IssuedSession } from '@somnio/data';
 import { holdsUnholdableCharacter } from '@somnio/core';
 import type { Character } from '@somnio/core';
 import type { CloseDecision, ConnectionActor } from '../connection/connectionActor.ts';
@@ -120,16 +121,20 @@ export async function completeAuthentication(
  */
 async function issueToken(accountId: string, connection: ConnectionActor, dependencies: ConnectionDependencies): Promise<void> {
   try {
-    const session = await dependencies.sessions.issue(accountId, SESSION_POLICY.defaultLifetimeSeconds);
-    connection.sessionToken = session.token;
-    const remaining = Math.max(0, Math.round((session.expiresAt.getTime() - Date.now()) / 1000));
-    connection.outbox.sendEncoded({ tag: 'sessionToken', payload: { token: session.token, expiresInSeconds: remaining } }, dependencies.logger);
+    holdSessionToken(await dependencies.sessions.issue(accountId, SESSION_POLICY.defaultLifetimeSeconds), connection, dependencies.logger);
   } catch (error) {
     dependencies.logger.warn({ error: String(error) }, 'session token issuance failed');
   }
 }
 
-/** A failure here is logged and swallowed like an issuance's. The client then offers no Log Out Other Browsers until the next login or resume. */
+/** Makes `session` the token this connection holds and hands it to the browser. */
+export function holdSessionToken(session: IssuedSession, connection: ConnectionActor, logger: Logger): void {
+  connection.sessionToken = session.token;
+  const remaining = Math.max(0, Math.round((session.expiresAt.getTime() - Date.now()) / 1000));
+  connection.outbox.sendEncoded({ tag: 'sessionToken', payload: { token: session.token, expiresInSeconds: remaining } }, logger);
+}
+
+/** A failure here is logged and swallowed like an issuance's. A browser that holds no token then offers no Log Out Other Browsers until the next login or resume. */
 async function sendOtherSessions(accountId: string, connection: ConnectionActor, dependencies: ConnectionDependencies): Promise<void> {
   try {
     const count = await dependencies.sessions.countAllExcept(accountId, connection.sessionToken);

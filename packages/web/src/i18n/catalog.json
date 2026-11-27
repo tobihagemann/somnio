@@ -635,6 +635,10 @@
     "en": "Error %@ occurred.",
     "de": "Der Fehler %@ ist aufgetreten!"
   },
+  "Every other browser is logged out.": {
+    "en": "Every other browser is logged out.",
+    "de": "Jeder andere Browser ist abgemeldet."
+  },
   "Every other browser that remembers your password will have to log in again.": {
     "en": "Every other browser that remembers your password will have to log in again.",
     "de": "Jeder andere Browser, der sich dein Passwort merkt, muss sich erneut anmelden."
@@ -942,10 +946,6 @@
   "No dreamers yet. Create one to enter the world.": {
     "en": "No dreamers yet. Create one to enter the world.",
     "de": "Noch keine Träumer. Erstelle einen, um die Welt zu betreten."
-  },
-  "No other browser remembers your password.": {
-    "en": "No other browser remembers your password.",
-    "de": "Kein anderer Browser merkt sich dein Passwort."
   },
   "No role yet": {
     "en": "No role yet",

@@ -254,7 +254,7 @@ describe('renderChatLine', () => {
   });
 
   it('says how many other browsers were logged out, none, or that it failed', () => {
-    expect(renderChatLine({ kind: 'loggedOutOtherBrowsers', count: 0 }, catalogTables, 'en')).toBe('No other browser remembers your password.');
+    expect(renderChatLine({ kind: 'loggedOutOtherBrowsers', count: 0 }, catalogTables, 'en')).toBe('Every other browser is logged out.');
     expect(renderChatLine({ kind: 'loggedOutOtherBrowsers', count: 1 }, catalogTables, 'en')).toBe('Logged out one other browser.');
     expect(renderChatLine({ kind: 'loggedOutOtherBrowsers', count: 3 }, catalogTables, 'en')).toBe('Logged out 3 other browsers.');
     expect(renderChatLine({ kind: 'loggedOutOtherBrowsers', count: 3 }, catalogTables, 'de')).toBe('3 andere Browser abgemeldet.');

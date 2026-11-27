@@ -116,7 +116,7 @@ export function renderChatLine(line: ChatLine, tables: CatalogTables, locale: Ca
     case 'credentialSaveFailed':
       return lookup('Your password could not be saved.');
     case 'loggedOutOtherBrowsers':
-      if (line.count === 0) return lookup('No other browser remembers your password.');
+      if (line.count === 0) return lookup('Every other browser is logged out.');
       return line.count === 1 ? lookup('Logged out one other browser.') : lookup('Logged out %@ other browsers.', String(line.count));
     case 'logOutOtherBrowsersFailed':
       return lookup('Could not log out other browsers. Try again.');

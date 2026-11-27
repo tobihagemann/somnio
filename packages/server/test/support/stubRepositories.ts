@@ -7,6 +7,7 @@ import type {
   IssuedSession,
   QuestRepository,
   ResolvedSession,
+  RevokedSessions,
   SessionRepository,
   WorldClockRepository,
 } from '@somnio/data';
@@ -115,11 +116,7 @@ export class StubSessionRepository implements SessionRepository {
   }
 
   issue(accountId: string, lifetimeSeconds: number): Promise<IssuedSession> {
-    this.nextTokenNumber += 1;
-    const token = `stub-token-${this.nextTokenNumber}`;
-    const expiresAt = new Date(Date.now() + lifetimeSeconds * 1000);
-    this.issued.set(token, { accountId, expiresAt });
-    return Promise.resolve({ token, expiresAt });
+    return Promise.resolve(this.mint(accountId, new Date(Date.now() + lifetimeSeconds * 1000)));
   }
 
   redeem(token: string): Promise<ResolvedSession | undefined> {
@@ -137,21 +134,23 @@ export class StubSessionRepository implements SessionRepository {
     return Promise.resolve(true);
   }
 
-  revokeAllExcept(accountId: string, keepToken: string | undefined): Promise<number> {
+  revokeAllAndReissue(accountId: string, heldToken: string | undefined): Promise<RevokedSessions> {
     const now = Date.now();
-    let count = 0;
+    let ended = 0;
+    let heldExpiry: Date | undefined;
     for (const [token, entry] of this.issued) {
-      if (entry.accountId === accountId && token !== keepToken) {
-        this.issued.delete(token);
-        if (entry.expiresAt.getTime() > now) count += 1;
-      }
+      if (entry.accountId !== accountId) continue;
+      this.issued.delete(token);
+      if (entry.expiresAt.getTime() <= now) continue;
+      if (token === heldToken) heldExpiry = entry.expiresAt;
+      else ended += 1;
     }
-    return Promise.resolve(count);
+    return Promise.resolve({ ended, reissued: heldExpiry === undefined ? undefined : this.mint(accountId, heldExpiry) });
   }
 
-  countAllExcept(accountId: string, keepToken: string | undefined): Promise<number> {
+  countAllExcept(accountId: string, heldToken: string | undefined): Promise<number> {
     const now = Date.now();
-    const others = [...this.issued].filter(([token, entry]) => entry.accountId === accountId && token !== keepToken && entry.expiresAt.getTime() > now);
+    const others = [...this.issued].filter(([token, entry]) => entry.accountId === accountId && token !== heldToken && entry.expiresAt.getTime() > now);
     return Promise.resolve(others.length);
   }
 
@@ -172,6 +171,13 @@ export class StubSessionRepository implements SessionRepository {
 
   plant(token: string, accountId: string, expiresAt: Date): void {
     this.issued.set(token, { accountId, expiresAt });
+  }
+
+  private mint(accountId: string, expiresAt: Date): IssuedSession {
+    this.nextTokenNumber += 1;
+    const token = `stub-token-${this.nextTokenNumber}`;
+    this.issued.set(token, { accountId, expiresAt });
+    return { token, expiresAt };
   }
 }
 
@@ -214,7 +220,7 @@ export const failingSessionRepository: SessionRepository = {
   issue: () => Promise.reject(new RepositoryFailure()),
   redeem: () => Promise.reject(new RepositoryFailure()),
   revoke: () => Promise.reject(new RepositoryFailure()),
-  revokeAllExcept: () => Promise.reject(new RepositoryFailure()),
+  revokeAllAndReissue: () => Promise.reject(new RepositoryFailure()),
   countAllExcept: () => Promise.reject(new RepositoryFailure()),
   deleteExpired: () => Promise.reject(new RepositoryFailure()),
 };

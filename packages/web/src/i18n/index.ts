@@ -111,7 +111,7 @@ export const RENDERED_KEYS: readonly string[] = [
   'Your password could not be saved.',
   'Logged out %@ other browsers.',
   'Logged out one other browser.',
-  'No other browser remembers your password.',
+  'Every other browser is logged out.',
   'Could not log out other browsers. Try again.',
   'Your session expired. Please log in again.',
   'Reconnecting...',

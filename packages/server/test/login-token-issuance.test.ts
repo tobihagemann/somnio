@@ -183,34 +183,41 @@ describe('session token issuance', () => {
     expect(records.filter((record) => record['msg'] === 'other sessions count failed')).toMatchObject([{ level: 40 }]);
   });
 
-  /** The token is issued after the account is reserved, and must still reach the connection for its row to be spared. */
-  it('revoking the other sessions after a remembered login keeps the token it was issued', async () => {
+  /** The token is issued after the account is reserved, and must still reach the connection for its row to be replaced. */
+  it('revoking the other sessions after a remembered login replaces the token it was issued, before the answer', async () => {
     const sessions = new StubSessionRepository();
     const world = makeOneSectorWorld({ sessions });
     sessions.plant('elsewhere', world.accountId, new Date(Date.now() + 60_000));
     const connection = new ConnectionActor(world.dependencies);
     await completeAuthentication(world.accountId, connection, world.dependencies, true, 'en');
+    const issued = connection.sessionToken ?? '';
+    expect(sessions.isStored(issued)).toBe(true);
     await handleRevokeOthers(world.accountId, connection, world.dependencies);
-    const messages = await collectMessages(connection.outbox);
-    expect(messages.at(-1)).toEqual({ tag: 'otherSessionsRevoked', payload: { revoked: true, count: 1 } });
-    const issued = messages.find((message) => message.tag === 'sessionToken');
-    expect(issued?.tag === 'sessionToken' && sessions.isStored(issued.payload.token)).toBe(true);
+    const reissued = connection.sessionToken ?? '';
+    expect((await collectMessages(connection.outbox)).slice(-2)).toMatchObject([
+      { tag: 'sessionToken', payload: { token: reissued } },
+      { tag: 'otherSessionsRevoked', payload: { revoked: true, count: 1 } },
+    ]);
+    expect(sessions.isStored(reissued)).toBe(true);
+    expect(sessions.isStored(issued)).toBe(false);
     expect(sessions.isStored('elsewhere')).toBe(false);
   });
 
-  it('revoking the other sessions after a resume keeps the token redeemed', async () => {
+  it('revoking the other sessions after a resume replaces the token redeemed, keeping its expiry', async () => {
     const sessions = new StubSessionRepository();
     const world = makeOneSectorWorld({ sessions });
     for (const token of ['redeemed', 'elsewhere', 'abandoned']) sessions.plant(token, world.accountId, new Date(Date.now() + 60_000));
     const connection = new ConnectionActor(world.dependencies);
     await handleRedeem({ token: 'redeemed' }, connection, world.dependencies);
     await handleRevokeOthers(world.accountId, connection, world.dependencies);
-    expect(sessions.isStored('redeemed')).toBe(true);
-    expect(sessions.isStored('elsewhere')).toBe(false);
-    expect(sessions.isStored('abandoned')).toBe(false);
+    expect((await collectMessages(connection.outbox)).slice(-2)).toEqual([
+      { tag: 'sessionToken', payload: { token: connection.sessionToken, expiresInSeconds: 60 } },
+      { tag: 'otherSessionsRevoked', payload: { revoked: true, count: 2 } },
+    ]);
+    for (const token of ['redeemed', 'elsewhere', 'abandoned']) expect(sessions.isStored(token)).toBe(false);
   });
 
-  it('revoking the other sessions after a login that asked for no token ends them all', async () => {
+  it('revoking the other sessions after a login that asked for no token ends them all and hands out none', async () => {
     const sessions = new StubSessionRepository();
     const world = makeOneSectorWorld({ sessions });
     sessions.plant('elsewhere', world.accountId, new Date(Date.now() + 60_000));
@@ -218,6 +225,8 @@ describe('session token issuance', () => {
     await completeAuthentication(world.accountId, connection, world.dependencies, false, 'en');
     await handleRevokeOthers(world.accountId, connection, world.dependencies);
     expect(sessions.isStored('elsewhere')).toBe(false);
+    expect((await collectMessages(connection.outbox)).map((message) => message.tag)).not.toContain('sessionToken');
+    expect(connection.sessionToken).toBeUndefined();
   });
 
   it('a login omitting requestSessionToken is answered without a token', async () => {

@@ -1149,7 +1149,7 @@ export class AppShell {
       this.session.letGo();
     }
     this.loadingCover.render(covered, performance.now(), this.nothingOverWorld);
-    this.overlays.setLogOutOtherBrowsersShown(inWorld && this.controller.otherSessionCount > 0);
+    this.overlays.setLogOutOtherBrowsersShown(inWorld && this.controller.offersLogOutOtherBrowsers);
     // The last failure says why on the login card, and a silent resume's retry under the wordmark.
     const sessionStatus = this.controller.sessionStatus;
     const status = inWorld || sessionStatus === undefined ? undefined : renderChatLine(sessionStatus, catalogTables, currentLocale());

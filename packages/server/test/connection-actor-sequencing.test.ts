@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { decodeSomnioMessage, encodeSomnioMessage } from '@somnio/protocol';
 import { OUTDOOR_SPACE_ID } from '@somnio/core';
-import type { SessionRepository } from '@somnio/data';
+import type { RevokedSessions, SessionRepository } from '@somnio/data';
 import { interiorSector } from '../../core/test/support/worldFixture.ts';
 import { ConnectionActor } from '../src/connection/connectionActor.ts';
 import type { ConnectionSocket } from '../src/connection/connectionActor.ts';
@@ -70,8 +70,8 @@ class GatedSessionRepository implements SessionRepository {
     return Promise.resolve(false);
   }
 
-  revokeAllExcept(): Promise<number> {
-    return Promise.resolve(0);
+  revokeAllAndReissue(): Promise<RevokedSessions> {
+    return Promise.resolve({ ended: 0, reissued: undefined });
   }
 
   countAllExcept(): Promise<number> {
