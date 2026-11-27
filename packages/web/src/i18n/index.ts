@@ -1,22 +1,3 @@
-import {
-  AFFIXES,
-  BASE_ITEMS,
-  BOUNTY_KINDS,
-  BOUNTY_LABEL_KEY,
-  ELITE_TRAITS,
-  MONSTER_KINDS,
-  PEOPLES,
-  QUESTS,
-  SET_BONUSES,
-  SET_TITLE_KEYS,
-  TEACHINGS,
-  TROPHIES,
-  baseItem,
-  isBaseItemId,
-  peopleLabelKey,
-  roleLabelKey,
-} from '@somnio/core';
-import { ROLES } from '@somnio/protocol';
 import { coreCatalog, lookupIn, mergeCatalogs, readCatalog } from '@somnio/core/catalog';
 import type { CatalogLocale, CatalogTables } from '@somnio/core/catalog';
 import webCatalogJSON from './catalog.json' with { type: 'json' };
@@ -84,39 +65,6 @@ export function translate(locale: CatalogLocale, key: string, ...args: string[])
 }
 
 /**
- * The keys rendered through a label-key lookup in `@somnio/core` rather than a literal: every
- * item's name, and the suffix of its strongest roll, in the Character window and Mercus's panel,
- * every people's name on the character card, every role's and teaching's name in the HUD and a
- * master's panel, every nightmare's name on its plaque, an elite's included, every quest's title
- * and objective lines, a bounty's included, and every trophy's name.
- */
-export const CORE_LABEL_KEYS: readonly string[] = [
-  // Each role's Spirit deepening is its own teaching under one label.
-  ...new Set([
-    ...Object.keys(BASE_ITEMS)
-      .filter(isBaseItemId)
-      .map(baseItem)
-      .flatMap((item) =>
-        item.tierLabelKeys === undefined
-          ? [item.labelKey]
-          : [...Object.values(item.tierLabelKeys), ...Object.values(item.lineLabelKeys).flatMap((tiers) => Object.values(tiers))],
-      ),
-    ...Object.values(AFFIXES).map((line) => line.nameKey),
-    ...PEOPLES.map(peopleLabelKey),
-    ...ROLES.map(roleLabelKey),
-    ...Object.values(TEACHINGS).map((taught) => taught.labelKey),
-    ...Object.values(MONSTER_KINDS).map((kind) => kind.name),
-    ...Object.values(ELITE_TRAITS).flatMap((trait) => Object.values(trait.names)),
-    ...Object.values(QUESTS).flatMap((quest) => [quest.labelKey, ...quest.objectives.map((objective) => objective.labelKey)]),
-    BOUNTY_LABEL_KEY,
-    ...Object.values(BOUNTY_KINDS).flatMap((lines) => Object.values(lines)),
-    ...Object.values(TROPHIES),
-    ...Object.values(SET_TITLE_KEYS),
-    ...Object.values(SET_BONUSES).flatMap((steps) => steps.map((step) => step.textKey)),
-  ]),
-];
-
-/**
  * Every catalog key the browser UI renders.
  *
  * The catalog test checks en/de presence, placeholder parity, and the no-Unicode-ellipsis rule
@@ -125,7 +73,8 @@ export const CORE_LABEL_KEYS: readonly string[] = [
  * the author forgot to extend the allowlist.
  */
 export const RENDERED_KEYS: readonly string[] = [
-  ...CORE_LABEL_KEYS,
+  // Every core catalog key: names rendered through a label key from `@somnio/core`, never a literal
+  ...Object.keys(coreCatalog.en),
 
   // Chat scrollback
   '%1$@ asks, "%2$@"',
