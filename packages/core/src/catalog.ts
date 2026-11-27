@@ -4,5 +4,5 @@ import type { CatalogTables } from './i18n/catalog.ts';
 
 export * from './i18n/catalog.ts';
 
-/** The core catalog: the names of the peoples and the inventory item labels. */
+/** The core catalog: every name and line core's rules define, from the peoples, roles, and items to the quests and the sets. */
 export const coreCatalog: CatalogTables = readCatalog(catalogJSON);

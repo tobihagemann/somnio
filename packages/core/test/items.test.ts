@@ -303,7 +303,7 @@ describe('core catalog', () => {
       ...Object.values(SET_TITLE_KEYS),
       ...Object.values(SET_BONUSES).flatMap((steps) => steps.map((step) => step.textKey)),
     ];
-    // Each role's Spirit deepening is its own teaching under one label, and the Mystic's trial says each of its places by one line.
+    // Several entries share a key, such as the Healers' and the Mystics' Spirit deepening, the masters' hand-offs to Memor, or the hidden places the Mystics' trial says by one line.
     expect([...new Set(labels)].sort()).toEqual(CORE_KEYS);
   });
 });

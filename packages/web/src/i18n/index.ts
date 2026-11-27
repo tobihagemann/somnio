@@ -6,13 +6,13 @@ export * from '@somnio/core/catalog';
 export * from './chatLineText';
 export * from './placeNames';
 
-/**
- * The browser client's localization surface: the core catalog (people names, item labels) merged
- * with the browser's own catalog. The collision set is exported so a test can pin
- * it rather than letting the last import silently win.
- */
+/** The browser's own catalog: everything it renders that the core catalog does not define. */
 export const webCatalog: CatalogTables = readCatalog(webCatalogJSON);
 
+/**
+ * The browser client's localization surface: the core catalog merged with the browser's own. The
+ * collision set is exported so a test can pin it rather than letting the last import silently win.
+ */
 const merged = mergeCatalogs([coreCatalog, webCatalog]);
 
 export const catalogTables: CatalogTables = merged.tables;
