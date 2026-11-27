@@ -372,6 +372,12 @@ interface Hulls {
   thickness: { value: number };
   /** Model units per metre, so the outline is as thick on every model. */
   unitsPerMetre: number;
+  /**
+   * The skinned hulls' bounding sphere: a point at the body's feet, kept there by `hullsFor`. A hull is
+   * never culled, so three reads it only to sort by depth. Left null, three would skin every vertex to
+   * measure one on the hull's first render.
+   */
+  sortPoint: THREE.Sphere;
 }
 
 /**
@@ -2460,14 +2466,17 @@ export class CombatEffects {
    * The flash and the outline over the body's meshes, built the first time either is needed and
    * again when the body carries another model or is dressed again. They draw the model's own
    * geometry, or a dressed body's baked outfit alone, on its skeleton, from the effects' root: a mesh
-   * there is on no portrait's layer.
+   * there is on no portrait's layer. Each call moves their sort point to where the body stands.
    */
   private hullsFor(entityId: string, body: EffectBody): Hulls | undefined {
     const model = body.modelHolder.children[0];
     if (model === undefined) return undefined;
     const bake = model.getObjectByName(BAKED_OUTFIT);
     const built = this.hulls.get(entityId);
-    if (built?.model === model && built.bake === bake) return built;
+    if (built?.model === model && built.bake === bake) {
+      built.sortPoint.center.copy(body.node.position);
+      return built;
+    }
     this.dropHulls(entityId);
     const sources: THREE.Mesh[] = [];
     if (bake !== undefined) sources.push(bake as THREE.Mesh);
@@ -2477,6 +2486,7 @@ export class CombatEffects {
       });
     }
     const { flashMaterial, outlineMaterial, thickness } = this.spareHullMaterials.pop() ?? { flashMaterial: flashMaterialFor(), ...outlineFor() };
+    const sortPoint = new THREE.Sphere(body.node.position.clone(), 0);
     const hulls: Hulls = {
       model,
       bake,
@@ -2486,7 +2496,9 @@ export class CombatEffects {
       outlineMaterial,
       thickness,
       unitsPerMetre: unitsPerMetre(sources, body.headHeight),
+      sortPoint,
     };
+    for (const mesh of [...hulls.flash, ...hulls.outline]) if (mesh instanceof THREE.SkinnedMesh) mesh.boundingSphere = sortPoint;
     this.hulls.set(entityId, hulls);
     return hulls;
   }

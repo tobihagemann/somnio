@@ -335,6 +335,29 @@ describe('a blow', () => {
     expect(jolt(models[1]!).position.toArray()).toEqual([0, 0, 0]);
   });
 
+  /** three sorts each mesh it draws by its bounding sphere, and measures a skinned mesh's missing one by skinning every vertex on its first render. */
+  it('sorts a body’s skinned flash and outline by a point at its feet, following the body', () => {
+    const { scene } = combatScene();
+    place(scene, 'self', { x: 10, z: 10 });
+    place(scene, 'monster:1', { x: 10, z: 10.8 });
+    scene.tick(0.01);
+    const sortPoints = (): THREE.Sphere[] =>
+      [...hulls(scene, THREE.FrontSide), ...hulls(scene, THREE.BackSide)]
+        .filter((mesh): mesh is THREE.SkinnedMesh => mesh instanceof THREE.SkinnedMesh)
+        .map((mesh) => mesh.boundingSphere);
+
+    scene.showBlow('self', 'monster:1', true);
+    run(scene, 0.5);
+    expect(sortPoints()).not.toEqual([]);
+    for (const point of sortPoints()) expect(point.center.toArray()).toEqual([10, 0, 10.8]);
+
+    place(scene, 'monster:1', { x: 12, z: 11 });
+    run(scene, 1);
+    scene.showBlow('self', 'monster:1', true);
+    run(scene, 0.5);
+    for (const point of sortPoints()) expect([point.center.x, point.center.z]).toEqual([12, 11]);
+  });
+
   it('shakes the camera only for a blow that names the player, and lets it settle back where the rig put it', () => {
     const { scene } = combatScene();
     place(scene, 'self', { x: 10, z: 10 });
