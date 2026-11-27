@@ -622,9 +622,19 @@ After logging in, `window.somnio.lucidity().role` on the healer reads `'healer'`
 
 The table refuses a `health_current` above the stored `health_max` (`characters_health_check`), and `health_max` grows only once the server has stored the raised maximum. So after granting `toughening` ranks, log the character in once and wait for the checkpoint before writing a `health_current` above the old `health_max`. Under `ON_ERROR_STOP=1` the refused statement rolls the whole block back.
 
+A set piece goes in the same block as an `items` row with `rarity='epic'`, `line` its role, and `tier` 3, the tier of `SET_TIERS`. The table refuses a `line` without `epic` and an `epic` without a `line` (`items_line_epic_check`), and a line at any other tier fails the join, since the item repository refuses to load it. Each row is worn or carried, not both (`items_worn_or_bagged_check`): give a carried piece its `bag_place` (0 to 23), and a worn one the `equipped_slot` its base is worn in (`cap` in `head`, `shoulders` in `shoulders`, `tunic` in `chest`, ...), since a piece in a slot its base does not fit fails the join too. Delete what holds that place or slot first, as the block does for the off hand, so the block stays safe to run again. This puts a Healer's cap, "Linen wimple", in the bag's sixth place:
+
+```sql
+DELETE FROM items WHERE character_id=(SELECT id FROM characters WHERE name='<healer>') AND bag_place=5;
+INSERT INTO items (id, character_id, base_id, tier, rarity, affixes, bag_place, line)
+  SELECT gen_random_uuid(), id, 'cap', 3, 'epic', '[]', 5, 'healer' FROM characters WHERE name='<healer>';
+```
+
+Sold to Mercus, a set piece shows in his Buy back section with its set.
+
 **Mend and raise.** With Mend on, a Healer mends a standing dreamer within 3 m, centre to centre, once a second: +10 health for 8 spirit. It waits, still on, while the dreamer is at full health or the Healer is short of spirit. With the player as their own target it mends them. At a fallen dreamer it raises them instead, only within touch (0.85 m) and with Drawing back held. The raise takes 6 s and 40 spirit, then the dreamer stands and Mend goes on mending them.
 
-Play the Healer in the browser and the dreamer as a bot from "More players without more browsers", run with no step and no line (`node <dir>/bot.mjs <dreamer> 0 0`). Run the bot once so it makes its character, stop it, and run the block above with both sessions closed. Start the bot again and log the Healer in; both stand on the `EdariaLibrary` spawn at (2.7, 4.4). Then step off the dreamer and press them, which targets them and switches slot 1 on from within reach, in one eval:
+Play the Healer in the browser and the dreamer as a bot from "More players without more browsers", run with no step and no line (`node <dir>/bot.mjs <dreamer> 0 0`). Run the bot once so it makes its character, stop it, and run the role block above ("Give a character a role, ranks, or pools") with both sessions closed. Start the bot again and log the Healer in; both stand on the `EdariaLibrary` spawn at (2.7, 4.4). Then step off the dreamer and press them, which targets them and switches slot 1 on from within reach, in one eval:
 
 ```bash
 agent-browser eval --stdin <<'JS'

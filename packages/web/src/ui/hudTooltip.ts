@@ -18,8 +18,8 @@ interface TipFact {
   refused?: true;
 }
 
-/** A line of a set piece's tip: the set's title or one of its steps, dimmed while it is not in effect. */
-interface TipSetLine {
+/** A line of a set piece's set, in its tip and in a row of Mercus's panel: the set's title or one of its steps, dimmed while it is not in effect. */
+export interface TipSetLine {
   text: string;
   on: boolean;
 }

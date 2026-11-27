@@ -1975,8 +1975,9 @@
   text-wrap: pretty;
 }
 
-/* A step of a set the reader has not reached. */
-.hud-tip__line--off {
+/* A step of a set the reader has not reached: in an item's tip and card, and in a row of Mercus's panel. */
+.hud-tip__line--off,
+.service-text--off {
   opacity: 0.5;
 }
 

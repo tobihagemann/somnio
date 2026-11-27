@@ -54,7 +54,8 @@ import { itemName, t } from '@/i18n';
 import { button, element, replaceChildren, setHidden } from './dom';
 import { itemIcon } from './itemIcons';
 import { paintRarityColors } from './hud';
-import { itemLines, itemTitle, rarityName } from './itemText';
+import { itemLines, itemSetLines, itemTitle, rarityName } from './itemText';
+import type { ItemReader } from './itemText';
 import { questAsks, questLines, questTitle, rewardNote, timeLeft } from './questText';
 
 /**
@@ -138,8 +139,8 @@ function actionRow(action: HTMLElement): HTMLElement {
   return element('div', { className: 'teaching-action', children: [action] });
 }
 
-/** A row of the shop: the item's icon edged and its name in its rarity's colour, with its rarity unless common, what it does, and the button that trades it. */
-function tradeRow(attributes: Record<string, string>, item: Item, notes: readonly HTMLElement[], action: HTMLButtonElement): HTMLElement {
+/** A row of the shop: the item's icon edged and its name in its rarity's colour, with its rarity unless common, what it does, a set piece's set as its tip says it, and the button that trades it. */
+function tradeRow(attributes: Record<string, string>, item: Item, reader: ItemReader, notes: readonly HTMLElement[], action: HTMLButtonElement): HTMLElement {
   const icon = itemIcon(item.baseId, item.tier, item.line);
   icon.classList.add('ware-icon', `hud-rarity--${item.rarity}`);
   return element('div', {
@@ -155,6 +156,7 @@ function tradeRow(attributes: Record<string, string>, item: Item, notes: readonl
         ],
       }),
       ...itemLines(item).map((line) => paragraph(line)),
+      ...itemSetLines(item, reader).map((line) => paragraph(line.text, line.on ? 'service-text' : 'service-text service-text--off')),
       ...notes,
       element('div', { className: 'ware-action', children: [action] }),
     ],
@@ -300,9 +302,10 @@ export class ServicePanel {
       }
       case 'shopkeeper':
         return {
-          reads: [inventory, tradeLocked, buyBack, beside],
+          // Of the lucidity the shop reads only the dreamer's role, which lights a set piece's steps, so a frame of practice leaves its buttons standing.
+          reads: [inventory, lucidity.role, tradeLocked, buyBack, beside],
           purse: inventory.coins,
-          build: () => this.shop(name, inventory, tradeLocked, buyBack, beside),
+          build: () => this.shop(name, inventory, lucidity.role, tradeLocked, buyBack, beside),
         };
       case 'bountyBoard': {
         // Of what the dreamer carries, the board reads only whether a bounty's item has a place to go.
@@ -444,39 +447,47 @@ export class ServicePanel {
    * brings in where it cannot stand beside the panel. Every trade's button is disabled while a
    * trade holds the lock.
    */
-  private shop(name: string, inventory: Inventory, tradeLocked: boolean, buyBack: readonly ItemInstance[], beside: boolean): HTMLElement[] {
+  private shop(
+    name: string,
+    inventory: Inventory,
+    role: Role | undefined,
+    tradeLocked: boolean,
+    buyBack: readonly ItemInstance[],
+    beside: boolean,
+  ): HTMLElement[] {
+    const reader: ItemReader = { role, equipped: inventory.equipped };
     return [
       paragraph(t('%@ sells common gear and buys what you find.', name)),
       ...(beside ? [] : [actionRow(button(t('Sell from bag'), () => this.callbacks.onSellFromBag()))]),
       element('h2', { className: 'service-heading', text: t('For sale') }),
-      ...WARES.map((ware) => this.wareRow(ware, inventory, tradeLocked)),
+      ...WARES.map((ware) => this.wareRow(ware, inventory, reader, tradeLocked)),
       ...(buyBack.length === 0
         ? []
         : [
             element('h2', { className: 'service-heading', text: t('Buy back') }),
-            ...buyBack.map((item) => this.buyBackRow(item, inventory, tradeLocked, buyBack)),
+            ...buyBack.map((item) => this.buyBackRow(item, inventory, reader, tradeLocked, buyBack)),
           ]),
     ];
   }
 
   /** A ware to buy, a common one at its base's tier. */
-  private wareRow(ware: Ware, inventory: Inventory, tradeLocked: boolean): HTMLElement {
+  private wareRow(ware: Ware, inventory: Inventory, reader: ItemReader, tradeLocked: boolean): HTMLElement {
     const item = commonItem(ware);
     const coins = price(ware);
     const action = button(t('Buy for %@c', String(coins)), () => this.callbacks.onBuy(ware));
     // Several wares share a price, so the button's accessible name says which one it buys.
     action.setAttribute('aria-label', t('Buy %1$@ for %2$@c', itemName(ware, item.tier, undefined, t), String(coins)));
     action.disabled = tradeLocked || !canBuy(inventory, ware);
-    return tradeRow({ 'data-ware': ware }, item, tradeNotes(coins, inventory), action);
+    return tradeRow({ 'data-ware': ware }, item, reader, tradeNotes(coins, inventory), action);
   }
 
   /** An item the dreamer sold, to buy back for what it fetched. */
-  private buyBackRow(item: ItemInstance, inventory: Inventory, tradeLocked: boolean, buyBack: readonly ItemInstance[]): HTMLElement {
+  private buyBackRow(item: ItemInstance, inventory: Inventory, reader: ItemReader, tradeLocked: boolean, buyBack: readonly ItemInstance[]): HTMLElement {
     const coins = salePrice(item);
     const action = button(t('Buy back for %@c', String(coins)), () => this.callbacks.onBuyBack(item.id));
     action.setAttribute('aria-label', t('Buy back %1$@ for %2$@c', itemTitle(item), String(coins)));
     action.disabled = tradeLocked || buyBackable(inventory, buyBack, item.id) === undefined;
-    return tradeRow({ 'data-item': item.id }, item, tradeNotes(coins, inventory), action);
+    return tradeRow({ 'data-item': item.id }, item, reader, tradeNotes(coins, inventory), action);
   }
 
   /**

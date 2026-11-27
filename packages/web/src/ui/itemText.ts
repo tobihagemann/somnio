@@ -2,7 +2,7 @@ import { NO_STATS, SET_BONUSES, SET_TITLE_KEYS, baseItem, itemNameKeys, itemStat
 import type { Equipment, EquipSlot, Item, Rarity, SetStep, SlotKind, StatId } from '@somnio/core';
 import type { Role } from '@somnio/protocol';
 import { t } from '@/i18n';
-import type { Tip } from './hudTooltip';
+import type { Tip, TipSetLine } from './hudTooltip';
 
 /** Thunks rather than constants so `t` runs after the locale resolves, each key in a literal `t('...')` the catalog test can find. */
 const RARITY_NAMES: Record<Rarity, () => string> = {
@@ -101,14 +101,27 @@ export function setStepLine(step: SetStep): string {
 }
 
 /**
+ * A set piece's set: how many of its line the reader wears, then each step, lit once a reader of the
+ * line's role wears enough for it. None for an item of no line.
+ */
+export function itemSetLines(item: Item, reader: ItemReader): TipSetLine[] {
+  const line = item.line;
+  if (line === undefined) return [];
+  const pieces = shownSetPieces(reader.equipped, line);
+  const own = reader.role === line;
+  return [
+    { text: t(SET_TITLE_KEYS[line], String(pieces)), on: true },
+    ...SET_BONUSES[line].map((step) => ({ text: setStepLine(step), on: own && pieces >= step.pieces })),
+  ];
+}
+
+/**
  * What an item's tip says: its icon, its name in its rarity's colour, its rarity and slot, what it
  * does, what the shopkeeper pays for it if he buys it, and anything after that. A set piece also
- * says who alone can wear it, in red for a reader who cannot, and its set: how many of it the reader
- * wears, and each step, lit once the reader of the line wears enough for it.
+ * says who alone can wear it, in red for a reader who cannot, and its set (`itemSetLines`).
  */
 export function itemTip(item: Item, after: { lines?: readonly string[]; warning?: string }, reader: ItemReader): Tip {
   const line = item.line;
-  const set = line === undefined ? undefined : { line, pieces: shownSetPieces(reader.equipped, line), own: reader.role === line };
   return {
     title: itemTitle(item),
     rarity: item.rarity,
@@ -116,16 +129,11 @@ export function itemTip(item: Item, after: { lines?: readonly string[]; warning?
     facts: [
       { text: rarityName(item.rarity) },
       { text: slotName(baseItem(item.baseId).slot) },
-      ...(set === undefined ? [] : [{ text: lineRefusal(set.line).caption, ...(set.own ? {} : { refused: true as const }) }]),
+      ...(line === undefined ? [] : [{ text: lineRefusal(line).caption, ...(reader.role === line ? {} : { refused: true as const }) }]),
     ],
     lines: [
       ...itemLines(item),
-      ...(set === undefined
-        ? []
-        : [
-            { text: t(SET_TITLE_KEYS[set.line], String(set.pieces)), on: true },
-            ...SET_BONUSES[set.line].map((step) => ({ text: setStepLine(step), on: set.own && set.pieces >= step.pieces })),
-          ]),
+      ...itemSetLines(item, reader),
       ...(sellable(item) ? [t('Sells for %@c', String(salePrice(item)))] : []),
       ...(after.lines ?? []),
     ],

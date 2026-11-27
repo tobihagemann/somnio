@@ -34,7 +34,7 @@ import { fakeSocketFactory } from './helpers/fakeSocket';
 import { tabTo } from './helpers/visibility';
 import type { FakeSocket } from './helpers/fakeSocket';
 import { interiorSector, outdoorSector } from '../../core/test/support/worldFixture.ts';
-import { carrying, inventoryFrame, item } from './helpers/inventory';
+import { carrying, inventoryFrame, item, setOf } from './helpers/inventory';
 import { clientEntity, enterSpaceFrame, entityFrame, sectorFrame } from './helpers/worldFixture';
 import type { ChatLine, ClientEntity, ServiceCarrier } from '@/client';
 
@@ -1926,6 +1926,7 @@ describe('the service panel', () => {
     const sold = (panel: ServicePanel): (string | null)[] => [...panel.root.querySelectorAll('[data-item]')].map((node) => node.getAttribute('data-item'));
     const sale = (panel: ServicePanel, id: string): string => panel.root.querySelector(`[data-item="${id}"]`)?.textContent ?? '';
     const rare: ItemInstance = { ...item('amulet', 'amulet-rare'), rarity: 'rare', affixes: [{ affixId: 'spirit', value: 6 }] };
+    const wimple: ItemInstance = { ...item('cap', 'wimple'), tier: 3, rarity: 'epic', line: 'healer' };
 
     it('offers every ware, says what each costs and does, and lists no bag to sell from', () => {
       const p = mount();
@@ -2010,9 +2011,30 @@ describe('the service panel', () => {
       expect([p.panel.root.classList.contains('hidden'), p.panel.open]).toEqual([false, true]);
     });
 
+    it("says a set piece's set to buy back, lighting each step a reader of the line's role wears enough for", () => {
+      const p = mount();
+      const setSays = () =>
+        [...p.panel.root.querySelectorAll('[data-item="wimple"] > p')].map((line) => [line.textContent, !line.classList.contains('service-text--off')]);
+      p.render(mercus(), { ranks: [] }, carrying({ coins: 100, worn: setOf(3, 'healer') }), false, { buyBack: [wimple] });
+      expect(setSays()).toEqual([
+        ['+5% Spirit recovery', true],
+        ["Healers' set (3/6)", true],
+        ['(2) Renewal lasts 4 s longer.', false],
+        ["(4) Deep mend's channel is a third shorter.", false],
+        ['(6) Radiance heals a third more.', false],
+      ]);
+      p.render(mercus(), { role: 'healer', ranks: [] }, carrying({ coins: 100, worn: setOf(3, 'healer') }), false, { buyBack: [wimple] });
+      expect(setSays()).toEqual([
+        ['+5% Spirit recovery', true],
+        ["Healers' set (3/6)", true],
+        ['(2) Renewal lasts 4 s longer.', true],
+        ["(4) Deep mend's channel is a third shorter.", false],
+        ['(6) Radiance heals a third more.', false],
+      ]);
+    });
+
     it("draws each ware's and each item's to buy back as its icon, edged in its rarity's colour, a set piece's as its line's design", () => {
       const p = mount();
-      const wimple: ItemInstance = { ...item('cap', 'wimple'), tier: 3, rarity: 'epic', line: 'healer' };
       p.render(mercus(), { ranks: [] }, carrying({ coins: 100 }), false, { buyBack: [rare, { ...item('tunic'), tier: 3 }, wimple] });
       const icon = (row: string) => {
         const node = p.panel.root.querySelector<HTMLImageElement>(`${row} .ware-head > img`);
@@ -2072,7 +2094,7 @@ describe('the service panel', () => {
       const first = back();
       p.render(mercus(), lucidity, inventory, false, { buyBack });
       expect(back()).toBe(first);
-      // The shop reads no lucidity, so a frame of practice leaves its buttons standing.
+      // Of the lucidity the shop reads only the role, so a frame of practice leaves its buttons standing.
       p.render(mercus(), { ranks: [{ teachingId: 'strike', rank: 1, practice: 1 }] }, inventory, false, { buyBack });
       expect(back()).toBe(first);
       p.render(mercus(), lucidity, inventory, false, { buyBack: [item('cudgel')] });
