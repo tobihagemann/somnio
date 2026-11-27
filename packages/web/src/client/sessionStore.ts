@@ -103,6 +103,16 @@ export class SessionStore {
     }
   }
 
+  /** Whether the store still holds `token`. Every tab shares it, so another tab may have stored another account's meanwhile. */
+  holds(token: string): boolean {
+    return this.load()?.token === token;
+  }
+
+  /** Clears the store only if it still holds `token`. */
+  forget(token: string): void {
+    if (this.holds(token)) this.clear();
+  }
+
   /**
    * Reads the stored value, treating an unreadable store as an absent one.
    *

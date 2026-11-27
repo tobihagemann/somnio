@@ -692,18 +692,25 @@ describe('token failure and revocation', () => {
   });
 
   /** Another tab may log another account in with "Remember password" while this one plays. */
-  it("leaves another tab's stored token in place of this session's replacement", () => {
+  it.each([
+    ['a replacement token arrives', true, (rig: Rig) => rig.deliver({ tag: 'sessionToken', payload: { token: 'fresh', expiresInSeconds: 60 } })],
+    ['the player leaves the game', true, (rig: Rig) => rig.controller.leaveGame()],
+    ['the server revokes this session', true, (rig: Rig) => rig.deliver({ tag: 'sessionRevoked', payload: { revoked: true } })],
+    ['the resumed token is rejected', false, (rig: Rig) => rig.deliver({ tag: 'loginResult', payload: { result: 'badCredentials' } })],
+  ] as const)("leaves another tab's stored token in place when %s", (_, attach, act) => {
     const storage = new MemoryStorage();
     storage.setItem('somnio.sessionToken', JSON.stringify({ token: 'tok', expiresAt: Date.now() + 60_000 }));
     const rig = makeRig({ storage });
     rig.controller.connect({ kind: 'resume' });
     rig.socket().open();
     rig.deliver(hello());
-    rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
-    rig.deliver(enterSpaceFrame());
+    if (attach) {
+      rig.deliver({ tag: 'loginResult', payload: { result: 'ok' } });
+      rig.deliver(enterSpaceFrame());
+    }
     storage.setItem('somnio.sessionToken', JSON.stringify({ token: 'other-account', expiresAt: Date.now() + 60_000 }));
 
-    rig.deliver({ tag: 'sessionToken', payload: { token: 'fresh', expiresInSeconds: 60 } });
+    act(rig);
 
     expect(rig.controller.sessionStore.load()?.token).toBe('other-account');
   });

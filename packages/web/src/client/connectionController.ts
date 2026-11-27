@@ -395,7 +395,8 @@ export class ConnectionController {
   }
 
   /**
-   * Drops everything this client holds *about the departing player*: the stored token, the typed
+   * Drops everything this client holds *about the departing player*: the stored token while it is
+   * the one this connection holds or resumes with (see `SessionStore.holds`), the typed
    * credentials, any queued registration, the chat scrollback and display name, and — through
    * `onSessionIdentityEnded` — both credential forms' own field values.
    *
@@ -412,7 +413,8 @@ export class ConnectionController {
    * connection, whose `connectionLost` line the player who logs back in still finds there.
    */
   private endSessionIdentity(): void {
-    this.sessionStore.clear();
+    const ownToken = this.heldToken ?? this.resumingWithToken;
+    if (ownToken !== undefined) this.sessionStore.forget(ownToken);
     this.credentials = undefined;
     this.pendingRegistration = undefined;
     this.resumingWithToken = undefined;
@@ -578,7 +580,7 @@ export class ConnectionController {
         this.heldToken = message.payload.token;
         // A replacement is saved only over its own token: another tab may since have stored another
         // account's, which this one must not sign that tab's next visit out of.
-        if (replaced !== undefined && this.sessionStore.load()?.token !== replaced) return;
+        if (replaced !== undefined && !this.sessionStore.holds(replaced)) return;
         // Reported rather than swallowed: the player asked to be remembered, and a storage refusal is
         // otherwise discovered only on the next visit, as an unexplained login form. The line is a
         // *report*, not a failure — the session itself is fine, which is why nothing here tears down.
@@ -719,18 +721,18 @@ export class ConnectionController {
         return;
       case 'badCredentials': {
         // Expired, unknown, and revoked tokens are all reported as bad credentials, so a
-        // probing client learns nothing about which. Drop the stored token and fall back to
-        // the password form.
-        const wasResuming = this.resumingWithToken !== undefined;
-        if (wasResuming) {
-          this.sessionStore.clear();
+        // probing client learns nothing about which. Forget the token resumed with and fall back
+        // to the password form.
+        const resumedWith = this.resumingWithToken;
+        if (resumedWith !== undefined) {
+          this.sessionStore.forget(resumedWith);
           this.resumingWithToken = undefined;
         }
         // The *client* does know which case this was, even though the server deliberately does not
         // say: a rejection during a resume is a dead token, not a wrong password. Reporting
         // "Bad credentials." there would tell a returning player their password is wrong when they
         // never typed one.
-        this.reportSessionFailure(wasResuming ? { kind: 'sessionExpired' } : { kind: 'badCredentials' });
+        this.reportSessionFailure(resumedWith !== undefined ? { kind: 'sessionExpired' } : { kind: 'badCredentials' });
         this.teardown();
         this.presentedOverlay = { kind: 'login' };
         return;
