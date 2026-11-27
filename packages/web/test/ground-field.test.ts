@@ -4,7 +4,7 @@ import { markPointBounds } from '@somnio/protocol';
 import type { GroundMark, SectorView } from '@somnio/protocol';
 import { rasterizeGround, sampleGroundField } from '@/scene/groundField';
 import type { GroundField } from '@/scene/groundField';
-import { GROUND_MATERIAL_IDS, MAX_GROUND_MATERIALS, groundMaterialChannel } from '@/scene/groundMaterials';
+import { GROUND_MATERIAL_IDS, MAX_GROUND_MATERIALS, groundFragmentChunks, groundMaterialChannel } from '@/scene/groundMaterials';
 import type { GroundMaterialId } from '@/scene/groundMaterials';
 import { loadSectorFixtures } from '../../core/test/support/sectorFixture.ts';
 import { interiorSector, outdoorSector } from '../../core/test/support/worldFixture.ts';
@@ -283,5 +283,14 @@ describe('the committed world', () => {
         .map((id) => `${sector.name}: ${id}`),
     );
     expect(missing).toEqual([]);
+  });
+});
+
+describe('the ground shader', () => {
+  it('declares every colour function its materials are drawn by', () => {
+    const { declarations, colour } = groundFragmentChunks();
+    const called = [...colour.matchAll(/groundColour \+= \S+ \* (\w+)\(/g)].map((match) => match[1]);
+    expect(called).toHaveLength(GROUND_MATERIAL_IDS.length);
+    expect(called.filter((name) => !new RegExp(`\\bvec3 ${name}\\(`).test(declarations))).toEqual([]);
   });
 });
