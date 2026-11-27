@@ -2,8 +2,7 @@ import { ROLES } from '@somnio/protocol';
 import { describe, expect, it, vi } from 'vitest';
 import { coreCatalog, catalogViolations, lookupIn } from '../src/catalog.ts';
 import { AFFIXES } from '../src/affixes.ts';
-import { BASE_ITEMS, itemLabelKey, newItemId, commonInstance } from '../src/items.ts';
-import type { Tier } from '../src/items.ts';
+import { BASE_ITEMS, baseItem, isBaseItemId, itemLabelKey, newItemId, commonInstance } from '../src/items.ts';
 import { TEACHINGS, roleLabelKey } from '../src/lucidity.ts';
 import { ELITE_TRAITS, MONSTER_KINDS } from '../src/monsterKinds.ts';
 import { PEOPLES, peopleLabelKey } from '../src/people.ts';
@@ -283,11 +282,14 @@ describe('core catalog', () => {
 
   it('holds exactly the labels of the items and their suffixes, the peoples, the roles, the teachings, the nightmares, elites included, the quests and their objectives, the bounties, the trophies, and the sets', () => {
     const labels = [
-      ...Object.values(BASE_ITEMS).flatMap((item) =>
-        'tierLabelKeys' in item
-          ? [...Object.values(item.tierLabelKeys), ...Object.values(item.lineLabelKeys).flatMap((tiers: Partial<Record<Tier, string>>) => Object.values(tiers))]
-          : [item.labelKey],
-      ),
+      ...Object.keys(BASE_ITEMS)
+        .filter(isBaseItemId)
+        .map(baseItem)
+        .flatMap((item) =>
+          item.tierLabelKeys === undefined
+            ? [item.labelKey]
+            : [...Object.values(item.tierLabelKeys), ...Object.values(item.lineLabelKeys).flatMap((tiers) => Object.values(tiers))],
+        ),
       ...Object.values(AFFIXES).map((line) => line.nameKey),
       ...PEOPLES.map(peopleLabelKey),
       ...ROLES.map(roleLabelKey),

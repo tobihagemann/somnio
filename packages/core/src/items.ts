@@ -26,8 +26,9 @@ export function isTier(value: number): value is Tier {
 
 /** The tiers a role's set pieces are made at. */
 export const SET_TIERS = [3] as const satisfies readonly Tier[];
+export type SetTier = (typeof SET_TIERS)[number];
 
-export function isSetTier(tier: Tier): boolean {
+export function isSetTier(tier: Tier): tier is SetTier {
   return (SET_TIERS as readonly Tier[]).includes(tier);
 }
 
@@ -96,7 +97,7 @@ type BaseItemName =
   | {
       slot: Exclude<SlotKind, Hand>;
       tierLabelKeys: Readonly<Record<Tier, string>>;
-      lineLabelKeys: Readonly<Record<Role, Partial<Record<Tier, string>>>>;
+      lineLabelKeys: Readonly<Record<Role, Readonly<Record<SetTier, string>>>>;
       labelKey?: never;
     };
 
@@ -297,5 +298,6 @@ export function itemLabelKey(baseId: string, tier: number, line?: Role): string 
   const base = baseItem(baseId);
   if (base.tierLabelKeys === undefined) return base.labelKey;
   if (!isTier(tier)) return undefined;
-  return line === undefined ? base.tierLabelKeys[tier] : base.lineLabelKeys[line][tier];
+  if (line === undefined) return base.tierLabelKeys[tier];
+  return isSetTier(tier) ? base.lineLabelKeys[line][tier] : undefined;
 }

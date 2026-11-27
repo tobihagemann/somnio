@@ -11,10 +11,11 @@ import {
   SET_TITLE_KEYS,
   TEACHINGS,
   TROPHIES,
+  baseItem,
+  isBaseItemId,
   peopleLabelKey,
   roleLabelKey,
 } from '@somnio/core';
-import type { Tier } from '@somnio/core';
 import { ROLES } from '@somnio/protocol';
 import { coreCatalog, lookupIn, mergeCatalogs, readCatalog } from '@somnio/core/catalog';
 import type { CatalogLocale, CatalogTables } from '@somnio/core/catalog';
@@ -92,11 +93,14 @@ export function translate(locale: CatalogLocale, key: string, ...args: string[])
 export const CORE_LABEL_KEYS: readonly string[] = [
   // Each role's Spirit deepening is its own teaching under one label.
   ...new Set([
-    ...Object.values(BASE_ITEMS).flatMap((item) =>
-      'tierLabelKeys' in item
-        ? [...Object.values(item.tierLabelKeys), ...Object.values(item.lineLabelKeys).flatMap((tiers: Partial<Record<Tier, string>>) => Object.values(tiers))]
-        : [item.labelKey],
-    ),
+    ...Object.keys(BASE_ITEMS)
+      .filter(isBaseItemId)
+      .map(baseItem)
+      .flatMap((item) =>
+        item.tierLabelKeys === undefined
+          ? [item.labelKey]
+          : [...Object.values(item.tierLabelKeys), ...Object.values(item.lineLabelKeys).flatMap((tiers) => Object.values(tiers))],
+      ),
     ...Object.values(AFFIXES).map((line) => line.nameKey),
     ...PEOPLES.map(peopleLabelKey),
     ...ROLES.map(roleLabelKey),

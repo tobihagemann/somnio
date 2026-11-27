@@ -1,5 +1,5 @@
-import { isWardrobeBase } from '@somnio/core';
-import type { BaseItemId, Tier, WardrobeBaseId } from '@somnio/core';
+import { isSetTier, isWardrobeBase } from '@somnio/core';
+import type { BaseItemId, SetTier, Tier, WardrobeBaseId } from '@somnio/core';
 import type { Role } from '@somnio/protocol';
 import { element } from './dom';
 
@@ -87,7 +87,7 @@ export const WARDROBE_ICONS: Record<WardrobeBaseId, Record<Tier, string>> = {
 };
 
 /** A set piece's icon, its line's design, by base and role at each tier its designs exist at (`SET_TIERS`). */
-export const WARDROBE_LINE_ICONS: Record<WardrobeBaseId, Record<Role, Partial<Record<Tier, string>>>> = {
+export const WARDROBE_LINE_ICONS: Record<WardrobeBaseId, Record<Role, Record<SetTier, string>>> = {
   cap: {
     fighter: { 3: '/assets/UI/Items/cap-fighter-t3.png' },
     healer: { 3: '/assets/UI/Items/cap-healer-t3.png' },
@@ -132,9 +132,16 @@ export const WARDROBE_LINE_ICONS: Record<WardrobeBaseId, Record<Role, Partial<Re
 
 /**
  * An item's icon as an element, decorative by construction: the accessible name lives on the control.
- * A line comes only at a tier of `SET_TIERS`, as `knownItem` holds every item to, and counts only on armour and jewellery.
+ * A line counts only on armour and jewellery, and comes only at a tier of `SET_TIERS`, as `knownItem`
+ * holds every item to, so one at another tier throws rather than drawing a design it is not.
  */
 export function itemIcon(baseId: BaseItemId, tier: Tier, line: Role | undefined): HTMLImageElement {
-  const src = !isWardrobeBase(baseId) ? ITEM_ICONS[baseId] : line === undefined ? WARDROBE_ICONS[baseId][tier] : WARDROBE_LINE_ICONS[baseId][line][tier]!;
-  return element('img', { className: 'hud-item-icon', attributes: { src, alt: '', draggable: 'false' } });
+  return element('img', { className: 'hud-item-icon', attributes: { src: itemIconSource(baseId, tier, line), alt: '', draggable: 'false' } });
+}
+
+function itemIconSource(baseId: BaseItemId, tier: Tier, line: Role | undefined): string {
+  if (!isWardrobeBase(baseId)) return ITEM_ICONS[baseId];
+  if (line === undefined) return WARDROBE_ICONS[baseId][tier];
+  if (!isSetTier(tier)) throw new Error(`no set piece is made at tier ${tier}`);
+  return WARDROBE_LINE_ICONS[baseId][line][tier];
 }
