@@ -14,6 +14,7 @@ import { rankOf } from './lucidity.ts';
 import type { HeldRank, TeachingId } from './lucidity.ts';
 import { forbidsStriking } from './quests.ts';
 import type { ActiveQuest } from './quests.ts';
+import type { SetBonuses } from './sets.ts';
 import type { MonsterKind } from './monsterKinds.ts';
 
 /**
@@ -347,9 +348,9 @@ export function mendAmount(stats: Stats): number {
   return COMBAT.mend.health + stats.mendDepth;
 }
 
-/** The share of a ward's shield a caster of these stats puts up. */
-export function wardShare(stats: Stats): number {
-  return 1 + stats.wardStrength / 100;
+/** The share of a ward's shield a caster of these stats and set bonuses puts up. */
+export function wardShare(stats: Stats, bonuses: SetBonuses): number {
+  return (1 + stats.wardStrength / 100) * bonuses.wardAbsorb;
 }
 
 /**

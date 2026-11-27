@@ -54,6 +54,8 @@ describe('the UI files the client loads', () => {
 
   it('are the chrome and the HUD icons', () => {
     // Pinned so the scan above cannot pass by finding nothing at all.
-    expect(referencedFiles()).toEqual(expect.arrayContaining(['panel-primary.png', 'panel-button.png', 'icon-sword.png', 'icon-close.png']));
+    expect(referencedFiles()).toEqual(
+      expect.arrayContaining(['panel-primary.png', 'panel-button.png', 'icon-sword.png', 'icon-close.png', 'Items/cap-t3.png', 'Items/cap-healer-t3.png']),
+    );
   });
 });

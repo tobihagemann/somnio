@@ -10,8 +10,13 @@
  */
 import * as THREE from 'three';
 
-/** How many base-colour images the texture array holds. */
-export const WARDROBE_LAYERS = 20;
+/**
+ * How many base-colour images the texture array holds: one per key (`keyOf`) across the four bodies
+ * and every worn piece of the registry's wardrobe, neutral and role-line.
+ * It is counted from the texture and image names in each of those models' glTF JSON, as three's
+ * loader names a texture. Two images with identical bytes under two names take two layers.
+ */
+export const WARDROBE_LAYERS = 21;
 
 /** The width and height of each layer, in pixels. */
 const LAYER_SIZE = 512;

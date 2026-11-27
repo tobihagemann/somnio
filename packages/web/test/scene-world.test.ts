@@ -2208,22 +2208,25 @@ describe('what a pointer is over, and the target', () => {
       expect(scene.pressTargetAt(model.x, model.y)).toEqual({ kind: 'loot', lootId: 'open' });
     });
 
-    it("lays armour as its design's ground model at the tier it rolled", () => {
-      const scene = makeScene({ ...emptyAssets(), ground: (baseId, tier) => Object.assign(lyingDagger(), { name: `${baseId}:${tier}` }) });
+    it("lays armour as its design's ground model at the tier it rolled, a set piece as its line's", () => {
+      const scene = makeScene({ ...emptyAssets(), ground: (baseId, tier, line) => Object.assign(lyingDagger(), { name: `${baseId}:${tier}:${line ?? ''}` }) });
       scene.enterSpace(world());
       scene.placeEntity(player());
-      scene.showLoot({ lootId: 'tunic', x: 13, z: 10, contents: { kind: 'item', baseId: 'tunic', tier: 1, rarity: 'plain' } });
-      scene.showLoot({ lootId: 'raincoat', x: 10, z: 13, contents: { kind: 'item', baseId: 'tunic', tier: 3, rarity: 'plain' } });
-      expect([shown(scene, 'tunic:1').length, shown(scene, 'tunic:3').length]).toEqual([1, 1]);
+      scene.showLoot({ lootId: 'tunic', x: 13, z: 10, contents: { kind: 'item', baseId: 'tunic', tier: 1, rarity: 'common' } });
+      scene.showLoot({ lootId: 'raincoat', x: 10, z: 13, contents: { kind: 'item', baseId: 'tunic', tier: 3, rarity: 'common' } });
+      scene.showLoot({ lootId: 'hood', x: 7, z: 10, contents: { kind: 'item', baseId: 'cap', tier: 3, rarity: 'uncommon' } });
+      scene.showLoot({ lootId: 'wimple', x: 10, z: 7, contents: { kind: 'item', baseId: 'cap', tier: 3, rarity: 'epic', line: 'healer' } });
+      expect(['tunic:1:', 'tunic:3:', 'cap:3:', 'cap:3:healer'].map((name) => shown(scene, name).length)).toEqual([1, 1, 1, 1]);
     });
 
-    it('names a drop of armour after its design at the tier it rolled', () => {
+    it("names a drop of armour after its design at the tier it rolled, a set piece after its line's", () => {
       const named = vi.spyOn(LootMarkers.prototype, 'show');
       const scene = makeScene(emptyAssets());
       scene.enterSpace(world());
       scene.placeEntity(player());
-      scene.showLoot({ lootId: 'raincoat', x: 10, z: 13, contents: { kind: 'item', baseId: 'tunic', tier: 3, rarity: 'plain' } });
-      expect(named.mock.calls.map(([drop]) => drop.name)).toEqual(["Ferryman's raincoat"]);
+      scene.showLoot({ lootId: 'raincoat', x: 10, z: 13, contents: { kind: 'item', baseId: 'tunic', tier: 3, rarity: 'common' } });
+      scene.showLoot({ lootId: 'wimple', x: 13, z: 10, contents: { kind: 'item', baseId: 'cap', tier: 3, rarity: 'epic', line: 'healer' } });
+      expect(named.mock.calls.map(([drop]) => drop.name)).toEqual(["Ferryman's raincoat", 'Linen wimple']);
     });
 
     it("lays a trophy as its kind's model, and one whose kind has none as its name alone", () => {
@@ -2239,7 +2242,8 @@ describe('what a pointer is over, and the target', () => {
       expect(scene.pressTargetAt(fang.x, fang.y)).toEqual({ kind: 'loot', lootId: 'fang' });
     });
 
-    it('raises a beam from a rare drop alone, glows under a magic and a rare one in its colour, and names each in its colour, a trophy as a plain drop', () => {
+    it('raises a beam from a rare and an epic drop, glows under an uncommon, a rare, and an epic one, and names each, all in its colour, a trophy as a common drop', () => {
+      expect(RARITY_COLORS).toEqual({ common: 0xf2efe8, uncommon: 0x7aea4b, rare: 0x4998fe, epic: 0xd06fed });
       const scene = makeScene({ ...emptyAssets(), ground: lyingDagger, trophy: lyingDagger });
       scene.enterSpace(world());
       scene.placeEntity(player());
@@ -2257,27 +2261,34 @@ describe('what a pointer is over, and the target', () => {
       vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D);
       try {
         for (const [index, rarity] of RARITIES.entries()) scene.showLoot(drop(rarity, 4 + index * 3, 4, rarity));
-        scene.showLoot({ lootId: 'wisp', x: 13, z: 4, contents: { kind: 'trophy', monsterKind: 'ghost' } });
+        scene.showLoot({ lootId: 'wisp', x: 16, z: 4, contents: { kind: 'trophy', monsterKind: 'ghost' } });
       } finally {
         vi.restoreAllMocks();
       }
-      expect(shown(scene, LOOT_BEAM_NAME).map((beam) => beam.parent!.position.x)).toEqual([10]);
-      expect(shown(scene, LOOT_GLOW_NAME).map((glow) => [glow.parent!.position.x, glow.material.color.getHex()])).toEqual([
-        [7, RARITY_COLORS.magic],
+      expect(shown(scene, LOOT_BEAM_NAME).map((beam) => [beam.parent!.position.x, beam.material.color.getHex()])).toEqual([
         [10, RARITY_COLORS.rare],
+        [13, RARITY_COLORS.epic],
       ]);
-      expect(inks).toEqual([...RARITIES, 'plain' as const].map((rarity) => `#${RARITY_COLORS[rarity].toString(16)}`));
+      expect(shown(scene, LOOT_GLOW_NAME).map((glow) => [glow.parent!.position.x, glow.material.color.getHex()])).toEqual([
+        [7, RARITY_COLORS.uncommon],
+        [10, RARITY_COLORS.rare],
+        [13, RARITY_COLORS.epic],
+      ]);
+      expect(inks).toEqual([...RARITIES, 'common' as const].map((rarity) => `#${RARITY_COLORS[rarity].toString(16)}`));
     });
 
-    it('brightens and dims its beam, and holds it steady under reduced motion', () => {
+    it('brightens and dims a rare and an epic beam together, and holds them steady under reduced motion', () => {
       for (const reducedMotion of [false, true]) {
         const scene = new WorldScene({ ...emptyAssets(), ground: lyingDagger }, TEST_REGISTRY, 1, reducedMotion);
         scene.enterSpace(world());
         scene.placeEntity(player());
         scene.showLoot(drop('rare', 12, 10));
+        scene.showLoot(drop('epic', 14, 10, 'epic'));
         const opacities = [0.3, 0.6, 0.6].map((seconds) => {
           scene.tick(seconds);
-          return shown(scene, LOOT_BEAM_NAME)[0]!.material.opacity;
+          const [rare, epic] = shown(scene, LOOT_BEAM_NAME).map((beam) => beam.material.opacity);
+          expect(epic).toBe(rare);
+          return rare;
         });
         expect(new Set(opacities).size, `reduced motion ${reducedMotion}`).toBe(reducedMotion ? 1 : 3);
       }
@@ -4134,7 +4145,7 @@ describe('scatter', () => {
     // A meadow grows grass and flowers, a wood grass and pebbles.
     scene.addSector(outdoorSector('West', { x: 0, z: 0 }, { placements: [placement('box-1', 'box', { x: 10, z: 10 })] }));
     scene.addSector(outdoorSector('Wood', { x: 20, z: 0 }, { ground: { backgroundMaterialId: 'forest-floor', marks: [] } }));
-    scene.showLoot({ lootId: 'cap', x: 12, z: 12, contents: { kind: 'item', baseId: 'cap', tier: 1, rarity: 'plain' } });
+    scene.showLoot({ lootId: 'cap', x: 12, z: 12, contents: { kind: 'item', baseId: 'cap', tier: 1, rarity: 'common' } });
     scene.showLoot({ lootId: 'wisp', x: 14, z: 12, contents: { kind: 'trophy', monsterKind: 'ghost' } });
     scene.showPressMarker({ x: 5, z: 5 });
     for (let frame = 0; frame < 3; frame += 1) scene.tick(0.016);
@@ -4391,7 +4402,7 @@ describe('scatter', () => {
     lootId,
     x: at.x,
     z: at.z,
-    contents: { kind: 'item', baseId: 'dagger', tier: 1, rarity: 'plain' },
+    contents: { kind: 'item', baseId: 'dagger', tier: 1, rarity: 'common' },
     ...overrides,
   });
 
@@ -4443,8 +4454,8 @@ describe('scatter', () => {
     scene.showLoot(dagger('dagger', { x: 2, z: 4 }));
     scene.showLoot(wisp('wisp', { x: 5, z: 4 }));
     scene.showLoot({ ...wisp('fang', { x: 8, z: 4 }), contents: { kind: 'trophy', monsterKind: 'wolf' } });
-    scene.showLoot(dagger('tunic', { x: 11, z: 4 }, { contents: { kind: 'item', baseId: 'tunic', tier: 1, rarity: 'plain' } }));
-    scene.showLoot(dagger('raincoat', { x: 14, z: 4 }, { contents: { kind: 'item', baseId: 'tunic', tier: 3, rarity: 'plain' } }));
+    scene.showLoot(dagger('tunic', { x: 11, z: 4 }, { contents: { kind: 'item', baseId: 'tunic', tier: 1, rarity: 'common' } }));
+    scene.showLoot(dagger('raincoat', { x: 14, z: 4 }, { contents: { kind: 'item', baseId: 'tunic', tier: 3, rarity: 'common' } }));
     const step = vi.spyOn(GrassSpring.prototype, 'step');
     scene.tick(1 / 60);
     const [contacts] = step.mock.calls[0]!;

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import { headingFromCardinal, plainInstance } from '@somnio/core';
+import { headingFromCardinal, commonInstance } from '@somnio/core';
 import { PostgresAccountRepository, PostgresCharacterRepository, PostgresItemRepository, STARTER_SECTOR, hashPassword } from '@somnio/data';
 import { ConnectionOutbox } from '../../src/connection/outbox.ts';
 import { starterInventory } from '../../src/handlers/starterInventory.ts';
@@ -28,7 +28,7 @@ it("checkpointAll persists every logged-in player's full character and inventory
     facing: headingFromCardinal('north'),
     energy: { ...character.energy, healthCurrent: 42 },
   };
-  const moonstone = plainInstance('moonstone');
+  const moonstone = commonInstance('moonstone');
   space.attach(staged, { ...kit, coins: 60, equipped: { ...kit.equipped, offHand: moonstone } }, new ConnectionOutbox(1024), 0, 'en');
 
   await dependencies.worldRouter.checkpointAll();

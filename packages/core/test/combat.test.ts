@@ -34,7 +34,8 @@ import { NO_STATS } from '../src/items.ts';
 import type { Equipment } from '../src/items.ts';
 import type { Lucidity, TeachingId } from '../src/lucidity.ts';
 import { monsterKind } from '../src/monsterKinds.ts';
-import { holding, plain } from './support/items.ts';
+import { NO_SET_BONUSES } from '../src/sets.ts';
+import { holding, common } from './support/items.ts';
 import { ranks } from './support/ranks.ts';
 
 /** The stats of a dreamer of the role holding the ranks given and wearing nothing. */
@@ -121,7 +122,7 @@ describe('balance recovery', () => {
 });
 
 describe('swingFor', () => {
-  const cudgel = plain('cudgel');
+  const cudgel = common('cudgel');
 
   it('swings bare hands for less cost and less harm than the cudgel', () => {
     expect(swingFor(undefined, NO_STATS)).toEqual({ damage: 4, balanceCost: 8, seconds: 1 });
@@ -129,8 +130,8 @@ describe('swingFor', () => {
   });
 
   it('does not swing what is no weapon', () => {
-    expect(swingFor(plain('moonstone'), NO_STATS)).toBeUndefined();
-    expect(swingFor(plain('shield'), NO_STATS)).toBeUndefined();
+    expect(swingFor(common('moonstone'), NO_STATS)).toBeUndefined();
+    expect(swingFor(common('shield'), NO_STATS)).toBeUndefined();
   });
 
   it('adds damage with Strike and shortens the pause with Follow-through', () => {
@@ -144,7 +145,7 @@ describe('swingFor', () => {
 });
 
 describe('swingAllowed', () => {
-  const cudgel = plain('cudgel');
+  const cudgel = common('cudgel');
 
   it('is the swing of what is in the main hand while the balance covers its cost, to the last point', () => {
     expect(swingAllowed([], cudgel, NO_STATS, 18)).toEqual(swingFor(cudgel, NO_STATS));
@@ -153,7 +154,7 @@ describe('swingAllowed', () => {
   });
 
   it('is none with something in the main hand that does not swing', () => {
-    expect(swingAllowed([], plain('moonstone'), NO_STATS, 100)).toBeUndefined();
+    expect(swingAllowed([], common('moonstone'), NO_STATS, 100)).toBeUndefined();
   });
 
   it('is none while a quest held forbids striking, and is not held back by one that does not', () => {
@@ -190,15 +191,15 @@ describe('what a swing meets', () => {
 });
 
 describe('engageAction', () => {
-  const cudgel = plain('cudgel');
-  const moonstone = plain('moonstone');
+  const cudgel = common('cudgel');
+  const moonstone = common('moonstone');
 
   it('attacks a nightmare with the main hand empty or holding a weapon, whatever the off hand holds and whoever engages it', () => {
     expect(engageAction('nightmare', undefined, {}, [])).toBe('attack');
     expect(engageAction('nightmare', 'healer', holding(cudgel, undefined), [])).toBe('attack');
     expect(engageAction('nightmare', 'healer', holding(undefined, moonstone), [])).toBe('attack');
-    expect(engageAction('nightmare', 'mystic', holding(undefined, plain('wand')), [])).toBe('attack');
-    expect(engageAction('nightmare', 'fighter', holding(cudgel, plain('shield')), [])).toBe('attack');
+    expect(engageAction('nightmare', 'mystic', holding(undefined, common('wand')), [])).toBe('attack');
+    expect(engageAction('nightmare', 'fighter', holding(cudgel, common('shield')), [])).toBe('attack');
   });
 
   it('does not attack with something in the main hand that does not swing', () => {
@@ -330,17 +331,20 @@ describe('ranks and gear that deepen a pool, a touch, or a ward', () => {
     expect(mendAmount({ ...NO_STATS, mendDepth: 3 })).toBe(13);
   });
 
-  it('puts up a stronger ward by its share of gear', () => {
-    expect(wardShare(NO_STATS)).toBe(1);
-    expect(wardShare({ ...NO_STATS, wardStrength: 10 })).toBeCloseTo(1.1, 9);
+  it('puts up a stronger ward by its share of gear, times the set', () => {
+    const set = { ...NO_SET_BONUSES, wardAbsorb: 1.25 };
+    expect(wardShare(NO_STATS, NO_SET_BONUSES)).toBe(1);
+    expect(wardShare({ ...NO_STATS, wardStrength: 10 }, NO_SET_BONUSES)).toBeCloseTo(1.1, 9);
+    expect(wardShare(NO_STATS, set)).toBe(1.25);
+    expect(wardShare({ ...NO_STATS, wardStrength: 10 }, set)).toBeCloseTo(1.375, 9);
   });
 });
 
 describe('statsOf', () => {
   it("adds every worn item's base stats and affixes to what the ranks give", () => {
     const equipment: Equipment = {
-      mainHand: { baseId: 'sword', tier: 1, rarity: 'magic', affixes: [{ affixId: 'swing-speed', value: 4 }] },
-      offHand: plain('shield'),
+      mainHand: { baseId: 'sword', tier: 1, rarity: 'uncommon', affixes: [{ affixId: 'swing-speed', value: 4 }] },
+      offHand: common('shield'),
       chest: {
         baseId: 'tunic',
         tier: 1,
@@ -351,7 +355,7 @@ describe('statsOf', () => {
           { affixId: 'balance-recovery', value: 9 },
         ],
       },
-      neck: plain('amulet'),
+      neck: common('amulet'),
     };
     expect(statsOf(equipment, { role: 'fighter', ranks: ranks({ guard: 1, 'follow-through': 1, toughening: 1 }) })).toEqual({
       ...NO_STATS,

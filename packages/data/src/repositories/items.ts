@@ -1,6 +1,6 @@
 import type { Kysely } from 'kysely';
-import { isAffixId, isBagPlace, isBaseItemId, isEquipSlot, isRarity, isTier, slotsFor } from '@somnio/core';
-import type { BaggedItem, EquipSlot, Inventory, ItemInstance, RolledAffix } from '@somnio/core';
+import { isAffixId, isBagPlace, isBaseItemId, isEquipSlot, isRarity, isRole, isSetTier, isTier, slotsFor } from '@somnio/core';
+import type { BaggedItem, EquipSlot, Inventory, ItemInstance, Rarity, RolledAffix, Tier } from '@somnio/core';
 import type { SomnioDatabase } from '../db.ts';
 import type { Database } from '../schema.ts';
 import { RepositoryDecodingError } from './errors.ts';
@@ -22,7 +22,7 @@ export class PostgresItemRepository implements ItemRepository {
     const { coins } = await this.db.selectFrom('characters').select('coins').where('id', '=', characterId).executeTakeFirstOrThrow();
     const rows = await this.db
       .selectFrom('items')
-      .select(['id', 'base_id', 'tier', 'rarity', 'affixes', 'equipped_slot', 'bag_place'])
+      .select(['id', 'base_id', 'tier', 'rarity', 'line', 'affixes', 'equipped_slot', 'bag_place'])
       .where('character_id', '=', characterId)
       .orderBy('id')
       .execute();
@@ -42,6 +42,7 @@ type ItemRecord = {
   base_id: string;
   tier: number;
   rarity: string;
+  line: string | null;
   affixes: unknown;
 };
 
@@ -49,7 +50,15 @@ function decodeItem(row: ItemRecord): ItemInstance {
   if (!isBaseItemId(row.base_id)) throw new RepositoryDecodingError('base_id', row.base_id);
   if (!isTier(row.tier)) throw new RepositoryDecodingError('tier', String(row.tier));
   if (!isRarity(row.rarity)) throw new RepositoryDecodingError('rarity', row.rarity);
-  return { id: row.id, baseId: row.base_id, tier: row.tier, rarity: row.rarity, affixes: decodeAffixes(row.affixes) };
+  const line = decodeLine(row.line, row.rarity, row.tier);
+  return { id: row.id, baseId: row.base_id, tier: row.tier, rarity: row.rarity, affixes: decodeAffixes(row.affixes), ...(line === undefined ? {} : { line }) };
+}
+
+/** An item has a line exactly when it is epic, and only at a tier set pieces are made at. */
+function decodeLine(raw: string | null, rarity: Rarity, tier: Tier): ItemInstance['line'] {
+  if (raw === null && rarity !== 'epic') return undefined;
+  if (raw === null || !isRole(raw) || rarity !== 'epic' || !isSetTier(tier)) throw new RepositoryDecodingError('line', String(raw));
+  return raw;
 }
 
 function decodeAffixes(raw: unknown): RolledAffix[] {
@@ -77,12 +86,13 @@ function decodeBagPlace(raw: number | null, bag: readonly BaggedItem[]): number 
 export async function insertItems(db: Kysely<Database>, characterId: string, inventory: Inventory): Promise<void> {
   const worn = (Object.entries(inventory.equipped) as [EquipSlot, ItemInstance][]).map(([slot, item]) => ({ item, equipped_slot: slot, bag_place: null }));
   const bagged = inventory.bag.map(({ place, item }) => ({ item, equipped_slot: null, bag_place: place }));
-  const rows = [...worn, ...bagged].map(({ item: { id, baseId, tier, rarity, affixes }, equipped_slot, bag_place }) => ({
+  const rows = [...worn, ...bagged].map(({ item: { id, baseId, tier, rarity, line, affixes }, equipped_slot, bag_place }) => ({
     id,
     character_id: characterId,
     base_id: baseId,
     tier,
     rarity,
+    line: line ?? null,
     affixes: JSON.stringify(affixes),
     equipped_slot,
     bag_place,

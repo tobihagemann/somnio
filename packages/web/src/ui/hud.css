@@ -1389,16 +1389,20 @@
 /* ---------- The Character window ---------- */
 
 /* What draws an item takes its rarity's colour, which `paintRarityColors` gives the HUD from the loot markers'. */
-.hud-rarity--plain {
-  --hud-rarity: var(--hud-rarity-plain);
+.hud-rarity--common {
+  --hud-rarity: var(--hud-rarity-common);
 }
 
-.hud-rarity--magic {
-  --hud-rarity: var(--hud-rarity-magic);
+.hud-rarity--uncommon {
+  --hud-rarity: var(--hud-rarity-uncommon);
 }
 
 .hud-rarity--rare {
   --hud-rarity: var(--hud-rarity-rare);
+}
+
+.hud-rarity--epic {
+  --hud-rarity: var(--hud-rarity-epic);
 }
 
 /*
@@ -1760,7 +1764,17 @@
 .hud > .hud-tip.hud-item-card {
   --somnio-plate: rgb(12 10 16);
 
+  max-height: calc(100% - 16px);
   pointer-events: auto;
+}
+
+/* What the card says scrolls in a short window, so its buttons stay in view under it, as on a phone on its side. */
+.hud-item-card__lines {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 /* An item's name in its rarity's colour: in its tip and card, and in a row of Mercus's panel. */
@@ -1804,6 +1818,7 @@
 
 .hud-item-card__action {
   display: flex;
+  flex: none;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 6px;
@@ -1949,10 +1964,20 @@
   font-weight: 600;
 }
 
+/* Who alone can wear a set piece, for a reader who cannot. */
+.hud-tip__fact--refused {
+  color: var(--somnio-chat-red);
+}
+
 .hud-tip__line {
   margin: 0;
   color: var(--somnio-ink-dim);
   text-wrap: pretty;
+}
+
+/* A step of a set the reader has not reached. */
+.hud-tip__line--off {
+  opacity: 0.5;
 }
 
 .hud-tip__warning {

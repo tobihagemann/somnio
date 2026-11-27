@@ -34,7 +34,7 @@ export interface SomnioDebugAPI {
   sectorName(): string | undefined;
   /**
    * `people` is a dreamer's people, and `outfit` what they wear and hold, each piece by slot, base
-   * id, and tier; both absent for anything but a dreamer. `rank` is an elite's or a boss's, and
+   * id, tier, and a set piece's line; both absent for anything but a dreamer. `rank` is an elite's or a boss's, and
    * `trait` an elite's; absent for any other entity.
    */
   entities(): {
@@ -115,7 +115,7 @@ export interface SomnioDebugAPI {
   telegraphs(): { id: string; kind: TelegraphKind; casterId: string; x: number; z: number; radius: number; seconds: number }[];
   /**
    * The drops lying on the ground for the player, as the server last said, each with what it is (an
-   * item's base, tier, and rarity, or a trophy's kind), whether it is an item a dreamer dropped for anyone
+   * item's base, tier, rarity, and a set piece's line, or a trophy's kind), whether it is an item a dreamer dropped for anyone
    * (`shared`), and where on the page its name and its model are drawn, in CSS pixels, so a press
    * can be aimed at either; `undefined` for one not drawn, and `model` for one drawn without its
    * model.

@@ -24,6 +24,7 @@ export * from './bounties.ts';
 export * from './combat.ts';
 export * from './effects.ts';
 export * from './abilities.ts';
+export * from './sets.ts';
 export * from './npcDialog.ts';
 export * from './speech.ts';
 export * from './domain/account.ts';

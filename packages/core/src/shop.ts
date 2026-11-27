@@ -6,7 +6,7 @@ import { baseItem } from './items.ts';
 import type { BaseItemId, Item, ItemInstance } from './items.ts';
 
 /**
- * What the shopkeeper sells, plain and at tier 1, in shelf order, and the share of an item's value
+ * What the shopkeeper sells, common and at tier 1, in shelf order, and the share of an item's value
  * he pays for it. The share is tuned in play, as `COMBAT`'s numbers are.
  */
 export const SHOP = {
@@ -21,7 +21,7 @@ export function isWare(baseId: string): baseId is Ware {
   return (WARES as readonly string[]).includes(baseId);
 }
 
-/** What the shopkeeper sells a plain one of the ware for: its base's value. */
+/** What the shopkeeper sells a common one of the ware for: its base's value. */
 export function price(ware: Ware): number {
   return baseItem(ware).value;
 }
@@ -36,7 +36,7 @@ export function salePrice(item: Item): number {
   return Math.floor(itemValue(item) * SHOP.saleShare);
 }
 
-/** Whether a dreamer can buy a plain one of the base: a ware their purse covers, into a bag with room. */
+/** Whether a dreamer can buy a common one of the base: a ware their purse covers, into a bag with room. */
 export function canBuy(inventory: Inventory, baseId: string): baseId is Ware {
   return isWare(baseId) && inventory.coins >= price(baseId) && bagHasRoom(inventory);
 }

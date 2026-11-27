@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { allModelEntries, groundModelStem, handModelStem, missingClips, modelForCharacter, modelForObjectId, trophyModelStem, wardrobeRow } from '@somnio/core';
 import type { ModelRegistry } from '@somnio/core';
+import type { Role } from '@somnio/protocol';
 
 /**
  * Model-pack accessor.
@@ -19,8 +20,8 @@ export interface ModelAssets {
   character(id: string): THREE.Object3D | undefined;
   /** What a hand holding an item of `baseId` draws, to hang at identity under its `handslot` bone. */
   hand(baseId: string): THREE.Object3D | undefined;
-  /** What a drop of an item of `baseId` rolled at `tier` draws: a model lying on the ground, its ground bounds centred on its origin. */
-  ground(baseId: string, tier: number): THREE.Object3D | undefined;
+  /** What a drop of an item of `baseId` rolled at `tier`, in `line` or neutral, draws: a model lying on the ground, its ground bounds centred on its origin. */
+  ground(baseId: string, tier: number, line?: Role): THREE.Object3D | undefined;
   /** What the trophy of `monsterKind` draws, lying on the ground as a drop of an item does. */
   trophy(monsterKind: string): THREE.Object3D | undefined;
   object(id: string): THREE.Object3D | undefined;
@@ -95,8 +96,8 @@ export class HttpModelAssets implements ModelAssets {
     return stem === undefined ? undefined : this.instantiate(stem);
   }
 
-  ground(baseId: string, tier: number): THREE.Object3D | undefined {
-    const stem = wardrobeRow(this.registry, baseId, tier)?.ground ?? groundModelStem(this.registry, baseId);
+  ground(baseId: string, tier: number, line?: Role): THREE.Object3D | undefined {
+    const stem = wardrobeRow(this.registry, baseId, tier, line)?.ground ?? groundModelStem(this.registry, baseId);
     return stem === undefined ? undefined : this.instantiate(stem);
   }
 

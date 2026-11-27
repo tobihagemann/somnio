@@ -1,8 +1,8 @@
 import { EQUIP_SLOTS, SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
-import type { InventoryMessage, ItemMessage } from '@somnio/protocol';
+import type { InventoryMessage, ItemMessage, Role } from '@somnio/protocol';
 import { isAffixId } from '../affixes.ts';
-import { equipSlot, isBaseItemId, isTier, slotsFor } from '../items.ts';
-import type { BaseItemId, EquipSlot, ItemInstance } from '../items.ts';
+import { equipSlot, isBaseItemId, isSetTier, isTier, slotsFor } from '../items.ts';
+import type { BaseItemId, EquipSlot, Item, ItemInstance } from '../items.ts';
 
 /** An item in the bag, at the place the dreamer keeps it, from 0 to one less than `maxBagItems`. */
 export interface BaggedItem {
@@ -65,17 +65,22 @@ export function withoutItem(inventory: Inventory, itemId: string): Inventory {
   return { ...inventory, equipped, bag: inventory.bag.filter(({ item }) => item.id !== itemId) };
 }
 
+/** Whether a dreamer of the role, or of none, may wear the item: a set piece only by its line's role, anything else by anyone. */
+export function wearableBy(item: Item, role: Role | undefined): boolean {
+  return item.line === undefined || item.line === role;
+}
+
 /**
- * Wears an item the dreamer has in `slot`, one its base fits, or else in the slot `equipSlot`
- * chooses. From the bag, whatever the slot wore takes the item's place there. Worn in the other
- * bracelet slot, the two bracelets change slots. `undefined` when the dreamer has no such item or
- * the base does not fit the slot.
+ * Wears an item the dreamer of `role` has in `slot`, one its base fits, or else in the slot
+ * `equipSlot` chooses. From the bag, whatever the slot wore takes the item's place there. Worn in
+ * the other bracelet slot, the two bracelets change slots. `undefined` when the dreamer has no such
+ * item, cannot wear it, or the base does not fit the slot.
  */
-export function equipItem(inventory: Inventory, itemId: string, slot?: EquipSlot): Inventory | undefined {
+export function equipItem(inventory: Inventory, role: Role | undefined, itemId: string, slot?: EquipSlot): Inventory | undefined {
   const bagged = inventory.bag.find(({ item }) => item.id === itemId);
   const wornIn = (Object.keys(inventory.equipped) as EquipSlot[]).find((worn) => inventory.equipped[worn]!.id === itemId);
   const item = bagged?.item ?? (wornIn === undefined ? undefined : inventory.equipped[wornIn]);
-  if (item === undefined) return undefined;
+  if (item === undefined || !wearableBy(item, role)) return undefined;
   const into = slot ?? equipSlot(inventory.equipped, item.baseId);
   if (!slotsFor(item.baseId).includes(into)) return undefined;
   if (into === wornIn) return inventory;
@@ -93,13 +98,15 @@ export function equipItem(inventory: Inventory, itemId: string, slot?: EquipSlot
 /**
  * Puts what the slot wears into the bag: at `place` when it is free, else at the first free place.
  * Onto a place holding an item that fits the slot, the two change places, the bag's item worn in
- * the slot. `undefined` when the slot is empty, or the bag is full and no item changes places.
+ * the slot, which the dreamer of `role` must be able to wear. `undefined` when the slot is empty,
+ * the dreamer cannot wear the item that would change places, or the bag is full and no item changes
+ * places.
  */
-export function unequipItem(inventory: Inventory, slot: EquipSlot, place?: number): Inventory | undefined {
+export function unequipItem(inventory: Inventory, role: Role | undefined, slot: EquipSlot, place?: number): Inventory | undefined {
   const worn = inventory.equipped[slot];
   if (worn === undefined) return undefined;
   const there = place === undefined ? undefined : itemAtPlace(inventory, place);
-  if (there !== undefined && slotsFor(there.baseId).includes(slot)) return equipItem(inventory, there.id, slot);
+  if (there !== undefined && slotsFor(there.baseId).includes(slot)) return equipItem(inventory, role, there.id, slot);
   if (!bagHasRoom(inventory)) return undefined;
   const equipped = { ...inventory.equipped };
   delete equipped[slot];
@@ -108,12 +115,13 @@ export function unequipItem(inventory: Inventory, slot: EquipSlot, place?: numbe
 
 /**
  * Moves an item the dreamer has to a place in the bag. From another place, onto an occupied place
- * the two change places. A worn item is put away as `unequipItem` puts it at that place.
+ * the two change places. A worn item is put away as `unequipItem` puts it at that place for the
+ * dreamer of `role`.
  */
-export function moveItem(inventory: Inventory, itemId: string, place: number): Inventory | undefined {
+export function moveItem(inventory: Inventory, role: Role | undefined, itemId: string, place: number): Inventory | undefined {
   if (!isBagPlace(place)) return undefined;
   const wornIn = (Object.keys(inventory.equipped) as EquipSlot[]).find((slot) => inventory.equipped[slot]!.id === itemId);
-  if (wornIn !== undefined) return unequipItem(inventory, wornIn, place);
+  if (wornIn !== undefined) return unequipItem(inventory, role, wornIn, place);
   const moved = inventory.bag.find(({ item }) => item.id === itemId);
   if (moved === undefined) return undefined;
   if (moved.place === place) return inventory;
@@ -167,12 +175,14 @@ export function buyBackOf(message: InventoryMessage): ItemInstance[] {
   return (message.buyBack ?? []).flatMap((item) => knownItem(item) ?? []);
 }
 
-function itemMessage({ id, baseId, tier, rarity, affixes }: ItemInstance): ItemMessage {
-  return { id, baseId, tier, rarity, affixes: affixes.map(({ affixId, value }) => ({ affixId, value })) };
+function itemMessage({ id, baseId, tier, rarity, affixes, line }: ItemInstance): ItemMessage {
+  return { id, baseId, tier, rarity, affixes: affixes.map(({ affixId, value }) => ({ affixId, value })), ...(line === undefined ? {} : { line }) };
 }
 
-function knownItem({ id, baseId, tier, rarity, affixes }: ItemMessage): ItemInstance | undefined {
+/** An item with a line is known only at a tier set pieces are made at, so every item past it has a design. */
+function knownItem({ id, baseId, tier, rarity, affixes, line }: ItemMessage): ItemInstance | undefined {
   const known = affixes.flatMap(({ affixId, value }) => (isAffixId(affixId) ? [{ affixId, value }] : []));
   if (!isBaseItemId(baseId) || !isTier(tier) || known.length < affixes.length) return undefined;
-  return { id, baseId, tier, rarity, affixes: known };
+  if (line !== undefined && !isSetTier(tier)) return undefined;
+  return { id, baseId, tier, rarity, affixes: known, ...(line === undefined ? {} : { line }) };
 }

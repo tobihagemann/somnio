@@ -1,7 +1,7 @@
 import { ELITE_TRAIT_IDS, NO_LUCIDITY, NO_STATS, OUTDOOR_SPACE_ID, fullPools, headingFromVector, monsterKind } from '@somnio/core';
 import type { Character, EliteTraitId, Inventory, ItemInstance, Lucidity, Point, Sector, TeachingId } from '@somnio/core';
-import type { Energy, SomnioMessage } from '@somnio/protocol';
-import { carrying, plain } from '../../../core/test/support/items.ts';
+import type { Energy, Role, SomnioMessage } from '@somnio/protocol';
+import { carrying, common } from '../../../core/test/support/items.ts';
 import { ranks } from '../../../core/test/support/ranks.ts';
 import type { PlayerCheckpoint, SpaceActor } from '../../src/world/spaceActor.ts';
 import { attachPlayer, landsAtCentre, makeClockedSpace, makeMonsterGround, makeMonsterSpawn, makeSector, makeWorld } from './sectorFactory.ts';
@@ -14,12 +14,29 @@ export const RESPAWN_MS = monsterKind('ghost').respawnSeconds * 1000;
 const STEP_SECONDS = 0.05;
 
 export const COINS = 100;
-/** Plain tier-1 items under fixed ids. */
-export const CUDGEL: ItemInstance = { id: '00000000-0000-7000-8000-000000000001', ...plain('cudgel') };
-export const MOONSTONE: ItemInstance = { id: '00000000-0000-7000-8000-000000000002', ...plain('moonstone') };
-export const WAND: ItemInstance = { id: '00000000-0000-7000-8000-000000000003', ...plain('wand') };
+/** Common tier-1 items under fixed ids. */
+export const CUDGEL: ItemInstance = { id: '00000000-0000-7000-8000-000000000001', ...common('cudgel') };
+export const MOONSTONE: ItemInstance = { id: '00000000-0000-7000-8000-000000000002', ...common('moonstone') };
+export const WAND: ItemInstance = { id: '00000000-0000-7000-8000-000000000003', ...common('wand') };
 
 export { carrying };
+
+/** Armour and jewellery bases whose own stats touch no swing, worn in this order by `setWorn`. */
+const SET_BASES = ['cap', 'shoulders', 'tunic', 'trousers', 'boots', 'amulet'] as const;
+
+/**
+ * The first `pieces` of `SET_BASES` at tier 3 with no stat lines: Epics of the role's line, or
+ * Commons of none for `undefined`. A pair of cases wearing the two differ in the set alone.
+ */
+export function setWorn(pieces: 2 | 4 | 6, line: Role | undefined): ItemInstance[] {
+  return SET_BASES.slice(0, pieces).map((baseId, index) => ({
+    id: `00000000-0000-7000-8000-0000000001${String(index).padStart(2, '0')}`,
+    baseId,
+    tier: 3,
+    affixes: [],
+    ...(line === undefined ? { rarity: 'common' } : { rarity: 'epic', line }),
+  }));
+}
 
 /** An inventory with no coins and an empty bag, wearing each item in the slot equipping it takes. */
 export function wearing(...worn: ItemInstance[]): Inventory {
@@ -46,7 +63,7 @@ export const STRIKER: Partial<Character> = { lucidity: lucidity('fighter', { str
  * One 20 x 20 m sector on a clock the test advances, where every roll lands while `dice.hit` is
  * set and misses otherwise. With `ghost`, a Ghost already stands at `GHOST_AT`. With `ground`, its
  * spawn area reaches that many metres each way, and every wander lands where it stands. With `drops`,
- * every dreamer who shares a nightmare driven off finds a plain dagger where it stood, once for
+ * every dreamer who shares a nightmare driven off finds a common dagger where it stood, once for
  * each of its rank's rolls. With `elite`, the Ghost is an elite carrying that trait.
  */
 export function arena(

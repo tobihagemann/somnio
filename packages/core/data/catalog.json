@@ -71,6 +71,10 @@
     "en": "Bind",
     "de": "Fesseln"
   },
+  "Bind also Weakens its nightmare.": {
+    "en": "Bind also Weakens its nightmare.",
+    "de": "Fesseln schwächt seinen Albtraum zusätzlich."
+  },
   "Boar": {
     "en": "Boar",
     "de": "Keiler"
@@ -99,6 +103,10 @@
     "en": "Brace",
     "de": "Gegenstemmen"
   },
+  "Brace lasts 2 s longer.": {
+    "en": "Brace lasts 2 s longer.",
+    "de": "Gegenstemmen hält 2 s länger an."
+  },
   "Brush trousers": {
     "en": "Brush trousers",
     "de": "Buschhose"
@@ -107,17 +115,33 @@
     "en": "Buckler",
     "de": "Faustschild"
   },
+  "Burial hauberk": {
+    "en": "Burial hauberk",
+    "de": "Grabkettenhemd"
+  },
   "Calm": {
     "en": "Calm",
     "de": "Ruhe"
+  },
+  "Candle gloves": {
+    "en": "Candle gloves",
+    "de": "Kerzenhandschuhe"
   },
   "Challenge": {
     "en": "Challenge",
     "de": "Herausforderung"
   },
+  "Chapel boots": {
+    "en": "Chapel boots",
+    "de": "Kapellenstiefel"
+  },
   "Cleave": {
     "en": "Cleave",
     "de": "Rundhieb"
+  },
+  "Cleave strikes each nightmare a fifth harder.": {
+    "en": "Cleave strikes each nightmare a fifth harder.",
+    "de": "Rundhieb trifft jeden Albtraum um ein Fünftel härter."
   },
   "Climbing boots": {
     "en": "Climbing boots",
@@ -147,6 +171,26 @@
     "en": "Cracked skulls",
     "de": "Gesprungene Schädel"
   },
+  "Crypt chausses": {
+    "en": "Crypt chausses",
+    "de": "Gruft-Beinlinge"
+  },
+  "Crypt gauntlets": {
+    "en": "Crypt gauntlets",
+    "de": "Gruft-Panzerhandschuhe"
+  },
+  "Crypt grille": {
+    "en": "Crypt grille",
+    "de": "Gruftgitter"
+  },
+  "Crypt pauldrons": {
+    "en": "Crypt pauldrons",
+    "de": "Gruft-Schulterplatten"
+  },
+  "Crypt sabatons": {
+    "en": "Crypt sabatons",
+    "de": "Gruft-Eisenschuhe"
+  },
   "Cudgel": {
     "en": "Cudgel",
     "de": "Knüppel"
@@ -162,6 +206,10 @@
   "Deep mend": {
     "en": "Deep mend",
     "de": "Tiefes Heilen"
+  },
+  "Deep mend's channel is a third shorter.": {
+    "en": "Deep mend's channel is a third shorter.",
+    "de": "Die Wirkzeit von Tiefes Heilen ist um ein Drittel kürzer."
   },
   "Depth": {
     "en": "Depth",
@@ -182,6 +230,10 @@
   "Dream-bolt": {
     "en": "Dream-bolt",
     "de": "Traumgeschoss"
+  },
+  "Dream-bolt harms a fifth more.": {
+    "en": "Dream-bolt harms a fifth more.",
+    "de": "Traumgeschoss richtet ein Fünftel mehr Schaden an."
   },
   "Drive off %@ Boars there.": {
     "en": "Drive off %@ Boars there.",
@@ -243,6 +295,10 @@
     "en": "Fighter",
     "de": "Kämpfer"
   },
+  "Fighters' set (%1$@/6)": {
+    "en": "Fighters' set (%1$@/6)",
+    "de": "Set der Kämpfer (%1$@/6)"
+  },
   "Find Memor in the Graveyard.": {
     "en": "Find Memor in the Graveyard.",
     "de": "Finde Memor auf dem Friedhof."
@@ -299,6 +355,10 @@
     "en": "Ghostly wisp",
     "de": "Geisterhauch"
   },
+  "Grave iron kettle helm": {
+    "en": "Grave iron kettle helm",
+    "de": "Grabeisen-Kesselhelm"
+  },
   "Guard": {
     "en": "Guard",
     "de": "Deckung"
@@ -306,6 +366,10 @@
   "Healer": {
     "en": "Healer",
     "de": "Heiler"
+  },
+  "Healers' set (%1$@/6)": {
+    "en": "Healers' set (%1$@/6)",
+    "de": "Set der Heiler (%1$@/6)"
   },
   "Hide mitts": {
     "en": "Hide mitts",
@@ -331,6 +395,10 @@
     "en": "Leaf shoulder",
     "de": "Blattschulter"
   },
+  "Linen wimple": {
+    "en": "Linen wimple",
+    "de": "Leinenhaube"
+  },
   "Lumina": {
     "en": "Lumina",
     "de": "Lumina"
@@ -339,6 +407,10 @@
     "en": "Lunge",
     "de": "Ausfall"
   },
+  "Lunge's cooldown is a third shorter, and each Lunge gives back 10 Balance.": {
+    "en": "Lunge's cooldown is a third shorter, and each Lunge gives back 10 Balance.",
+    "de": "Die Abklingzeit von Ausfall ist um ein Drittel kürzer, und jeder Ausfall gibt 10 Gleichgewicht zurück."
+  },
   "Mace": {
     "en": "Mace",
     "de": "Streitkolben"
@@ -346,6 +418,30 @@
   "Maple twig": {
     "en": "Maple twig",
     "de": "Ahornzweig"
+  },
+  "Marsh boots": {
+    "en": "Marsh boots",
+    "de": "Sumpfstiefel"
+  },
+  "Marsh eye": {
+    "en": "Marsh eye",
+    "de": "Sumpfauge"
+  },
+  "Marsh shoulders": {
+    "en": "Marsh shoulders",
+    "de": "Sumpf-Schulterstücke"
+  },
+  "Marsh trousers": {
+    "en": "Marsh trousers",
+    "de": "Sumpfhose"
+  },
+  "Marsh veil": {
+    "en": "Marsh veil",
+    "de": "Sumpfschleier"
+  },
+  "Marsh witch hat": {
+    "en": "Marsh witch hat",
+    "de": "Sumpfhexenhut"
   },
   "Meet Pugnax and Sana in their halls.": {
     "en": "Meet Pugnax and Sana in their halls.",
@@ -366,6 +462,10 @@
   "Mystic": {
     "en": "Mystic",
     "de": "Mystiker"
+  },
+  "Mystics' set (%1$@/6)": {
+    "en": "Mystics' set (%1$@/6)",
+    "de": "Set der Mystiker (%1$@/6)"
   },
   "Navigator's epaulettes": {
     "en": "Navigator's epaulettes",
@@ -391,9 +491,17 @@
     "en": "Pelt guards",
     "de": "Pelzschutz"
   },
+  "Portcullis": {
+    "en": "Portcullis",
+    "de": "Fallgitter"
+  },
   "Radiance": {
     "en": "Radiance",
     "de": "Strahlen"
+  },
+  "Radiance heals a third more.": {
+    "en": "Radiance heals a third more.",
+    "de": "Strahlen heilt um ein Drittel mehr."
   },
   "Rally": {
     "en": "Rally",
@@ -402,6 +510,10 @@
   "Read the bounty board on the square.": {
     "en": "Read the bounty board on the square.",
     "de": "Lies die Kopfgeldtafel auf dem Platz."
+  },
+  "Reed eye": {
+    "en": "Reed eye",
+    "de": "Schilfauge"
   },
   "Reed knot": {
     "en": "Reed knot",
@@ -414,6 +526,10 @@
   "Renewal": {
     "en": "Renewal",
     "de": "Erneuerung"
+  },
+  "Renewal lasts 4 s longer.": {
+    "en": "Renewal lasts 4 s longer.",
+    "de": "Erneuerung hält 4 s länger an."
   },
   "Restless graves": {
     "en": "Restless graves",
@@ -583,6 +699,18 @@
     "en": "Veil",
     "de": "Schleier"
   },
+  "Vigil shoulders": {
+    "en": "Vigil shoulders",
+    "de": "Nachtwachen-Schulterstücke"
+  },
+  "Vigil stole": {
+    "en": "Vigil stole",
+    "de": "Nachtwachen-Stola"
+  },
+  "Vigil trousers": {
+    "en": "Vigil trousers",
+    "de": "Nachtwachen-Hose"
+  },
   "Vigils": {
     "en": "Vigils",
     "de": "Vigils"
@@ -590,6 +718,14 @@
   "Visit Mercus in his shop.": {
     "en": "Visit Mercus in his shop.",
     "de": "Besuche Mercus in seinem Laden."
+  },
+  "Votive candle": {
+    "en": "Votive candle",
+    "de": "Votivkerze"
+  },
+  "Votive gloves": {
+    "en": "Votive gloves",
+    "de": "Votivhandschuhe"
   },
   "Wader trousers": {
     "en": "Wader trousers",
@@ -610,6 +746,14 @@
   "Ward": {
     "en": "Ward",
     "de": "Schutzbann"
+  },
+  "Ward holds a quarter more.": {
+    "en": "Ward holds a quarter more.",
+    "de": "Schutzbann fängt ein Viertel mehr ab."
+  },
+  "Wax taper": {
+    "en": "Wax taper",
+    "de": "Wachsstock"
   },
   "Weaken": {
     "en": "Weaken",

@@ -37,9 +37,9 @@ export type ChatLine =
   | { kind: 'startupGreeting' }
   | { kind: 'purseBalance'; coins: number }
   | { kind: 'coinsGained'; coins: number }
-  | { kind: 'bought'; baseId: string; tier: number; coins: number }
-  | { kind: 'sold'; baseId: string; tier: number; coins: number }
-  | { kind: 'boughtBack'; baseId: string; tier: number; coins: number }
+  | { kind: 'bought'; baseId: string; tier: number; line?: Role; coins: number }
+  | { kind: 'sold'; baseId: string; tier: number; line?: Role; coins: number }
+  | { kind: 'boughtBack'; baseId: string; tier: number; line?: Role; coins: number }
   | { kind: 'dropped'; contents: LootContentsMessage }
   | { kind: 'pickedUp'; contents: LootContentsMessage }
   | { kind: 'rewarded'; contents: LootContentsMessage }

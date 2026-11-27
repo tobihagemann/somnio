@@ -1,9 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { BOSS_MOVES, COMBAT, NIGHTMARE_WANDER, OUTDOOR_SPACE_ID, TELEGRAPHS, monsterKind, reachDistance } from '@somnio/core';
+import {
+  BOSS_MOVES,
+  COMBAT,
+  NIGHTMARE_WANDER,
+  OUTDOOR_SPACE_ID,
+  TELEGRAPHS,
+  isBaseItemId,
+  isWardrobeBase,
+  monsterKind,
+  reachDistance,
+  rollSetPiece,
+} from '@somnio/core';
 import type { Character, EliteTraitId, Inventory, ItemInstance, Point, Sector } from '@somnio/core';
 import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { SomnioMessage } from '@somnio/protocol';
-import { plain } from '../../core/test/support/items.ts';
+import { common } from '../../core/test/support/items.ts';
 import { ConnectionOutbox } from '../src/connection/outbox.ts';
 import type { SpaceActor } from '../src/world/spaceActor.ts';
 import { seededRandom } from '../src/world/random.ts';
@@ -370,13 +381,13 @@ describe('a join', () => {
 });
 
 describe('what the gear worn adds', () => {
-  const SHIELD: ItemInstance = { id: '00000000-0000-7000-8000-000000000011', ...plain('shield') };
-  const STOUT_SHIELD: ItemInstance = { ...SHIELD, rarity: 'magic', affixes: [{ affixId: 'health', value: 8 }] };
-  const GUARDING_SHIELD: ItemInstance = { ...SHIELD, rarity: 'magic', affixes: [{ affixId: 'guard', value: 3 }] };
+  const SHIELD: ItemInstance = { id: '00000000-0000-7000-8000-000000000011', ...common('shield') };
+  const STOUT_SHIELD: ItemInstance = { ...SHIELD, rarity: 'uncommon', affixes: [{ affixId: 'health', value: 8 }] };
+  const GUARDING_SHIELD: ItemInstance = { ...SHIELD, rarity: 'uncommon', affixes: [{ affixId: 'guard', value: 3 }] };
   const AMULET: ItemInstance = {
     id: '00000000-0000-7000-8000-000000000012',
-    ...plain('amulet'),
-    rarity: 'magic',
+    ...common('amulet'),
+    rarity: 'uncommon',
     affixes: [
       { affixId: 'balance-recovery', value: 15 },
       { affixId: 'spirit-recovery', value: 15 },
@@ -410,10 +421,10 @@ describe('what the gear worn adds', () => {
     expect(energyOf(space, alice.entityId)).toMatchObject({ balanceCurrent: balance, spiritCurrent: spirit });
   });
 
-  /** A roll of 0.55 lands under a Ghost's 0.6 at full balance, and under it less the plain shield's 4 Guard, but not less 7. */
+  /** A roll of 0.55 lands under a Ghost's 0.6 at full balance, and under it less the common shield's 4 Guard, but not less 7. */
   it.each([
     ['nothing', wearing(), true],
-    ['a plain shield', wearing(SHIELD), true],
+    ['a common shield', wearing(SHIELD), true],
     ['a shield that rolled Guard', wearing(GUARDING_SHIELD), false],
   ])("lands a Ghost's strike by the Guard worn: %s", async (_label, inventory, hit) => {
     const sector = makeSector('TestSector', { monsterSpawns: [makeMonsterSpawn(GHOST_AT)] });
@@ -989,8 +1000,8 @@ describe('an elite', () => {
     attackGhost(space, alice.entityId);
     steps(240);
     expect(payloads(sent, 'loot').map((loot) => loot.contents)).toEqual([
-      { kind: 'item', baseId: 'dagger', tier: 1, rarity: 'plain' },
-      { kind: 'item', baseId: 'dagger', tier: 1, rarity: 'plain' },
+      { kind: 'item', baseId: 'dagger', tier: 1, rarity: 'common' },
+      { kind: 'item', baseId: 'dagger', tier: 1, rarity: 'common' },
     ]);
   });
 });
@@ -1016,9 +1027,10 @@ describe('the Necromancer', () => {
    * which a test may move: from 0.7 no strike of a nightmare lands, below 0.75 every swing of a
    * dreamer does, and minions are called up west of it. The wail rolls nothing. With `line`, the
    * chamber lies in the west of three sectors in a line. Every wander would land on the chamber's
-   * middle, unless `wanderRandom` says otherwise.
+   * middle, unless `wanderRandom` says otherwise. With `drops`, every drop is a common dagger, unless
+   * `lootRandom` rolls the drops instead.
    */
-  function lair(options: { high?: number; line?: boolean; drops?: boolean; wanderRandom?: RandomSource } = {}) {
+  function lair(options: { high?: number; line?: boolean; drops?: boolean; lootRandom?: RandomSource; wanderRandom?: RandomSource } = {}) {
     const spawn = { ...makeMonsterGround(LAIR_AT, 6), kind: 'necromancer' as const };
     const sectors: Sector[] = options.line === true ? makeSectorLine({ west: { monsterSpawns: [spawn] } }) : [makeSector('Lair', { monsterSpawns: [spawn] })];
     const placing = landsAtCentre(6);
@@ -1029,7 +1041,7 @@ describe('the Necromancer', () => {
     const { clock, space } = makeClockedSpace(makeWorld(sectors), OUTDOOR_SPACE_ID, {
       random: { nextUInt32: () => (standing ? roll() : placing.nextUInt32()) },
       wanderRandom: options.wanderRandom ?? placing,
-      ...(options.drops === true ? { lootRandom: { nextUInt32: () => 0 } } : {}),
+      ...(options.drops === true ? { lootRandom: options.lootRandom ?? { nextUInt32: () => 0 } } : {}),
     });
     // A spawn first fills a minute after its space starts, however long its kind's respawn.
     clock.ms = 60_000;
@@ -1389,7 +1401,7 @@ describe('the Necromancer', () => {
   it('has its minions strike a dreamer in their reach who stepped out of its chamber, and take their blows, until it gives its fight up', async () => {
     const { space, steps } = lair({ high: 0.75 });
     const { outbox, sent } = recordingOutbox();
-    // With 150 health, enough to take a wail, and a plain cudgel's swing, which drives no minion off in 5 s.
+    // With 150 health, enough to take a wail, and a common cudgel's swing, which drives no minion off in 5 s.
     const character = { lucidity: lucidity('fighter', { toughening: 5 }), energy: energy({ healthCurrent: 150, healthMax: 150 }) };
     const alice = attachPlayer(space, BESIDE_BOSS, 'alice', { outbox, character, inventory: wearing(CUDGEL) }).entityId;
     steps(1);
@@ -1490,6 +1502,16 @@ describe('the Necromancer', () => {
     const strikers = ringOfStrikers(space);
     for (let step = 0; step < 400 && !endsOf(strikers[0]!.sent, [BOSS])[0]!.fallen; step += 1) steps(1);
     for (const striker of strikers) expect(payloads(striker.sent, 'loot')).toHaveLength(4);
+  });
+
+  it("drops a sharer with a role pieces of their role's set among its armour and jewellery", () => {
+    const { space, steps } = lair({ high: 0.75, drops: true, lootRandom: seededRandom(3) });
+    const strikers = ringOfStrikers(space);
+    for (let step = 0; step < 400 && !endsOf(strikers[0]!.sent, [BOSS])[0]!.fallen; step += 1) steps(1);
+    const items = strikers.flatMap((striker) => payloads(striker.sent, 'loot').flatMap((loot) => (loot.contents.kind === 'item' ? [loot.contents] : [])));
+    const epics = items.filter((contents) => contents.rarity === 'epic');
+    expect(epics.length).toBeGreaterThan(0);
+    expect(epics.every((epic) => epic.tier === 3 && epic.line === 'fighter' && isBaseItemId(epic.baseId) && isWardrobeBase(epic.baseId))).toBe(true);
   });
 
   it('pays for a minion driven off as for any nightmare, dropping what its third ring drops, and touches no spawn', () => {
@@ -1704,10 +1726,10 @@ describe('slot 1 with two hands', () => {
 });
 
 describe('wearing and putting away', () => {
-  const CAP: ItemInstance = { id: '00000000-0000-7000-8000-000000000021', ...plain('cap') };
-  const BUCKLER: ItemInstance = { id: '00000000-0000-7000-8000-000000000022', ...plain('buckler') };
-  const TUNIC: ItemInstance = { id: '00000000-0000-7000-8000-000000000023', ...plain('tunic') };
-  const FINE_TUNIC: ItemInstance = { id: '00000000-0000-7000-8000-000000000024', ...plain('tunic'), tier: 3 };
+  const CAP: ItemInstance = { id: '00000000-0000-7000-8000-000000000021', ...common('cap') };
+  const BUCKLER: ItemInstance = { id: '00000000-0000-7000-8000-000000000022', ...common('buckler') };
+  const TUNIC: ItemInstance = { id: '00000000-0000-7000-8000-000000000023', ...common('tunic') };
+  const FINE_TUNIC: ItemInstance = { id: '00000000-0000-7000-8000-000000000024', ...common('tunic'), tier: 3 };
   const fullBag = (): ItemInstance[] =>
     Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxBagItems }, (_, index) => ({
       ...CAP,
@@ -1730,7 +1752,7 @@ describe('wearing and putting away', () => {
   });
 
   it('wears a bracelet in the free bracelet slot, else in the first, and never round the neck', () => {
-    const bracelets = [0, 1, 2].map((index): ItemInstance => ({ id: `00000000-0000-7000-8000-00000000003${index}`, ...plain('bracelet') }));
+    const bracelets = [0, 1, 2].map((index): ItemInstance => ({ id: `00000000-0000-7000-8000-00000000003${index}`, ...common('bracelet') }));
     const [first, second, third] = bracelets as [ItemInstance, ItemInstance, ItemInstance];
     const { space } = arena({}, { ghost: false });
     const alice = attachPlayer(space, { x: 5, z: 5 }, 'alice', { inventory: carrying({ bag: bracelets }) });
@@ -1794,7 +1816,7 @@ describe('wearing and putting away', () => {
   });
 
   it('shows a bracelet moved to the other wrist as a change', async () => {
-    const bracelet: ItemInstance = { id: '00000000-0000-7000-8000-000000000041', ...plain('bracelet') };
+    const bracelet: ItemInstance = { id: '00000000-0000-7000-8000-000000000041', ...common('bracelet') };
     const { space } = arena({}, { ghost: false });
     const alice = attachPlayer(space, { x: 5, z: 5 }, 'alice', { inventory: carrying({ bag: [bracelet] }) });
     const bob = attachPlayer(space, { x: 6, z: 5 }, 'bob');
@@ -1824,8 +1846,32 @@ describe('wearing and putting away', () => {
     expect(inventoryOf(space, alice.entityId)).toEqual(full);
   });
 
+  it("refuses another role's set piece, changing nothing and answering nothing, and wears it for its role", async () => {
+    const wimple: ItemInstance = { id: '00000000-0000-7000-8000-000000000060', ...rollSetPiece('cap', 3, 'healer', () => 0.5) };
+    const { space } = arena({}, { ghost: false });
+    const fighter = attachPlayer(space, { x: 5, z: 5 }, 'fighter', { character: STRIKER, inventory: carrying({ bag: [wimple] }) });
+    const healer = attachPlayer(space, { x: 6, z: 5 }, 'healer', { character: { lucidity: lucidity('healer') }, inventory: carrying({ bag: [wimple] }) });
+    space.handleEquip(wimple.id, undefined, fighter.entityId);
+    space.handleEquip(wimple.id, undefined, healer.entityId);
+    expect(inventoryOf(space, fighter.entityId)).toEqual(carrying({ bag: [wimple] }));
+    expect(payloads(await collectMessages(fighter.outbox), 'inventory')).toHaveLength(1);
+    expect(inventoryOf(space, healer.entityId).equipped).toEqual({ head: wimple });
+  });
+
+  it("changes places between a worn piece and a set piece in the bag for the set's role alone", () => {
+    const wimple: ItemInstance = { id: '00000000-0000-7000-8000-000000000061', ...rollSetPiece('cap', 3, 'healer', () => 0.5) };
+    const { space } = arena({}, { ghost: false });
+    const worn = carrying({ worn: [CAP], bag: [wimple] });
+    const fighter = attachPlayer(space, { x: 5, z: 5 }, 'fighter', { character: STRIKER, inventory: worn });
+    const healer = attachPlayer(space, { x: 6, z: 5 }, 'healer', { character: { lucidity: lucidity('healer') }, inventory: worn });
+    space.handleMoveItem(CAP.id, 0, fighter.entityId);
+    space.handleMoveItem(CAP.id, 0, healer.entityId);
+    expect(inventoryOf(space, fighter.entityId)).toEqual(worn);
+    expect(inventoryOf(space, healer.entityId)).toEqual(carrying({ worn: [wimple], bag: [CAP] }));
+  });
+
   it('wears a bracelet in the bracelet slot asked for, and moves a worn one to the other', () => {
-    const bracelet: ItemInstance = { id: '00000000-0000-7000-8000-000000000040', ...plain('bracelet') };
+    const bracelet: ItemInstance = { id: '00000000-0000-7000-8000-000000000040', ...common('bracelet') };
     const { space } = arena({}, { ghost: false });
     const alice = attachPlayer(space, { x: 5, z: 5 }, 'alice', { inventory: carrying({ bag: [bracelet] }) });
     space.handleEquip(bracelet.id, 'bracelet2', alice.entityId);

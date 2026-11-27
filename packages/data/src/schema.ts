@@ -49,6 +49,8 @@ export interface ItemsTable {
   base_id: string;
   tier: number;
   rarity: string;
+  /** The role whose set the item is a piece of, set exactly on an epic. */
+  line: string | null;
   /** The rolled affixes as `[{affixId, value}]`: written as JSON text, read back parsed. */
   affixes: ColumnType<unknown, string, string>;
   equipped_slot: string | null;

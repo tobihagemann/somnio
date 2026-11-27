@@ -100,7 +100,7 @@ describe('catalog coverage', () => {
 });
 
 describe('the names rendered through a core label key', () => {
-  it('are every item and item suffix, people, role, teaching, nightmare, elite, quest, objective, bounty, and trophy, each with its own German', () => {
+  it('are every item and item suffix, people, role, teaching, nightmare, elite, quest, objective, bounty, trophy, set title, and set step, each with its own German', () => {
     expect([...CORE_LABEL_KEYS].sort()).toEqual([
       '%@ of Haste',
       '%@ of Mending',
@@ -120,6 +120,7 @@ describe('the names rendered through a core label key', () => {
       'Bear claw',
       'Beech leaf',
       'Bind',
+      'Bind also Weakens its nightmare.',
       'Boar',
       "Boar's tusk",
       'Bogey',
@@ -127,11 +128,16 @@ describe('the names rendered through a core label key', () => {
       'Bone dagger',
       'Bounty: %@',
       'Brace',
+      'Brace lasts 2 s longer.',
       'Brush trousers',
       'Buckler',
+      'Burial hauberk',
       'Calm',
+      'Candle gloves',
       'Challenge',
+      'Chapel boots',
       'Cleave',
+      'Cleave strikes each nightmare a fifth harder.',
       'Climbing boots',
       'Compass rose',
       'Courier shoulders',
@@ -139,15 +145,22 @@ describe('the names rendered through a core label key', () => {
       'Courier tunic',
       'Cracked skull',
       'Cracked skulls',
+      'Crypt chausses',
+      'Crypt gauntlets',
+      'Crypt grille',
+      'Crypt pauldrons',
+      'Crypt sabatons',
       'Cudgel',
       'Dagger',
       'Deck boots',
       'Deep mend',
+      "Deep mend's channel is a third shorter.",
       'Depth',
       'Dispatch gloves',
       'Dispatch wristband',
       'Drawing back',
       'Dream-bolt',
+      'Dream-bolt harms a fifth more.',
       'Drive off %@ Boars there.',
       'Drive off %@ Bogeys there.',
       'Drive off %@ Ghosts there.',
@@ -163,6 +176,7 @@ describe('the names rendered through a core label key', () => {
       "Ferryman's raincoat",
       'Field trousers',
       'Fighter',
+      "Fighters' set (%1$@/6)",
       'Find Memor in the Graveyard.',
       "Find the Mystics' tower on the square.",
       'Find the hidden places Tacita speaks of.',
@@ -177,35 +191,50 @@ describe('the names rendered through a core label key', () => {
       'Gather 3 cracked skulls from Skeleton Warriors.',
       'Ghost',
       'Ghostly wisp',
+      'Grave iron kettle helm',
       'Guard',
       'Healer',
+      "Healers' set (%1$@/6)",
       'Hide mitts',
       'Into the crypt',
       'Iron buckler',
       'Lantern cage',
       'Leaf gaiters',
       'Leaf shoulder',
+      'Linen wimple',
       'Lumina',
       'Lunge',
+      "Lunge's cooldown is a third shorter, and each Lunge gives back 10 Balance.",
       'Mace',
       'Maple twig',
+      'Marsh boots',
+      'Marsh eye',
+      'Marsh shoulders',
+      'Marsh trousers',
+      'Marsh veil',
+      'Marsh witch hat',
       'Meet Pugnax and Sana in their halls.',
       'Mend 60 health on other dreamers.',
       'Mending others',
       'Moonstone',
       'Mystic',
+      "Mystics' set (%1$@/6)",
       "Navigator's epaulettes",
       'Necromancer',
       "Necromancer's sigil",
       'Oiled storm brim',
       'Old bone',
       'Pelt guards',
+      'Portcullis',
       'Radiance',
+      'Radiance heals a third more.',
       'Rally',
       'Read the bounty board on the square.',
+      'Reed eye',
       'Reed knot',
       'Reedwork gloves',
       'Renewal',
+      'Renewal lasts 4 s longer.',
       'Restless graves',
       'Round shield',
       'Sabre',
@@ -248,13 +277,20 @@ describe('the names rendered through a core label key', () => {
       "Trapper's hide band",
       'Umbrae',
       'Veil',
+      'Vigil shoulders',
+      'Vigil stole',
+      'Vigil trousers',
       'Vigils',
       'Visit Mercus in his shop.',
+      'Votive candle',
+      'Votive gloves',
       'Wader trousers',
       'Walk to the North Wood and come back.',
       'Wand',
       'War axe',
       'Ward',
+      'Ward holds a quarter more.',
+      'Wax taper',
       'Weaken',
       'Wheat-ear pendant',
       'Wolf',
@@ -376,7 +412,7 @@ describe('renderChatLine', () => {
     { kind: 'coinsGained', coins: 4 },
     { kind: 'bought', baseId: 'dagger', tier: 1, coins: 60 },
     { kind: 'sold', baseId: 'sword', tier: 1, coins: 75 },
-    { kind: 'pickedUp', contents: { kind: 'item', baseId: 'cap', tier: 1, rarity: 'plain' } },
+    { kind: 'pickedUp', contents: { kind: 'item', baseId: 'cap', tier: 1, rarity: 'common' } },
     { kind: 'pickedUp', contents: { kind: 'trophy', monsterKind: 'skeleton-warrior' } },
     { kind: 'rewarded', contents: { kind: 'item', baseId: 'tunic', tier: 1, rarity: 'rare' } },
     { kind: 'bagFull' },
@@ -453,7 +489,7 @@ describe('renderChatLine', () => {
     expect(renderChatLine({ kind: 'bought', baseId: 'dagger', tier: 1, coins: 60 }, catalogTables, 'de')).toBe('Dolch für 60c gekauft.');
     expect(renderChatLine({ kind: 'sold', baseId: 'sword', tier: 1, coins: 75 }, catalogTables, 'en')).toBe('Short sword sold for 75c.');
     expect(renderChatLine({ kind: 'sold', baseId: 'lantern', tier: 1, coins: 1 }, catalogTables, 'en')).toBe('lantern sold for 1c.');
-    const cap = { kind: 'item', baseId: 'cap', tier: 1, rarity: 'magic' } as const;
+    const cap = { kind: 'item', baseId: 'cap', tier: 1, rarity: 'uncommon' } as const;
     const skull = { kind: 'trophy', monsterKind: 'skeleton-warrior' } as const;
     expect(renderChatLine({ kind: 'pickedUp', contents: cap }, catalogTables, 'en')).toBe('Courier straw hat picked up.');
     expect(renderChatLine({ kind: 'pickedUp', contents: cap }, catalogTables, 'de')).toBe('Boten-Strohhut aufgehoben.');
@@ -467,6 +503,11 @@ describe('renderChatLine', () => {
     expect(renderChatLine({ kind: 'sold', baseId: 'tunic', tier: 3, coins: 45 }, catalogTables, 'de')).toBe('Fährmanns-Regenmantel für 45c verkauft.');
     expect(renderChatLine({ kind: 'pickedUp', contents: brim }, catalogTables, 'en')).toBe('Tarred reed brim picked up.');
     expect(renderChatLine({ kind: 'rewarded', contents: brim }, catalogTables, 'de')).toBe('Geteerte Schilfkrempe erhalten.');
+    // A set piece is named after its line's design.
+    const wimple = { ...brim, rarity: 'epic', line: 'healer' } as const;
+    expect(renderChatLine({ kind: 'pickedUp', contents: wimple }, catalogTables, 'en')).toBe('Linen wimple picked up.');
+    expect(renderChatLine({ kind: 'sold', baseId: 'cap', tier: 3, line: 'healer', coins: 40 }, catalogTables, 'en')).toBe('Linen wimple sold for 40c.');
+    expect(renderChatLine({ kind: 'sold', baseId: 'cap', tier: 3, line: 'healer', coins: 40 }, catalogTables, 'de')).toBe('Leinenhaube für 40c verkauft.');
   });
 
   it('says how many dreamers a share reached, one of them by its own line, and how many bounties ran out', () => {

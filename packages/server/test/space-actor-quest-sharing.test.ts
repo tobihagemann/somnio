@@ -397,7 +397,7 @@ describe('a quest offer', () => {
       expect(questsOf(world.space, holder)).toEqual({ active: [], done: [questId] });
       const { coins, bag } = inventoryOf(holder);
       expect(coins).toBe(before[index]!.coins + bounty.reward.coins);
-      expect(bag.map(({ item }) => [item.tier, item.rarity])).toEqual([[bounty.reward.gear, 'magic']]);
+      expect(bag.map(({ item }) => [item.tier, item.rarity])).toEqual([[bounty.reward.gear, 'uncommon']]);
     });
   });
 });

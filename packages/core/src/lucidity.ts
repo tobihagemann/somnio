@@ -76,7 +76,7 @@ export const TRIAL_QUESTS: Record<Role, QuestId> = { fighter: 'fighter-trial', h
 /** The teaching a dreamer is taught, and set to study, on taking the role. */
 export const FIRST_TEACHING: Record<Role, TeachingId> = { fighter: 'strike', healer: 'touch', mystic: 'ward' };
 
-/** What a trial gives besides its role, plain: the Healer their Moonstone, and the Mystic a focus. */
+/** What a trial gives besides its role, common: the Healer their Moonstone, and the Mystic a focus. */
 export const TRIAL_REWARDS: Partial<Record<Role, BaseItemId>> = { healer: 'moonstone', mystic: 'wand' };
 
 /** What doing a thing adds toward the next rank of the teaching studied. */

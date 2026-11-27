@@ -18,7 +18,7 @@ import {
   isTeachingId,
   masterRole,
   mayAccept,
-  plainItem,
+  commonItem,
   practiceNeeded,
   price,
   quest,
@@ -138,9 +138,9 @@ function actionRow(action: HTMLElement): HTMLElement {
   return element('div', { className: 'teaching-action', children: [action] });
 }
 
-/** A row of the shop: the item's icon edged and its name in its rarity's colour, with its rarity unless plain, what it does, and the button that trades it. */
+/** A row of the shop: the item's icon edged and its name in its rarity's colour, with its rarity unless common, what it does, and the button that trades it. */
 function tradeRow(attributes: Record<string, string>, item: Item, notes: readonly HTMLElement[], action: HTMLButtonElement): HTMLElement {
-  const icon = itemIcon(item.baseId, item.tier);
+  const icon = itemIcon(item.baseId, item.tier, item.line);
   icon.classList.add('ware-icon', `hud-rarity--${item.rarity}`);
   return element('div', {
     className: 'ware-row',
@@ -151,7 +151,7 @@ function tradeRow(attributes: Record<string, string>, item: Item, notes: readonl
         children: [
           icon,
           element('strong', { className: `ware-name hud-rarity--${item.rarity}`, text: itemTitle(item) }),
-          ...(item.rarity === 'plain' ? [] : [element('span', { className: 'ware-tag', text: rarityName(item.rarity) })]),
+          ...(item.rarity === 'common' ? [] : [element('span', { className: 'ware-tag', text: rarityName(item.rarity) })]),
         ],
       }),
       ...itemLines(item).map((line) => paragraph(line)),
@@ -344,15 +344,20 @@ export class ServicePanel {
     if (held === undefined) {
       const take = this.offerButton(t('Take the quest'), questId, quests);
       take.setAttribute('aria-label', t('Take %1$@. %2$@', title, questAsks(said)));
-      return this.questRow(questId, title, [...questLines(said, undefined), ...rewardNote(said.reward, lucidity.study), ...this.logFullNote(quests)], take);
+      return this.questRow(
+        questId,
+        title,
+        [...questLines(said, undefined), ...rewardNote(said.reward, lucidity.study, lucidity.role), ...this.logFullNote(quests)],
+        take,
+      );
     }
     if (turnInFor(questId, quests, lucidity) === undefined) {
-      return this.questRow(questId, title, [...questLines(said, held), ...rewardNote(said.reward, lucidity.study)], undefined, t('Taken'));
+      return this.questRow(questId, title, [...questLines(said, held), ...rewardNote(said.reward, lucidity.study, lucidity.role)], undefined, t('Taken'));
     }
     return this.questRow(
       questId,
       title,
-      [...questLines(said, held), ...this.turnInNotes(said.reward, lucidity.study, roomForGear)],
+      [...questLines(said, held), ...this.turnInNotes(said.reward, lucidity, roomForGear)],
       this.turnInButton(held, t('Turn in %1$@. %2$@', title, questAsks(said)), said.reward, roomForGear),
       t('Done'),
     );
@@ -378,7 +383,7 @@ export class ServicePanel {
         this.questRow(
           questId,
           questTitle(quest(questId)),
-          [...questLines(quest(questId), undefined), ...rewardNote(quest(questId).reward, lucidity.study), ...this.logFullNote(quests)],
+          [...questLines(quest(questId), undefined), ...rewardNote(quest(questId).reward, lucidity.study, lucidity.role), ...this.logFullNote(quests)],
           this.offerButton(t('Take the quest'), questId, quests),
         ),
       ),
@@ -396,14 +401,17 @@ export class ServicePanel {
       return this.questRow(held.questId, title, questLines(said, held), undefined);
     }
     const asker = said.giver === said.turnIn ? name : this.callbacks.carrierName(said.giver);
-    const notes = [paragraph(t('You did what %@ asked.', asker), 'form-note'), ...this.turnInNotes(said.reward, lucidity.study, roomForGear)];
+    const notes = [paragraph(t('You did what %@ asked.', asker), 'form-note'), ...this.turnInNotes(said.reward, lucidity, roomForGear)];
     return this.questRow(held.questId, title, notes, this.turnInButton(held, t('Turn in %@', title), said.reward, roomForGear));
   }
 
   /** What a quest done pays, and that the bag is full while the item it pays has nowhere to go. */
-  private turnInNotes(reward: QuestReward | undefined, study: string | undefined, roomForGear: boolean): HTMLElement[] {
+  private turnInNotes(reward: QuestReward | undefined, lucidity: LucidityMessage, roomForGear: boolean): HTMLElement[] {
     const fits = reward?.gear === undefined || roomForGear;
-    return [...rewardNote(reward, study), ...(fits ? [] : [paragraph(t('Your bag is full. Make room in it before you turn this in.'), 'form-error')])];
+    return [
+      ...rewardNote(reward, lucidity.study, lucidity.role),
+      ...(fits ? [] : [paragraph(t('Your bag is full. Make room in it before you turn this in.'), 'form-error')]),
+    ];
   }
 
   /** The button that turns a quest done in, under its accessible `name`, greyed out while the item it pays has nowhere to go. */
@@ -438,7 +446,7 @@ export class ServicePanel {
    */
   private shop(name: string, inventory: Inventory, tradeLocked: boolean, buyBack: readonly ItemInstance[], beside: boolean): HTMLElement[] {
     return [
-      paragraph(t('%@ sells plain gear and buys what you find.', name)),
+      paragraph(t('%@ sells common gear and buys what you find.', name)),
       ...(beside ? [] : [actionRow(button(t('Sell from bag'), () => this.callbacks.onSellFromBag()))]),
       element('h2', { className: 'service-heading', text: t('For sale') }),
       ...WARES.map((ware) => this.wareRow(ware, inventory, tradeLocked)),
@@ -451,13 +459,13 @@ export class ServicePanel {
     ];
   }
 
-  /** A ware to buy, a plain one at its base's tier. */
+  /** A ware to buy, a common one at its base's tier. */
   private wareRow(ware: Ware, inventory: Inventory, tradeLocked: boolean): HTMLElement {
-    const item = plainItem(ware);
+    const item = commonItem(ware);
     const coins = price(ware);
     const action = button(t('Buy for %@c', String(coins)), () => this.callbacks.onBuy(ware));
     // Several wares share a price, so the button's accessible name says which one it buys.
-    action.setAttribute('aria-label', t('Buy %1$@ for %2$@c', itemName(ware, item.tier, t), String(coins)));
+    action.setAttribute('aria-label', t('Buy %1$@ for %2$@c', itemName(ware, item.tier, undefined, t), String(coins)));
     action.disabled = tradeLocked || !canBuy(inventory, ware);
     return tradeRow({ 'data-ware': ware }, item, tradeNotes(coins, inventory), action);
   }

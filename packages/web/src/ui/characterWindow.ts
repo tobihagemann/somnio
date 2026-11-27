@@ -1,6 +1,18 @@
 import { EQUIP_SLOTS, SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { EquipSlot, LucidityMessage } from '@somnio/protocol';
-import { NO_INVENTORY, bagHasRoom, baseItem, droppableItem, isBraceletSlot, itemAtPlace, salePrice, sellable, slotsFor, unequipItem } from '@somnio/core';
+import {
+  NO_INVENTORY,
+  bagHasRoom,
+  baseItem,
+  droppableItem,
+  isBraceletSlot,
+  itemAtPlace,
+  salePrice,
+  sellable,
+  slotsFor,
+  unequipItem,
+  wearableBy,
+} from '@somnio/core';
 import type { Inventory, ItemInstance } from '@somnio/core';
 import { NO_LUCIDITY_MESSAGE, TAP_SLOP_PX } from '@/client';
 import { t } from '@/i18n';
@@ -10,7 +22,8 @@ import { HUDWindow, ItemCard } from './hudWindows';
 import type { ItemAction } from './hudWindows';
 import { placeBeside, setTip } from './hudTooltip';
 import { itemIcon } from './itemIcons';
-import { itemTip, itemTitle, slotName } from './itemText';
+import { itemTip, itemTitle, lineRefusal, slotName } from './itemText';
+import type { ItemReader } from './itemText';
 import { statGroups } from './characterStats';
 
 /** What a press in the Character window does. */
@@ -52,16 +65,16 @@ const SWAY = { radians: (40 * Math.PI) / 180, periodMs: 14_000, pauseMs: 3500 } 
 
 /**
  * Where each slot stands on the doll's grid, column and row from 1, in a window of `columns`:
- * armour down the first column, the neck, the bracelets, and the shoulders down the last, the hands
- * under the body.
+ * the head, shoulders, chest, legs, and feet down the first column in the body's order, the neck, the
+ * hands, and the bracelets down the last, the main and the off hand under the body.
  */
 function dollPlace(slot: EquipSlot, columns: number): [column: number, row: number] {
   switch (slot) {
     case 'head':
       return [1, 1];
-    case 'chest':
+    case 'shoulders':
       return [1, 2];
-    case 'hands':
+    case 'chest':
       return [1, 3];
     case 'legs':
       return [1, 4];
@@ -69,11 +82,11 @@ function dollPlace(slot: EquipSlot, columns: number): [column: number, row: numb
       return [1, 5];
     case 'neck':
       return [columns, 1];
-    case 'bracelet1':
+    case 'hands':
       return [columns, 2];
-    case 'bracelet2':
+    case 'bracelet1':
       return [columns, 3];
-    case 'shoulders':
+    case 'bracelet2':
       return [columns, 4];
     case 'mainHand':
       return [columns / 2, 5];
@@ -122,7 +135,7 @@ interface Refusal {
 }
 
 /**
- * The Character window, Diablo's: the dreamer's live body with the ten slots round it, the purse and
+ * The Character window, Diablo's: the dreamer's live body with the eleven slots round it, the purse and
  * the bag's places, and a tab of the whole totals the rules read. A mouse's tabs are Items and Stats;
  * a finger's are Gear, Items, and Stats.
  *
@@ -391,14 +404,15 @@ export class CharacterWindow {
         'aria-haspopup': 'dialog',
         'aria-expanded': 'false',
       },
-      children: [itemIcon(item.baseId, item.tier)],
+      children: [itemIcon(item.baseId, item.tier, item.line)],
     });
     const worn = 'slot' in source;
     const warning = worn && !bagHasRoom(this.inventory) ? { warning: t('Your bag is full.') } : {};
-    let hint = t('Right-click or double-click to equip.');
+    let hint: string | undefined = t('Right-click or double-click to equip.');
     if (worn) hint = t('Right-click or double-click to unequip.');
     else if (this.sellsAtShop(item)) hint = t('Right-click or double-click to sell.');
-    setTip(node, () => itemTip(item, { lines: this.coarse ? [] : [hint], ...warning }));
+    else if (this.wearRefusal(item) !== undefined) hint = undefined;
+    setTip(node, () => itemTip(item, { lines: this.coarse || hint === undefined ? [] : [hint], ...warning }, this.reader));
     items.set(item.id, node);
     return node;
   }
@@ -426,9 +440,15 @@ export class CharacterWindow {
     return this.shopLocked !== undefined && sellable(item);
   }
 
+  /** Why the reader cannot wear the item, another role's set piece, as `wearableBy` rules it; `undefined` for one they can. */
+  private wearRefusal(item: ItemInstance): Refusal | undefined {
+    return item.line === undefined || wearableBy(item, this.lucidity.role) ? undefined : lineRefusal(item.line);
+  }
+
   /**
    * What the item's card offers: Equip, plus Drop for a droppable item and Sell at the shop for one
    * the shopkeeper buys, on an item in the bag, or Unequip on a worn one, which a full bag refuses.
+   * Equip is greyed out on an item the reader cannot wear.
    */
   private actionFor(item: ItemInstance, source: ItemSource): ItemAction {
     if ('slot' in source) {
@@ -447,14 +467,21 @@ export class CharacterWindow {
           },
         }
       : {};
-    return { label: t('Equip'), run: () => this.callbacks.onEquip(item.id), ...drop, ...sell };
+    const refusal = this.wearRefusal(item);
+    const equip = refusal === undefined ? { run: () => this.callbacks.onEquip(item.id) } : { run: undefined, warning: refusal.notice };
+    return { label: t('Equip'), ...equip, ...drop, ...sell };
   }
 
   private openCard(node: HTMLButtonElement, focus: boolean): void {
     const source = this.sourceOf(node);
     const item = source === undefined ? undefined : this.itemAt(source);
     if (source === undefined || item === undefined) return;
-    this.card.open(node, item, this.actionFor(item, source), focus);
+    this.card.open(node, item, this.actionFor(item, source), focus, this.reader);
+  }
+
+  /** The dreamer as an item's tip reads them. */
+  private get reader(): ItemReader {
+    return { role: this.lucidity.role, equipped: this.inventory.equipped };
   }
 
   /** A finger's tap, or Enter, opens an item's card, and a second closes it. A mouse's single click does nothing. */
@@ -472,9 +499,10 @@ export class CharacterWindow {
   }
 
   /**
-   * A mouse's double click or right click wears an item from the bag, a ring in a free ring slot,
+   * A mouse's double click or right click wears an item from the bag, a bracelet on a free wrist,
    * else the first, or puts a worn one away. At the shop it sells an item from the bag he buys
-   * instead, and does nothing while a trade holds the lock.
+   * instead, and does nothing while a trade holds the lock. An item the reader cannot wear is refused
+   * beside it.
    */
   private act(event: MouseEvent): void {
     if (this.lastPointerType !== 'mouse') return;
@@ -485,8 +513,11 @@ export class CharacterWindow {
     if ('slot' in source) {
       if (bagHasRoom(this.inventory)) this.callbacks.onUnequip(source.slot);
       else this.refuse(node.parentElement ?? node, t('Your bag is full.'));
-    } else if (!this.sellsAtShop(item)) this.callbacks.onEquip(item.id);
-    else if (this.shopLocked === false) this.callbacks.onSell(item.id);
+    } else if (!this.sellsAtShop(item)) {
+      const refusal = this.wearRefusal(item);
+      if (refusal === undefined) this.callbacks.onEquip(item.id);
+      else this.refuse(node.parentElement ?? node, refusal.notice);
+    } else if (this.shopLocked === false) this.callbacks.onSell(item.id);
   }
 
   private press(event: PointerEvent): void {
@@ -552,7 +583,7 @@ export class CharacterWindow {
     this.ghost.style.width = `${from?.width ?? 0}px`;
     this.ghost.style.height = `${from?.height ?? 0}px`;
     this.ghost.replaceChildren(
-      itemIcon(carry.item.baseId, carry.item.tier),
+      itemIcon(carry.item.baseId, carry.item.tier, carry.item.line),
       element('span', { className: 'hud-ghost__caption hud-ghost__caption--drop', text: t('Drop') }),
       this.ghostRefusal,
     );
@@ -561,6 +592,7 @@ export class CharacterWindow {
 
   private markCarry(carry: Carry): void {
     this.root.querySelector(`[data-source="${sourceKey(carry.source)}"]`)?.classList.add('hud-item--lifted');
+    if (this.wearRefusal(carry.item) !== undefined) return;
     for (const slot of slotsFor(carry.item.baseId)) this.places[slot].classList.add('hud-place--fits');
   }
 
@@ -609,20 +641,26 @@ export class CharacterWindow {
   }
 
   /**
-   * Why the carried item cannot go where it is held, which both the ghost and the letting go read: a
-   * slot its base does not fit, a bag place a worn item cannot be put away at with the bag full and
-   * the item there not fitting its slot, or the world for an item that stays.
+   * Why the carried item cannot go where it is held, which both the ghost and the letting go read.
+   * A slot refuses an item the reader cannot wear or whose base does not fit it. A bag place refuses
+   * a worn item when the item there would take its slot but the reader cannot wear it, or when the
+   * bag is full and the item there does not fit its slot. The world refuses an item that stays.
    */
   private refusalAt({ item, source }: Carry, target: DropTarget): Refusal | undefined {
     switch (target.kind) {
       case 'slot': {
+        const refusal = this.wearRefusal(item);
+        if (refusal !== undefined) return refusal;
         if (slotsFor(item.baseId).includes(target.slot)) return undefined;
         const fits = slotName(baseItem(item.baseId).slot);
         return { caption: t('%@ only', fits), notice: t('Fits only the %@ slot.', fits) };
       }
-      case 'place':
-        if (!('slot' in source) || unequipItem(this.inventory, source.slot, target.place) !== undefined) return undefined;
-        return { caption: t('Bag full'), notice: t('Your bag is full.') };
+      case 'place': {
+        if (!('slot' in source) || unequipItem(this.inventory, this.lucidity.role, source.slot, target.place) !== undefined) return undefined;
+        const there = itemAtPlace(this.inventory, target.place);
+        const swapRefusal = there !== undefined && slotsFor(there.baseId).includes(source.slot) ? this.wearRefusal(there) : undefined;
+        return swapRefusal ?? { caption: t('Bag full'), notice: t('Your bag is full.') };
+      }
       case 'world':
         if (droppableItem(this.inventory, item.id) !== undefined) return undefined;
         return { caption: t('Stays with you'), notice: t('This stays with you.') };

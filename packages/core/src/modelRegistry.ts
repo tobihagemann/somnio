@@ -1,8 +1,11 @@
+import { ROLES } from '@somnio/protocol';
+import type { Role } from '@somnio/protocol';
 import registryJSON from '../data/ModelRegistry.json' with { type: 'json' };
 import { rectsOverlap } from './geometry.ts';
 import type { Rect, Size } from './geometry.ts';
-import { BASE_ITEMS, TIERS, isBaseItemId, isBraceletSlot, isTier, isWardrobeBase, slotsFor } from './items.ts';
+import { BASE_ITEMS, SET_TIERS, TIERS, isBaseItemId, isBraceletSlot, isSetTier, isTier, isWardrobeBase, slotsFor } from './items.ts';
 import type { BaseItemId, BraceletSlot, EquipSlot, Tier } from './items.ts';
+import { isRole } from './lucidity.ts';
 import { isMonsterKindId } from './monsterKinds.ts';
 import type { MonsterKindId } from './monsterKinds.ts';
 import { PEOPLES, isPeople } from './people.ts';
@@ -12,7 +15,7 @@ import type { People } from './people.ts';
  * The model registry: character model ids to character model stems (each with its clip-presence
  * contract), each people to the body its dreamers are drawn in, the items a dreamer holds to the
  * stems drawn in their hands, the items that can drop and the trophies nightmares leave to the stems
- * drawn lying on the ground, armour and jewellery by tier to the stems they lie and are worn as, and
+ * drawn lying on the ground, armour and jewellery by tier and role line to the stems they lie and are worn as, and
  * semantic object ids to prop stems with their collision geometry. It references only filename
  * stems, so one file describes the pack for the browser, the editor, the server's collision, and
  * the asset pipeline's gates.
@@ -101,10 +104,12 @@ export interface WornStems {
   wrists?: Readonly<Record<BraceletSlot, string>>;
 }
 
-/** What an armour or jewellery item of `base` rolled at `tier` draws: lying on the ground, and worn. */
+/** What an armour or jewellery item of `base` rolled at `tier`, in `line` or the neutral design without one, draws: lying on the ground, and worn. */
 export interface WardrobeRow {
   base: BaseItemId;
   tier: Tier;
+  /** The role whose set the design is a piece of, absent for the neutral design. */
+  line?: Role;
   ground: string;
   /** The body regions the piece hides while it is worn. */
   covers: BodyRegion[];
@@ -123,7 +128,7 @@ export interface ModelRegistry {
   groundModels: ItemModelRule[];
   /** What a trophy draws, lying on the ground as a drop of an item does. */
   trophyModels: TrophyModelRule[];
-  /** What armour and jewellery draw, one row per base and tier. Each base's tier-1 ground stem is its `groundModels` stem too. */
+  /** What armour and jewellery draw, one neutral row per base and tier and one per base and role at each of `SET_TIERS`. Each base's neutral tier-1 ground stem is its `groundModels` stem too. */
   wardrobe: WardrobeRow[];
   objectModels: ObjectModelRule[];
 }
@@ -221,9 +226,9 @@ export function peopleScale(registry: ModelRegistry, people: string): readonly [
   return registry.peoples.find((rule) => rule.people === people)?.scale;
 }
 
-/** What an item of `baseId` rolled at `tier` draws, or `undefined` for an item that is no armour or jewellery. */
-export function wardrobeRow(registry: ModelRegistry, baseId: string, tier: number): WardrobeRow | undefined {
-  return registry.wardrobe.find((row) => row.base === baseId && row.tier === tier);
+/** What an item of `baseId` rolled at `tier` in `line`, or neutral without one, draws, or `undefined` for an item that is no armour or jewellery. */
+export function wardrobeRow(registry: ModelRegistry, baseId: string, tier: number, line?: Role): WardrobeRow | undefined {
+  return registry.wardrobe.find((row) => row.base === baseId && row.tier === tier && row.line === line);
 }
 
 /** The stem the piece is worn as by a dreamer of `people` in `slot`: the wrist's for a bracelet slot, else the people's fit, else the one for every people. */
@@ -359,25 +364,32 @@ function parseScale(raw: unknown, path: string): [number, number, number] {
 const WARDROBE_BASES = (Object.keys(BASE_ITEMS) as BaseItemId[]).filter(isWardrobeBase);
 
 /**
- * The wardrobe: none when absent or empty, else a row for every armour and jewellery base at every tier,
- * each piece resolving for every people in every slot its base fits, and each base's tier-1 drop its
- * ground model, the stem the asset pipeline's gates read it by.
+ * The wardrobe: none when absent or empty, else a neutral row for every armour and jewellery base at
+ * every tier and a row for every base in each role's line at each of `SET_TIERS`, each piece resolving
+ * for every people in every slot its base fits, and each base's neutral tier-1 drop its ground model,
+ * the stem the asset pipeline's gates read it by.
  */
 function parseWardrobe(raw: unknown, groundModels: readonly ItemModelRule[]): WardrobeRow[] {
   if (raw === undefined) return [];
   const rows = requireArray(raw, 'registry.wardrobe').map((element, index) => parseWardrobeRow(element, `registry.wardrobe[${index}]`));
   if (rows.length === 0) return rows;
   for (const base of WARDROBE_BASES) {
-    for (const tier of TIERS) {
-      const count = rows.filter((row) => row.base === base && row.tier === tier).length;
-      if (count === 0) throw new ModelRegistryError(`registry.wardrobe: no row for ${base} at tier ${tier}`);
-      if (count > 1) throw new ModelRegistryError(`registry.wardrobe: duplicate row for ${base} at tier ${tier}`);
+    for (const tier of TIERS) requireOneWardrobeRow(rows, base, tier, undefined);
+    for (const tier of SET_TIERS) {
+      for (const role of ROLES) requireOneWardrobeRow(rows, base, tier, role);
     }
-    const ground = rows.find((row) => row.base === base && row.tier === 1)!.ground;
+    const ground = rows.find((row) => row.base === base && row.tier === 1 && row.line === undefined)!.ground;
     const alias = groundModels.find((rule) => rule.id === base)?.stem;
     if (alias !== ground) throw new ModelRegistryError(`registry.groundModels: ${base} must lie as its tier-1 wardrobe row, "${ground}"`);
   }
   return rows;
+}
+
+function requireOneWardrobeRow(rows: readonly WardrobeRow[], base: BaseItemId, tier: Tier, line: Role | undefined): void {
+  const count = rows.filter((row) => row.base === base && row.tier === tier && row.line === line).length;
+  const design = line === undefined ? base : `${line} ${base}`;
+  if (count === 0) throw new ModelRegistryError(`registry.wardrobe: no row for ${design} at tier ${tier}`);
+  if (count > 1) throw new ModelRegistryError(`registry.wardrobe: duplicate row for ${design} at tier ${tier}`);
 }
 
 function parseWardrobeRow(raw: unknown, path: string): WardrobeRow {
@@ -386,6 +398,9 @@ function parseWardrobeRow(raw: unknown, path: string): WardrobeRow {
   if (!isBaseItemId(base) || !isWardrobeBase(base)) throw new ModelRegistryError(`${path}.base: no armour or jewellery "${base}"`);
   const tier = requireNumber(record['tier'], `${path}.tier`);
   if (!isTier(tier)) throw new ModelRegistryError(`${path}.tier: expected a tier from 1 to 5`);
+  const line = record['line'] === undefined ? undefined : requireNonEmptyString(record['line'], `${path}.line`);
+  if (line !== undefined && !isRole(line)) throw new ModelRegistryError(`${path}.line: no role "${line}"`);
+  if (line !== undefined && !isSetTier(tier)) throw new ModelRegistryError(`${path}.line: no set piece is made at tier ${tier}`);
   const covers = requireArray(record['covers'], `${path}.covers`).map((region, index) => {
     if (!BODY_REGIONS.includes(region as BodyRegion)) throw new ModelRegistryError(`${path}.covers[${index}]: no body region "${String(region)}"`);
     return region as BodyRegion;
@@ -402,6 +417,7 @@ function parseWardrobeRow(raw: unknown, path: string): WardrobeRow {
   const row: WardrobeRow = {
     base,
     tier,
+    ...(line === undefined ? {} : { line }),
     ground: requireNonEmptyString(record['ground'], `${path}.ground`),
     covers,
     ...(record['hairFit'] === undefined ? {} : { hairFit: requireNonEmptyString(record['hairFit'], `${path}.hairFit`) }),

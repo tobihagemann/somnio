@@ -10,6 +10,7 @@ import type { Point } from './geometry.ts';
 import type { Hands } from './items.ts';
 import { TEACHING_IDS, rankOf, teaching } from './lucidity.ts';
 import type { HeldRank, TeachingId } from './lucidity.ts';
+import type { SetBonuses } from './sets.ts';
 import { SPEECH } from './speech.ts';
 
 /**
@@ -209,13 +210,16 @@ export function abilityRank(ranks: readonly HeldRank[], abilityId: AbilityId): n
   return rankOf(ranks, abilityTeaching(abilityId));
 }
 
-export function abilityCooldownSeconds(abilityId: AbilityId, rank: number): number {
-  return scaled(ability(abilityId).cooldownSeconds, rank);
+/** The ability's cooldown at the rank given, Lunge's shortened by the set's `lungeCooldown`. */
+export function abilityCooldownSeconds(abilityId: AbilityId, rank: number, bonuses: SetBonuses): number {
+  const seconds = scaled(ability(abilityId).cooldownSeconds, rank);
+  return abilityId === 'lunge' ? seconds * bonuses.lungeCooldown : seconds;
 }
 
-/** How long the ability channels at the rank given, or `undefined` for one that lands at once. */
-export function abilityChannelSeconds(abilityId: AbilityId, rank: number): number | undefined {
-  return scaledOr(ability(abilityId).channelSeconds, rank, undefined);
+/** How long the ability channels at the rank given, or `undefined` for one that lands at once. Deep mend's is shortened by the set's `deepMendChannel`. */
+export function abilityChannelSeconds(abilityId: AbilityId, rank: number, bonuses: SetBonuses): number | undefined {
+  const seconds = scaledOr(ability(abilityId).channelSeconds, rank, undefined);
+  return seconds !== undefined && abilityId === 'deep-mend' ? seconds * bonuses.deepMendChannel : seconds;
 }
 
 /** The abilities a dreamer's ranks teach, in the order of the teachings that teach them, which is the belt's order. */

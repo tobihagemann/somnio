@@ -3,7 +3,7 @@ import { GameHUD } from '@/ui/hud';
 import { CHAT_IDLE_MS } from '@/ui/chatPane';
 import { TAB_SPRING_MS } from '@/ui/characterWindow';
 import { HUD_ICONS } from '@/ui/hudIcons';
-import { ITEM_ICONS, WARDROBE_ICONS } from '@/ui/itemIcons';
+import { ITEM_ICONS, WARDROBE_ICONS, WARDROBE_LINE_ICONS } from '@/ui/itemIcons';
 import { QUEST_BANNER_MS, QUEST_LINE_MS } from '@/ui/questFeedback';
 import { placeName } from '@/ui/placeNames';
 import { TRACKER_SHOWN } from '@/ui/questTracker';
@@ -15,10 +15,20 @@ import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { Energy, LucidityMessage } from '@somnio/protocol';
 import { FINGER_HOLD_MS, TAP_SLOP_PX } from '@/client';
 import type { AbilitySlotState, ChatLine, QuestNews, QuestTurnedIn } from '@/client';
-import { boardTurnsAt, bountyIdOf, heldQuest, objectiveLines } from '@somnio/core';
-import type { AbilityId, ActiveQuest, ItemInstance, QuestLog } from '@somnio/core';
+import {
+  NO_SET_BONUSES,
+  abilityChannelSeconds,
+  abilityCooldownSeconds,
+  boardTurnsAt,
+  bountyIdOf,
+  heldQuest,
+  objectiveLines,
+  rollSetPiece,
+  setBonusesOf,
+} from '@somnio/core';
+import type { AbilityId, ActiveQuest, ItemInstance, QuestLog, SetBonuses } from '@somnio/core';
 import type { HUDCallbacks } from '@/ui/hud';
-import { carrying, item } from './helpers/inventory';
+import { carrying, item, setOf } from './helpers/inventory';
 import { clientEntity } from './helpers/worldFixture';
 
 /**
@@ -169,8 +179,14 @@ const NAMES = (carrierId: string): string =>
 /** The news of a quest held whose first line came as far as `progress` says. */
 const moved = (held: ActiveQuest): QuestNews => ({ kind: 'progress', held, line: objectiveLines(heldQuest(held), held.progress)[0]! });
 
-/** An ability's slot the server would act on now, with no cooldown running. */
-const ready = (abilityId: AbilityId, rank = 1): AbilitySlotState => ({ abilityId, rank, refusal: undefined, cooldown: undefined });
+/** An ability's slot the server would act on now, at the rank and with the set given, with no cooldown running. */
+const ready = (abilityId: AbilityId, rank = 1, bonuses: SetBonuses = NO_SET_BONUSES): AbilitySlotState => ({
+  abilityId,
+  cooldownSeconds: abilityCooldownSeconds(abilityId, rank, bonuses),
+  channelSeconds: abilityChannelSeconds(abilityId, rank, bonuses),
+  refusal: undefined,
+  cooldown: undefined,
+});
 
 describe("a mouse's HUD", () => {
   it('lays out the frames, the clock, the belt with its six slots, the gaze lock, and Run, the menu, and the chat', () => {
@@ -707,7 +723,7 @@ describe("a mouse's HUD", () => {
     const entries = () =>
       [...$('.hud-list--quests').querySelectorAll('[role="listitem"]')].map((node) => [...node.querySelectorAll('strong, p')].map((line) => line.textContent));
     const empty = $('.hud-quests__empty');
-    hud.renderQuests({ active: [], done: [] }, undefined);
+    hud.renderQuests({ active: [], done: [] }, undefined, undefined);
     expect([empty.classList.contains('hidden'), empty.textContent, entries()]).toEqual([false, 'You hold no quests. A gold ! marks who offers one.', []]);
     expect($('.hud-window--quests .overlay-title').textContent).toBe('Quest log0/10');
 
@@ -720,6 +736,7 @@ describe("a mouse's HUD", () => {
         ],
         done: ['fighter-trial'],
       },
+      undefined,
       undefined,
     );
     expect(empty.classList.contains('hidden')).toBe(true);
@@ -749,6 +766,7 @@ describe("a mouse's HUD", () => {
         done: [],
       },
       undefined,
+      undefined,
     );
     expect(actions()).toEqual([
       ['fighter-trial', ['Give up']],
@@ -764,15 +782,17 @@ describe("a mouse's HUD", () => {
       [...$('.hud-list--quests').querySelectorAll('[role="listitem"]')].map((node) => [...node.querySelectorAll('strong, p')].map((line) => line.textContent));
     const bounty = { day: 3, land: 'EdariaArena', monsterKind: 'ghost', objective: 'driveOff', count: 6, reward: { coins: 72, gear: 1 } } as const;
     const holding = (count: number) => ({ active: [{ questId: bountyIdOf(bounty), progress: [count], definition: bounty }], done: [] });
-    hud.renderQuests(holding(2), undefined);
-    expect(entries()).toEqual([['Bounty: Arena', 'Drive off 6 Ghosts there. 2 of 6', 'Runs out in 5 h, when the board turns.', 'Reward: 72c, a magic item']]);
-    hud.renderQuests(holding(6), undefined);
+    hud.renderQuests(holding(2), undefined, undefined);
+    expect(entries()).toEqual([
+      ['Bounty: Arena', 'Drive off 6 Ghosts there. 2 of 6', 'Runs out in 5 h, when the board turns.', 'Reward: 72c, an uncommon item'],
+    ]);
+    hud.renderQuests(holding(6), undefined, undefined);
     expect(entries()).toEqual([
       [
         'Bounty: Arena',
         'Drive off 6 Ghosts there. 6 of 6',
         'Runs out in 5 h, when the board turns.',
-        'Reward: 72c, a magic item',
+        'Reward: 72c, an uncommon item',
         'Return to the bounty board.',
       ],
     ]);
@@ -791,31 +811,34 @@ describe("a mouse's HUD", () => {
       ],
       done: [],
     };
-    hud.renderQuests(log, 'toughening');
+    hud.renderQuests(log, 'toughening', undefined);
     expect(rewards()).toEqual([
       'Reward: 60c, 30 practice toward Toughening',
       'Reward: 250c, 60 practice toward Toughening, a piece of gear',
       'Falling starts the count over.',
     ]);
     const giveUp = $('.hud-window--quests button[aria-label="Give up Restless graves"]');
-    hud.renderQuests(log, 'toughening');
+    hud.renderQuests(log, 'toughening', undefined);
     expect($('.hud-window--quests button[aria-label="Give up Restless graves"]')).toBe(giveUp);
     // Studying nothing, the practice goes toward nothing, and the log says so.
-    hud.renderQuests(log, undefined);
+    hud.renderQuests(log, undefined, undefined);
     expect(rewards().slice(0, 2)).toEqual(['Reward: 60c, 30 practice', 'Reward: 250c, 60 practice, a piece of gear']);
     expect($('.hud-window--quests button[aria-label="Give up Restless graves"]')).not.toBe(giveUp);
+    // To a dreamer with a role, "Into the crypt" pays a piece of that role's set.
+    hud.renderQuests(log, undefined, 'healer');
+    expect(rewards()[1]).toBe("Reward: 250c, 60 practice, a piece of your role's set");
   });
 
   it('keeps the Quest log while what it says is unchanged, and rebuilds it when a count moves', () => {
     const { hud, $ } = makeHUD();
     const holding = (progress: number) => ({ active: [{ questId: 'follow-through-task' as const, progress: [progress] }], done: [] });
     const giveUp = () => $('.hud-window--quests button[aria-label="Give up Three without a fall"]');
-    hud.renderQuests(holding(1), undefined);
+    hud.renderQuests(holding(1), undefined, undefined);
     const before = [...$('.hud-window--quests').querySelectorAll('*')];
     const pressed = giveUp();
-    hud.renderQuests(holding(1), undefined);
+    hud.renderQuests(holding(1), undefined, undefined);
     expect([...$('.hud-window--quests').querySelectorAll('*')]).toEqual(before);
-    hud.renderQuests(holding(2), undefined);
+    hud.renderQuests(holding(2), undefined, undefined);
     expect(giveUp()).not.toBe(pressed);
   });
 
@@ -931,27 +954,27 @@ describe("a mouse's HUD", () => {
       [LINE, '60c · 30 practice toward Toughening'],
     ]);
 
-    // A turn-in arriving while that banner shows waits its turn, and names the item it gave in its rarity's colour.
-    const sabre = { kind: 'item', baseId: 'sabre', tier: 3, rarity: 'rare' } as const;
-    hud.showQuestNews(turnedIn({ questId: 'into-the-crypt', progress: [1] }, { coins: 250, items: [sabre] }));
+    // A turn-in arriving while that banner shows waits its turn, and names the item it gave in its rarity's colour, a set piece after its line's design.
+    const wimple = { kind: 'item', baseId: 'cap', tier: 3, rarity: 'epic', line: 'healer' } as const;
+    hud.showQuestNews(turnedIn({ questId: 'into-the-crypt', progress: [1] }, { coins: 250, items: [wimple] }));
     expect(said()?.[0]).toEqual([TITLE, 'Restless graves']);
     clock += QUEST_BANNER_MS;
     hud.tick(clock, NO_CLOCK);
     expect(said()).toEqual([
       [TITLE, 'Into the crypt'],
       [LINE, '250c · 60 practice'],
-      [`${LINE} hud-quest-banner__item hud-rarity--rare`, 'Sabre'],
+      [`${LINE} hud-quest-banner__item hud-rarity--epic`, 'Linen wimple'],
     ]);
 
     // A trial says the role it makes theirs, the teaching it teaches, and the Moonstone it gives.
     clock += QUEST_BANNER_MS;
     hud.tick(clock, NO_CLOCK);
-    const moonstone = { kind: 'item', baseId: 'moonstone', tier: 1, rarity: 'plain' } as const;
+    const moonstone = { kind: 'item', baseId: 'moonstone', tier: 1, rarity: 'common' } as const;
     hud.showQuestNews(turnedIn({ questId: 'healer-trial', progress: [1] }, { items: [moonstone] }));
     expect(said()).toEqual([
       [TITLE, "The Healers' trial"],
       [LINE, 'You are a Healer · Touch, rank 1'],
-      [`${LINE} hud-quest-banner__item hud-rarity--plain`, 'Moonstone'],
+      [`${LINE} hud-quest-banner__item hud-rarity--common`, 'Moonstone'],
     ]);
 
     // A gate teaches its teaching's first rank and pays nothing else.
@@ -964,12 +987,12 @@ describe("a mouse's HUD", () => {
     clock += QUEST_BANNER_MS;
     hud.tick(clock, NO_CLOCK);
     const bounty = { day: 3, land: 'EdariaArena', monsterKind: 'ghost', objective: 'driveOff', count: 6, reward: { coins: 72, gear: 1 } } as const;
-    const cap = { kind: 'item', baseId: 'cap', tier: 3, rarity: 'magic' } as const;
+    const cap = { kind: 'item', baseId: 'cap', tier: 3, rarity: 'uncommon' } as const;
     hud.showQuestNews(turnedIn({ questId: bountyIdOf(bounty), progress: [6], definition: bounty }, { coins: 72, items: [cap] }));
     expect(said()).toEqual([
       [TITLE, 'Bounty: Arena'],
       [LINE, '72c'],
-      [`${LINE} hud-quest-banner__item hud-rarity--magic`, 'Tarred reed brim'],
+      [`${LINE} hud-quest-banner__item hud-rarity--uncommon`, 'Tarred reed brim'],
     ]);
   });
 
@@ -977,7 +1000,7 @@ describe("a mouse's HUD", () => {
     const { hud, $ } = makeHUD();
     const taken: ActiveQuest = { questId: 'newcomer-errand', progress: [0, 0, 0, 0, 0] };
     hud.showQuestNews({ kind: 'accepted', held: taken });
-    hud.renderQuests({ active: [{ questId: 'restless-graves', progress: [2] }, taken], done: [] }, undefined);
+    hud.renderQuests({ active: [{ questId: 'restless-graves', progress: [2] }, taken], done: [] }, undefined, undefined);
     expect($('.hud-tracker [role="listitem"]').getAttribute('data-quest')).toBe('newcomer-errand');
   });
 
@@ -986,7 +1009,7 @@ describe("a mouse's HUD", () => {
     const tracker = $('.hud-tracker');
     const says = () =>
       [...tracker.querySelectorAll('[role="listitem"]')].map((node) => [...node.querySelectorAll('p')].map((line) => [line.className, line.textContent]));
-    hud.renderQuests({ active: [], done: [] }, undefined);
+    hud.renderQuests({ active: [], done: [] }, undefined, undefined);
     expect(tracker.classList.contains('hidden')).toBe(true);
 
     const log: QuestLog = {
@@ -996,7 +1019,7 @@ describe("a mouse's HUD", () => {
       ],
       done: [],
     };
-    hud.renderQuests(log, undefined);
+    hud.renderQuests(log, undefined, undefined);
     expect(tracker.classList.contains('hidden')).toBe(false);
     expect(says()).toEqual([
       [
@@ -1012,7 +1035,7 @@ describe("a mouse's HUD", () => {
 
     const errand: ActiveQuest = { questId: 'newcomer-errand', progress: [1, 0, 0, 0, 0] };
     hud.showQuestNews(moved(errand));
-    hud.renderQuests({ active: [log.active[0]!, errand], done: [] }, undefined);
+    hud.renderQuests({ active: [log.active[0]!, errand], done: [] }, undefined, undefined);
     expect(says()[0]).toEqual([
       ['hud-tracker__title', "A newcomer's errand"],
       ['hud-tracker__line hud-tracker__line--met', 'Visit Mercus in his shop: 1/1'],
@@ -1022,7 +1045,7 @@ describe("a mouse's HUD", () => {
     ]);
     expect(tracker.querySelector('[data-quest="newcomer-errand"]')?.classList.contains('hud-tracker__quest--moved')).toBe(true);
     // Given up, the quest that moved leaves the log's order as it was.
-    hud.renderQuests({ active: [log.active[0]!], done: [] }, undefined);
+    hud.renderQuests({ active: [log.active[0]!], done: [] }, undefined, undefined);
     expect(hud.questTracker.quests.map(({ questId }) => questId)).toEqual(['restless-graves']);
 
     button('Quest log').click();
@@ -1033,7 +1056,7 @@ describe("a mouse's HUD", () => {
 
   it("hides and shows the tracker's list from its heading, saying which, and keeps the choice for the next page", () => {
     const { hud, $ } = makeHUD();
-    hud.renderQuests({ active: [{ questId: 'restless-graves', progress: [2] }], done: [] }, undefined);
+    hud.renderQuests({ active: [{ questId: 'restless-graves', progress: [2] }], done: [] }, undefined, undefined);
     const head = $<HTMLButtonElement>('.hud-tracker__head');
     expect([head.getAttribute('aria-label'), head.getAttribute('aria-expanded'), head.textContent]).toEqual(['Hide quests', 'true', 'Quests1/10']);
     head.click();
@@ -1041,7 +1064,7 @@ describe("a mouse's HUD", () => {
     expect([$('.hud-tracker__list').classList.contains('hidden'), hud.questTracker.listShown]).toEqual([true, false]);
 
     const next = makeHUD();
-    next.hud.renderQuests({ active: [{ questId: 'restless-graves', progress: [2] }], done: [] }, undefined);
+    next.hud.renderQuests({ active: [{ questId: 'restless-graves', progress: [2] }], done: [] }, undefined, undefined);
     expect(next.$('.hud-tracker__head').getAttribute('aria-label')).toBe('Show quests (1)');
     next.$<HTMLButtonElement>('.hud-tracker__head').click();
     expect(localStorage.getItem('somnio.questTracker.hidden')).toBeNull();
@@ -1050,13 +1073,13 @@ describe("a mouse's HUD", () => {
   it('keeps the tracker while what it says is unchanged, and rebuilds only its list when a count moves', () => {
     const { hud, $ } = makeHUD();
     const holding = (progress: number) => ({ active: [{ questId: 'restless-graves' as const, progress: [progress] }], done: [] });
-    hud.renderQuests(holding(1), undefined);
+    hud.renderQuests(holding(1), undefined, undefined);
     const before = [...$('.hud-tracker').querySelectorAll('*')];
-    hud.renderQuests(holding(1), undefined);
+    hud.renderQuests(holding(1), undefined, undefined);
     expect([...$('.hud-tracker').querySelectorAll('*')]).toEqual(before);
     const head = $('.hud-tracker__head');
     const quest = $('.hud-tracker__quest');
-    hud.renderQuests(holding(2), undefined);
+    hud.renderQuests(holding(2), undefined, undefined);
     expect([$('.hud-tracker__head') === head, $('.hud-tracker__quest') === quest]).toEqual([true, false]);
   });
 
@@ -1073,7 +1096,7 @@ describe("a mouse's HUD", () => {
       ],
       done: [],
     };
-    hud.renderQuests(log, undefined);
+    hud.renderQuests(log, undefined, undefined);
     expect([listed(), $('.hud-tracker__held').textContent, more.classList.contains('hidden'), more.textContent]).toEqual([
       ['restless-graves', 'cracked-skulls', 'into-the-crypt'],
       '4/10',
@@ -1084,13 +1107,13 @@ describe("a mouse's HUD", () => {
 
     hud.showQuestNews(moved({ questId: 'follow-through-task', progress: [2] }));
     hud.showQuestNews(moved({ questId: 'cracked-skulls', progress: [2] }));
-    hud.renderQuests(log, undefined);
+    hud.renderQuests(log, undefined, undefined);
     expect(listed()).toEqual(['cracked-skulls', 'follow-through-task', 'restless-graves']);
 
     more.click();
     expect([hud.isWindowOpen('quests'), named('onWindowOpened')]).toEqual([true, [['quests']]]);
     hud.closeWindow('quests');
-    hud.renderQuests({ active: log.active.slice(0, 3), done: [] }, undefined);
+    hud.renderQuests({ active: log.active.slice(0, 3), done: [] }, undefined, undefined);
     expect([$('.hud-tracker__held').textContent, more.classList.contains('hidden')]).toEqual(['3/10', true]);
   });
 
@@ -1098,7 +1121,7 @@ describe("a mouse's HUD", () => {
     const { hud, $ } = makeHUD();
     const bounty = { day: 3, land: 'EdariaArena', monsterKind: 'ghost', objective: 'driveOff', count: 6, reward: { coins: 72 } } as const;
     wall = boardTurnsAt(3) - HOUR_MS;
-    hud.renderQuests({ active: [{ questId: bountyIdOf(bounty), progress: [2], definition: bounty }], done: [] }, undefined);
+    hud.renderQuests({ active: [{ questId: bountyIdOf(bounty), progress: [2], definition: bounty }], done: [] }, undefined, undefined);
     const tracker = $('.hud-tracker__expires');
     const log = $('.hud-quest__expires');
     const says = () => [tracker.textContent, log.textContent];
@@ -1116,7 +1139,7 @@ describe("a mouse's HUD", () => {
     const { hud, $, button } = makeHUD();
     const tracker = $('.hud-tracker');
     const beside = () => (tracker.classList.contains('hidden') ? undefined : hud.root.style.getPropertyValue('--hud-tracker-beside'));
-    hud.renderQuests({ active: [{ questId: 'restless-graves', progress: [2] }], done: [] }, undefined);
+    hud.renderQuests({ active: [{ questId: 'restless-graves', progress: [2] }], done: [] }, undefined, undefined);
     hud.setViewport(1920, 1080);
     expect(beside()).toBe('0px');
     hud.setCarrierPanelOpen(true);
@@ -1142,7 +1165,7 @@ describe("a mouse's HUD", () => {
     const marked = () => hud.root.classList.contains('hud--tracker-shown');
     hud.setViewport(1280, 720);
     expect(marked()).toBe(false);
-    hud.renderQuests({ active: [{ questId: 'restless-graves', progress: [2] }], done: [] }, undefined);
+    hud.renderQuests({ active: [{ questId: 'restless-graves', progress: [2] }], done: [] }, undefined, undefined);
     expect(marked()).toBe(true);
     hud.setCarrierPanelOpen(true);
     expect(marked()).toBe(false);
@@ -1194,7 +1217,7 @@ describe("a mouse's HUD", () => {
       hud.renderTarget({ entity: { ...ghost }, health, effects: [{ effectId: 'challenged', endsAtMs: 6000 }], channel: undefined, raise: undefined }, false);
       hud.renderPlayers(['Bren', 'Tester'], { own: 'Tester', target: undefined });
       hud.renderCharacter(inventory, FIGHTER, undefined);
-      hud.renderQuests({ active: [{ questId: 'fighter-trial', progress: [0] }], done: [] }, undefined);
+      hud.renderQuests({ active: [{ questId: 'fighter-trial', progress: [0] }], done: [] }, undefined, undefined);
       hud.renderChat(history);
       hud.tick(clock, NO_CLOCK);
     };
@@ -1301,7 +1324,7 @@ describe('the Character window', () => {
     vi.restoreAllMocks();
   });
 
-  it("lays the doll on the bag's columns, armour down the first, the neck, the bracelets, and the shoulders down the last, the hands under the body, and the bag's items at their places", () => {
+  it("lays the doll on the bag's columns at 8 and at 6, the head to the feet down the first in the body's order, the neck, the hands, and the bracelets down the last, the main and the off hand under the body, and the bag's items at their places", () => {
     const { hud, $, named } = makeHUD();
     const rare: ItemInstance = { ...item('cap'), rarity: 'rare', affixes: [{ affixId: 'health', value: 4 }] };
     hud.renderCharacter(
@@ -1309,8 +1332,9 @@ describe('the Character window', () => {
         coins: 107,
         equipped: { head: rare, mainHand: item('cudgel'), bracelet1: item('bracelet') },
         bag: [
-          { place: 5, item: { ...item('dagger'), rarity: 'magic' } },
+          { place: 5, item: { ...item('dagger'), rarity: 'uncommon' } },
           { place: 0, item: item('moonstone') },
+          { place: 2, item: { ...item('cap', 'wimple'), tier: 3, rarity: 'epic', line: 'healer' } },
         ],
       },
       FIGHTER,
@@ -1318,20 +1342,23 @@ describe('the Character window', () => {
     );
     expect($('.hud-purse').textContent).toBe('Your purse107c');
     const grid = (node: HTMLElement): string => `${node.style.gridColumn} ${node.style.gridRow}`;
-    const slots = ['head', 'chest', 'hands', 'legs', 'feet', 'neck', 'bracelet1', 'bracelet2', 'shoulders', 'mainHand', 'offHand'];
+    const slots = ['head', 'shoulders', 'chest', 'legs', 'feet', 'neck', 'hands', 'bracelet1', 'bracelet2', 'mainHand', 'offHand'];
     expect(slots.map((slot) => grid(slotPlace(hud.root, slot)))).toEqual(['1 1', '1 2', '1 3', '1 4', '1 5', '8 1', '8 2', '8 3', '8 4', '4 5', '5 5']);
     expect(grid(hud.portraits.body)).toBe('2 / 8 1 / 5');
+    const finger = makeHUD(true).hud;
+    expect(slots.map((slot) => grid(slotPlace(finger.root, slot)))).toEqual(['1 1', '1 2', '1 3', '1 4', '1 5', '6 1', '6 2', '6 3', '6 4', '3 5', '4 5']);
+    expect(grid(finger.portraits.body)).toBe('2 / 6 1 / 5');
     expect(slots.map((slot) => slotPlace(hud.root, slot).textContent)).toEqual([
       '',
+      // A soft hyphen breaks Shoulders and Bracelet over two lines in their place, which English hyphenation leaves whole.
+      'Shoul­ders',
       'Chest',
-      'Hands',
       'Legs',
       'Feet',
       'Neck',
+      'Hands',
       '',
-      // A soft hyphen breaks each over two lines in its place, which English hyphenation leaves whole.
       'Brace­let',
-      'Shoul­ders',
       '',
       'Off hand',
     ]);
@@ -1345,13 +1372,14 @@ describe('the Character window', () => {
     ]);
     const cells = [...$('.hud-bag').children];
     expect(cells).toHaveLength(SOMNIO_PROTOCOL_CONSTANTS.maxBagItems);
-    expect([0, 1, 5].map((place) => [cells[place]!.querySelector('button')?.getAttribute('aria-label'), drawnIcon(cells[place]!)])).toEqual([
+    expect([0, 1, 2, 5].map((place) => [cells[place]!.querySelector('button')?.getAttribute('aria-label'), drawnIcon(cells[place]!)])).toEqual([
       ['Moonstone', ITEM_ICONS.moonstone],
       [undefined, undefined],
+      ['Linen wimple', WARDROBE_LINE_ICONS.cap.healer[3]],
       ['Dagger', ITEM_ICONS.dagger],
     ]);
     // Rarity colours are the loot markers' on the ground.
-    expect(hud.root.style.getPropertyValue('--hud-rarity-magic')).toBe('#7f9bff');
+    expect(hud.root.style.getPropertyValue('--hud-rarity-uncommon')).toBe('#7aea4b');
 
     $('.hud-purse').dispatchEvent(new Event('dblclick'));
     $('.hud-purse').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
@@ -1389,7 +1417,7 @@ describe('the Character window', () => {
     const { hud, $ } = makeHUD();
     const sword: ItemInstance = {
       ...item('sword'),
-      rarity: 'magic',
+      rarity: 'uncommon',
       affixes: [
         { affixId: 'damage', value: 2 },
         { affixId: 'swing-speed', value: 5 },
@@ -1436,6 +1464,21 @@ describe('the Character window', () => {
     expect(says().at(-1)).toEqual(['Mending', 'Health a mend | 15 | +5 ranks']);
     hud.renderCharacter(carrying(), { role: 'mystic', ranks: [] }, undefined);
     expect(says().at(-1)).toEqual(['Warding', 'Ward strength | 100%']);
+
+    // A piece of the role's set counts toward it, its first step taking hold at two, Ward's included in Ward strength.
+    hud.renderCharacter(carrying({ worn: setOf(1, 'mystic') }), { role: 'mystic', ranks: [] }, undefined);
+    expect(says().slice(-2)).toEqual([['Warding', 'Ward strength | 100%'], ["Mystics' set (1/6)"]]);
+    hud.renderCharacter(carrying({ worn: setOf(2, 'mystic') }), { role: 'mystic', ranks: [] }, undefined);
+    expect(says().slice(-2)).toEqual([
+      ['Warding', 'Ward strength | 125%'],
+      ["Mystics' set (2/6)", '(2) Ward holds a quarter more. | '],
+    ]);
+    // A piece in every armour and jewellery slot still counts to the set's six.
+    hud.renderCharacter(carrying({ worn: setOf(9, 'mystic') }), { role: 'mystic', ranks: [] }, undefined);
+    expect(says().at(-1)?.[0]).toBe("Mystics' set (6/6)");
+    // Another role's pieces count toward nothing.
+    hud.renderCharacter(carrying({ worn: setOf(2, 'healer') }), { role: 'mystic', ranks: [] }, undefined);
+    expect(says().at(-1)).toEqual(['Warding', 'Ward strength | 100%']);
   });
 
   it("shows an item's tip with its icon on a mouse resting on it, with how a double click or a right click acts", () => {
@@ -1445,7 +1488,7 @@ describe('the Character window', () => {
     hover(itemIn(bagPlace(hud.root, 0)));
     expect(tipSays(hud.root)).toEqual([
       'Wand',
-      'Plain',
+      'Common',
       'Off hand',
       'In the off hand, it lets a Mystic use their abilities.',
       'Sells for 40c',
@@ -1475,19 +1518,19 @@ describe('the Character window', () => {
     const { hud, button } = makeHUD();
     const trousers: ItemInstance = {
       ...item('trousers'),
-      rarity: 'magic',
+      rarity: 'uncommon',
       affixes: [
         { affixId: 'health', value: 3 },
         { affixId: 'guard', value: 2 },
       ],
     };
-    const bracelet: ItemInstance = { ...item('bracelet'), rarity: 'magic', affixes: [{ affixId: 'damage', value: 2 }] };
+    const bracelet: ItemInstance = { ...item('bracelet'), rarity: 'uncommon', affixes: [{ affixId: 'damage', value: 2 }] };
     hud.renderCharacter(carrying({ bag: [trousers, bracelet] }), FIGHTER, undefined);
     button('Character').click();
     hover(itemIn(bagPlace(hud.root, 0)));
     expect(tipSays(hud.root)).toEqual([
       'Field trousers of the Bulwark',
-      'Magic',
+      'Uncommon',
       'Legs',
       '+9 Health',
       '+2 Guard',
@@ -1497,7 +1540,7 @@ describe('the Character window', () => {
     hover(itemIn(bagPlace(hud.root, 1)));
     expect(tipSays(hud.root)).toEqual([
       'Dispatch wristband of Might',
-      'Magic',
+      'Uncommon',
       'Brace­let',
       '+3 damage',
       'Sells for 38c',
@@ -1514,7 +1557,7 @@ describe('the Character window', () => {
       hud.root.querySelector<HTMLButtonElement>('[data-tab="items"]')!.click();
       point(itemIn(bagPlace(hud.root, 0)), 'pointerdown', { pointerType: 'touch' });
       vi.advanceTimersByTime(FINGER_HOLD_MS);
-      expect(tipSays(hud.root)).toEqual(['Wand', 'Plain', 'Off hand', 'In the off hand, it lets a Mystic use their abilities.', 'Sells for 40c']);
+      expect(tipSays(hud.root)).toEqual(['Wand', 'Common', 'Off hand', 'In the off hand, it lets a Mystic use their abilities.', 'Sells for 40c']);
     } finally {
       vi.useRealTimers();
     }
@@ -1566,13 +1609,13 @@ describe('the Character window', () => {
 
   it("offers Sell on a finger's card at the shop, named for the item, and greys it out while a trade holds the lock", () => {
     const { hud, $, named } = makeHUD(true);
-    const magic: ItemInstance = { ...item('sword'), rarity: 'magic', affixes: [{ affixId: 'damage', value: 2 }] };
-    hud.renderCharacter(carrying({ bag: [magic, item('moonstone')] }), FIGHTER, true);
+    const uncommon: ItemInstance = { ...item('sword'), rarity: 'uncommon', affixes: [{ affixId: 'damage', value: 2 }] };
+    hud.renderCharacter(carrying({ bag: [uncommon, item('moonstone')] }), FIGHTER, true);
     pointerPress(itemIn(bagPlace(hud.root, 0)), 'touch');
     expect(cardSays(hud.root)?.slice(-3)).toEqual(['Drop', 'Equip', 'Sell for 88c']);
     const sell = (): HTMLButtonElement => $<HTMLButtonElement>('.hud-item-card button:last-child');
     expect([sell().getAttribute('aria-label'), sell().disabled]).toEqual(['Sell Short sword of Might for 88c', true]);
-    hud.renderCharacter(carrying({ bag: [magic, item('moonstone')] }), FIGHTER, false);
+    hud.renderCharacter(carrying({ bag: [uncommon, item('moonstone')] }), FIGHTER, false);
     expect(sell().disabled).toBe(false);
     pointerPress(sell(), 'touch');
     expect([named('onSell'), cardSays(hud.root)]).toEqual([[['sword-1']], undefined]);
@@ -1603,11 +1646,11 @@ describe('the Character window', () => {
 
   it("opens an item's card on a finger's tap, Drop and Equip on a carried item and Unequip on a worn one, each doing what it says", () => {
     const { hud, $, named } = makeHUD(true);
-    const magic: ItemInstance = { ...item('sword'), rarity: 'magic', affixes: [{ affixId: 'damage', value: 2 }] };
-    hud.renderCharacter(carrying({ worn: [item('cudgel')], bag: [magic, item('moonstone'), item('cap')] }), FIGHTER, undefined);
+    const uncommon: ItemInstance = { ...item('sword'), rarity: 'uncommon', affixes: [{ affixId: 'damage', value: 2 }] };
+    hud.renderCharacter(carrying({ worn: [item('cudgel')], bag: [uncommon, item('moonstone'), item('cap')] }), FIGHTER, undefined);
     const sword = itemIn(bagPlace(hud.root, 0));
     pointerPress(sword, 'touch');
-    expect(cardSays(hud.root)).toEqual(['Short sword of Might', 'Magic', 'Main hand', '13 damage, 24 balance a swing', 'Sells for 88c', 'Drop', 'Equip']);
+    expect(cardSays(hud.root)).toEqual(['Short sword of Might', 'Uncommon', 'Main hand', '13 damage, 24 balance a swing', 'Sells for 88c', 'Drop', 'Equip']);
     expect([sword.getAttribute('aria-expanded'), $('.hud-item-card').getAttribute('aria-label')]).toEqual(['true', 'Short sword of Might']);
     pointerPress($('.hud-item-card button:last-child'), 'touch');
     expect([named('onEquip'), cardSays(hud.root), sword.getAttribute('aria-expanded')]).toEqual([[['sword-1']], undefined, 'false']);
@@ -1646,6 +1689,28 @@ describe('the Character window', () => {
     expect(cardSays(hud.root)).toBeUndefined();
   });
 
+  it("keeps where a card's lines were scrolled to as a new inventory opens it again on its item, and starts another item's at the top", () => {
+    const { hud, $ } = makeHUD(true);
+    const inventory = () => carrying({ bag: [item('cap'), item('boots')] });
+    hud.renderCharacter(inventory(), FIGHTER, undefined);
+    pointerPress(itemIn(bagPlace(hud.root, 0)), 'touch');
+    // `happy-dom` lays nothing out, so the lines are given a browser's scroll, which a hidden card takes none of.
+    const lines = $('.hud-item-card__lines');
+    const shown = () => !$('.hud-item-card').classList.contains('hidden');
+    let offset = 0;
+    Object.defineProperty(lines, 'scrollTop', {
+      get: () => (shown() ? offset : 0),
+      set: (value: number) => {
+        if (shown()) offset = value;
+      },
+    });
+    lines.scrollTop = 40;
+    hud.renderCharacter(inventory(), FIGHTER, undefined);
+    expect([cardSays(hud.root)?.[0], lines.scrollTop]).toEqual(['Courier straw hat', 40]);
+    pointerPress(itemIn(bagPlace(hud.root, 1)), 'touch');
+    expect([cardSays(hud.root)?.[0], lines.scrollTop]).toEqual(['Trail boots', 0]);
+  });
+
   it('opens a card from the keyboard with its button focused, and hands the keyboard back to the item when Escape closes it', () => {
     const { hud, $ } = makeHUD();
     hud.renderCharacter(carrying({ worn: [item('cudgel')] }), FIGHTER, undefined);
@@ -1677,7 +1742,7 @@ describe('the Character window', () => {
     const bag = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxBagItems }, (_, index) => item('cap', `cap-${index}`));
     hud.renderCharacter(carrying({ worn: [item('cudgel')], bag }), FIGHTER, undefined);
     pointerPress(itemIn(slotPlace(hud.root, 'mainHand')), 'touch');
-    expect(cardSays(hud.root)).toEqual(['Cudgel', 'Plain', 'Main hand', '8 damage, 18 balance a swing', 'Sells for 15c', 'Your bag is full.', 'Unequip']);
+    expect(cardSays(hud.root)).toEqual(['Cudgel', 'Common', 'Main hand', '8 damage, 18 balance a swing', 'Sells for 15c', 'Your bag is full.', 'Unequip']);
     expect($<HTMLButtonElement>('.hud-item-card button').disabled).toBe(true);
 
     hud.renderCharacter(carrying({ worn: [item('cudgel')], bag: bag.slice(1) }), FIGHTER, undefined);
@@ -1768,6 +1833,118 @@ describe('the Character window', () => {
       'Fits only the Legs slot.',
       true,
     ]);
+  });
+
+  describe("another role's set piece", () => {
+    const wimple: ItemInstance = { id: 'wimple-1', ...rollSetPiece('cap', 3, 'healer', () => 0.5) };
+    const HEALER_READER: LucidityMessage = { role: 'healer', ranks: [] };
+    /** Who alone can wear the set piece in a tip or a card, and whether it rules the reader out. */
+    const restriction = (part: Element | null): [string | null, boolean] | undefined => {
+      const fact = part?.querySelectorAll('.hud-tip__fact')[2];
+      return fact === undefined ? undefined : [fact.textContent, fact.classList.contains('hud-tip__fact--refused')];
+    };
+    /** The set's title and each of its steps in a tip or a card, each with whether it is lit. */
+    const setSays = (part: Element | null): [string | null, boolean][] =>
+      [...(part?.querySelectorAll('.hud-tip__line') ?? [])]
+        .filter((line) => /set \(|^\(\d\)/.test(line.textContent ?? ''))
+        .map((line) => [line.textContent, !line.classList.contains('hud-tip__line--off')]);
+    const tip = (root: HTMLElement) => root.querySelector('[role="tooltip"]');
+    const card = (root: HTMLElement) => root.querySelector('.hud-item-card');
+
+    it("says in red on its tip and card that only its line's role can wear it, and lists its set's steps unlit", () => {
+      const { hud, button } = makeHUD();
+      hud.renderCharacter(carrying({ bag: [wimple] }), FIGHTER, undefined);
+      button('Character').click();
+      hover(itemIn(bagPlace(hud.root, 0)));
+      const unlit: [string, boolean][] = [
+        ["Healers' set (0/6)", true],
+        ['(2) Renewal lasts 4 s longer.', false],
+        ["(4) Deep mend's channel is a third shorter.", false],
+        ['(6) Radiance heals a third more.', false],
+      ];
+      expect([restriction(tip(hud.root)), setSays(tip(hud.root))]).toEqual([['Healers only', true], unlit]);
+      itemIn(bagPlace(hud.root, 0)).click();
+      expect([restriction(card(hud.root)), setSays(card(hud.root))]).toEqual([['Healers only', true], unlit]);
+    });
+
+    it('counts the pieces of its set a reader of its line wears, lighting each step they reach, and at most six', () => {
+      const { hud, button } = makeHUD();
+      hud.renderCharacter(carrying({ worn: setOf(3, 'healer'), bag: [wimple] }), HEALER_READER, undefined);
+      button('Character').click();
+      hover(itemIn(bagPlace(hud.root, 0)));
+      expect([restriction(tip(hud.root)), setSays(tip(hud.root))]).toEqual([
+        ['Healers only', false],
+        [
+          ["Healers' set (3/6)", true],
+          ['(2) Renewal lasts 4 s longer.', true],
+          ["(4) Deep mend's channel is a third shorter.", false],
+          ['(6) Radiance heals a third more.', false],
+        ],
+      ]);
+      // The set follows the stat lines, and what Mercus pays and the equip hint close the tip.
+      const said = [...(tip(hud.root)?.querySelectorAll('.hud-tip__line') ?? [])].map((line) => line.textContent ?? '');
+      expect(said.slice(said.indexOf('(6) Radiance heals a third more.') + 1)).toEqual([
+        expect.stringMatching(/^Sells for /),
+        'Right-click or double-click to equip.',
+      ]);
+
+      hud.renderCharacter(carrying({ worn: setOf(9, 'healer'), bag: [wimple] }), HEALER_READER, undefined);
+      itemIn(bagPlace(hud.root, 0)).click();
+      expect(setSays(card(hud.root))).toEqual([
+        ["Healers' set (6/6)", true],
+        ['(2) Renewal lasts 4 s longer.', true],
+        ["(4) Deep mend's channel is a third shorter.", true],
+        ['(6) Radiance heals a third more.', true],
+      ]);
+    });
+
+    it('greys out Equip on its card, saying who can wear it, keeps Drop, and leaves the equip hint off its tip', () => {
+      const { hud, $, button, named } = makeHUD();
+      hud.renderCharacter(carrying({ bag: [wimple] }), FIGHTER, undefined);
+      button('Character').click();
+      hover(itemIn(bagPlace(hud.root, 0)));
+      expect(tipSays(hud.root)).not.toContain('Right-click or double-click to equip.');
+      itemIn(bagPlace(hud.root, 0)).click();
+      expect(restriction(card(hud.root))).toEqual(['Healers only', true]);
+      expect(cardSays(hud.root)?.slice(-3)).toEqual(['Only Healers can wear this.', 'Drop', 'Equip']);
+      expect([...hud.root.querySelectorAll<HTMLButtonElement>('.hud-item-card button')].map((node) => [node.textContent, node.disabled])).toEqual([
+        ['Drop', false],
+        ['Equip', true],
+      ]);
+      $<HTMLButtonElement>('.hud-item-card button:last-child').click();
+      expect(named('onEquip')).toEqual([]);
+    });
+
+    it('refuses it to a double click, a drag onto a slot, and a worn piece dragged onto its place, saying who can wear it, but moves it within the bag', () => {
+      const { hud, named } = makeHUD();
+      hud.renderCharacter(carrying({ worn: [item('cap')], bag: [wimple] }), FIGHTER, undefined);
+      doubleClick(itemIn(bagPlace(hud.root, 0)));
+      expect([named('onEquip'), refusal(hud.root), bagPlace(hud.root, 0).classList.contains('hud-place--shake')]).toEqual([
+        [],
+        'Only Healers can wear this.',
+        true,
+      ]);
+
+      lift(itemIn(bagPlace(hud.root, 0)), slotPlace(hud.root, 'head'));
+      const ghost = hud.root.querySelector<HTMLElement>('.hud-ghost')!;
+      expect([hud.root.querySelectorAll('.hud-place--fits').length, ghost.querySelector('.hud-ghost__caption--refuse')?.textContent]).toEqual([
+        0,
+        'Healers only',
+      ]);
+      point(document.body, 'pointerup', { clientX: 60, clientY: 70 });
+      vi.restoreAllMocks();
+      expect([named('onEquip'), refusal(hud.root)]).toEqual([[], 'Only Healers can wear this.']);
+
+      carry(itemIn(slotPlace(hud.root, 'head')), bagPlace(hud.root, 0));
+      expect([named('onMoveItem'), refusal(hud.root), bagPlace(hud.root, 0).classList.contains('hud-place--shake')]).toEqual([
+        [],
+        'Only Healers can wear this.',
+        true,
+      ]);
+
+      carry(itemIn(bagPlace(hud.root, 0)), bagPlace(hud.root, 9));
+      expect(named('onMoveItem')).toEqual([['wimple-1', 9]]);
+    });
   });
 
   it('puts a worn item away at the place it is let go on, and refuses a full bag where the item there does not fit its slot', () => {
@@ -2059,7 +2236,7 @@ describe("a finger's HUD", () => {
     const shownQuests = () =>
       [...$('.hud-tracker__list').children].filter((node) => !node.classList.contains('hidden')).map((node) => node.getAttribute('data-quest'));
     hud.showQuestNews(moved(log.active[1]!));
-    hud.renderQuests(log, undefined);
+    hud.renderQuests(log, undefined, undefined);
     const fold = $<HTMLButtonElement>('.hud-tracker__fold');
     expect([shownQuests(), fold.textContent, hud.questTracker.folded]).toEqual([['cracked-skulls'], '+2 more', true]);
     fold.click();
@@ -2075,11 +2252,11 @@ describe("a finger's HUD", () => {
     expect(fold.classList.contains('hidden')).toBe(true);
     $<HTMLButtonElement>('.hud-tracker__head').click();
     // One quest held has nothing more to unfold.
-    hud.renderQuests({ active: [log.active[0]!], done: [] }, undefined);
+    hud.renderQuests({ active: [log.active[0]!], done: [] }, undefined, undefined);
     expect(fold.classList.contains('hidden')).toBe(true);
 
     // Past the 3 quests listed, unfolding shows the 3 and "+N more" for the rest.
-    hud.renderQuests({ active: [...log.active, { questId: 'into-the-crypt', progress: [0] }], done: [] }, undefined);
+    hud.renderQuests({ active: [...log.active, { questId: 'into-the-crypt', progress: [0] }], done: [] }, undefined, undefined);
     const more = $('.hud-tracker__more');
     expect([shownQuests(), fold.textContent, more.classList.contains('hidden')]).toEqual([['restless-graves'], '+2 more', true]);
     fold.click();
@@ -2251,6 +2428,14 @@ describe("the HUD's tip", () => {
     hover(button('Cleave'));
     expect(tipSays(hud.root)?.slice(2, 6)).toEqual(['16 Balance', 'Instant', '6 s cooldown', 'Nightmares in reach, in front of you']);
     expect(tipSays(hud.root)?.at(-1)).toBe('Needs a weapon or an empty main hand');
+
+    // The set worn shortens what its steps change: the Fighters' six pieces Lunge's cooldown, the Healers' four Deep mend's channel.
+    hud.renderAbilities([ready('lunge', 1, setBonusesOf(carrying({ worn: setOf(6, 'fighter') }).equipped, 'fighter'))]);
+    hover(button('Lunge'));
+    expect(tipSays(hud.root)?.slice(2, 5)).toEqual(['12 Balance', 'Instant', '6.67 s cooldown']);
+    hud.renderAbilities([ready('deep-mend', 2, setBonusesOf(carrying({ worn: setOf(4, 'healer') }).equipped, 'healer'))]);
+    hover(button('Deep mend'));
+    expect(tipSays(hud.root)?.slice(2, 5)).toEqual(['18 Spirit', '0.9 s channel', '6 s cooldown']);
   });
 
   it("gives an area ability round dreamers its reach centre to centre, the rule's own number, and one round nightmares its reach beyond contact", () => {

@@ -1,10 +1,10 @@
-import { RARITIES, ROLES } from '@somnio/protocol';
+import { ROLES } from '@somnio/protocol';
 import { describe, expect, it } from 'vitest';
 import { affix } from '../src/affixes.ts';
 import { buildSpaceCollision, isLegalMove } from '../src/collision.ts';
 import { SOMNIO_CONSTANTS } from '../src/constants.ts';
 import { hashString, seededSequence } from '../src/hash.ts';
-import { baseItem } from '../src/items.ts';
+import { NEUTRAL_RARITIES, baseItem, isSetTier, isWardrobeBase } from '../src/items.ts';
 import { distance } from '../src/geometry.ts';
 import { headingFromVector } from '../src/heading.ts';
 import {
@@ -12,6 +12,7 @@ import {
   PICKUP_REACH,
   QUEST_GEAR_RARITIES,
   SCATTER_DISTANCE,
+  SET_PIECE_CHANCE,
   THROW_DISTANCE,
   droppableBases,
   rollDrops,
@@ -21,8 +22,9 @@ import {
   usableBy,
   withinPickupReach,
 } from '../src/loot.ts';
-import { MONSTER_KINDS } from '../src/monsterKinds.ts';
+import { BOSS_MOVES, MONSTER_KINDS } from '../src/monsterKinds.ts';
 import { PATHFINDING } from '../src/pathfinding.ts';
+import { QUESTS } from '../src/quests.ts';
 import { TEST_REGISTRY, outdoorSector } from './support/worldFixture.ts';
 
 const SAMPLES = 20_000;
@@ -40,8 +42,8 @@ describe.each(['nightmare', 'elite', 'boss'] as const)('rollDrops for a foe of r
   });
 
   it('weighs each rarity as the odds say', () => {
-    const total = RARITIES.reduce((sum, rarity) => sum + odds.rarities[rarity], 0);
-    for (const rarity of RARITIES) {
+    const total = NEUTRAL_RARITIES.reduce((sum, rarity) => sum + odds.rarities[rarity], 0);
+    for (const rarity of NEUTRAL_RARITIES) {
       expect(drops.filter((drop) => drop.rarity === rarity).length / drops.length, rarity).toBeCloseTo(odds.rarities[rarity] / total, 1);
     }
   });
@@ -76,7 +78,7 @@ describe('rollDrops for a foe of tier 3', () => {
 describe('DROP_ODDS', () => {
   const rareShare = (rank: keyof typeof DROP_ODDS): number => {
     const { rarities } = DROP_ODDS[rank];
-    return rarities.rare / RARITIES.reduce((sum, rarity) => sum + rarities[rarity], 0);
+    return rarities.rare / NEUTRAL_RARITIES.reduce((sum, rarity) => sum + rarities[rarity], 0);
   };
 
   it('gives an elite more drops than an ordinary nightmare, and more of them rare', () => {
@@ -118,19 +120,69 @@ describe('smart loot', () => {
   });
 });
 
+describe('set pieces', () => {
+  it.each(ROLES)("makes about half a boss's armour and jewellery for a %s a tier-3 epic of their line, and never a weapon", (role) => {
+    const random = seededSequence(hashString(`set pieces ${role}`));
+    const drops = Array.from({ length: SAMPLES }, () => rollDrops(3, 'boss', role, random)).flat();
+    const wardrobe = drops.filter((drop) => isWardrobeBase(drop.baseId));
+    const epics = drops.filter((drop) => drop.rarity === 'epic');
+    expect(epics.length / wardrobe.length).toBeCloseTo(SET_PIECE_CHANCE, 1);
+    expect(epics.every((drop) => isWardrobeBase(drop.baseId) && drop.tier === 3 && drop.line === role && drop.affixes.length === 4)).toBe(true);
+    expect(drops.filter((drop) => drop.rarity !== 'epic').every((drop) => drop.line === undefined)).toBe(true);
+  });
+
+  it('makes none for a dreamer with no role, nor from any foe but a boss', () => {
+    const random = seededSequence(hashString('no set pieces'));
+    const rolls = [
+      () => rollDrops(3, 'boss', undefined, random),
+      ...ROLES.flatMap((role) => [() => rollDrops(3, 'nightmare', role, random), () => rollDrops(3, 'elite', role, random)]),
+    ];
+    for (const roll of rolls) {
+      expect(
+        Array.from({ length: SAMPLES }, roll)
+          .flat()
+          .some((drop) => drop.rarity === 'epic' || drop.line !== undefined),
+      ).toBe(false);
+    }
+  });
+});
+
 describe('rollQuestGear', () => {
-  it('rolls an item at the tier, of a base the role can use, at a rarity by the weights, never plain', () => {
+  it.each(ROLES)('pays a %s a set piece reward as an epic armour or jewellery piece of their line', (role) => {
+    const random = seededSequence(hashString(`quest set piece ${role}`));
+    const rolled = Array.from({ length: SAMPLES }, () => rollQuestGear(3, role, random, { setPiece: true }));
+    expect(rolled.every((item) => item.rarity === 'epic' && item.line === role && item.tier === 3 && isWardrobeBase(item.baseId))).toBe(true);
+  });
+
+  it('pays a dreamer with no role a set piece reward as any other gear', () => {
+    const random = seededSequence(hashString('quest set piece without a role'));
+    const rolled = Array.from({ length: SAMPLES }, () => rollQuestGear(3, undefined, random, { setPiece: true }));
+    expect(rolled.some((item) => item.rarity === 'epic' || item.line !== undefined)).toBe(false);
+  });
+
+  it('rolls an item at the tier, of a base the role can use, at a rarity by the weights, never common', () => {
     const random = seededSequence(hashString('quest gear'));
     const rolled = Array.from({ length: SAMPLES }, () => rollQuestGear(3, 'mystic', random));
     expect(rolled.every((item) => item.tier === 3 && usableBy(item.baseId, 'mystic') && droppableBases(3).includes(item.baseId))).toBe(true);
     expect(rolled.filter((item) => item.rarity === 'rare').length / SAMPLES).toBeCloseTo(QUEST_GEAR_RARITIES.rare / 100, 1);
-    expect(rolled.some((item) => item.rarity === 'plain')).toBe(false);
+    expect(rolled.some((item) => item.rarity === 'common')).toBe(false);
   });
 
-  it('rolls at the rarity given in place of the weights, as a bounty pays a magic item', () => {
+  it('rolls at the rarity given in place of the weights, as a bounty pays an uncommon item', () => {
     const random = seededSequence(hashString('bounty gear'));
-    const rolled = Array.from({ length: SAMPLES }, () => rollQuestGear(3, 'fighter', random, 'magic'));
-    expect(rolled.every((item) => item.tier === 3 && item.rarity === 'magic' && usableBy(item.baseId, 'fighter'))).toBe(true);
+    const rolled = Array.from({ length: SAMPLES }, () => rollQuestGear(3, 'fighter', random, { gearRarity: 'uncommon' }));
+    expect(rolled.every((item) => item.tier === 3 && item.rarity === 'uncommon' && usableBy(item.baseId, 'fighter'))).toBe(true);
+  });
+});
+
+describe('set pieces in the data', () => {
+  // `rollSetPiece` throws outside `SET_TIERS`, so a boss or a set piece reward at another tier would throw in a space's step.
+  it('come only from a boss and a quest reward at a tier set pieces are made at', () => {
+    const bossTiers = Object.keys(BOSS_MOVES).map((kind) => [kind, MONSTER_KINDS[kind as keyof typeof BOSS_MOVES].tier] as const);
+    const rewardTiers = Object.entries(QUESTS).flatMap(([questId, quest]) => (quest.reward?.setPiece === true ? [[questId, quest.reward.gear] as const] : []));
+    expect(bossTiers.length).toBeGreaterThan(0);
+    expect(rewardTiers.length).toBeGreaterThan(0);
+    for (const [source, tier] of [...bossTiers, ...rewardTiers]) expect(tier !== undefined && isSetTier(tier), source).toBe(true);
   });
 });
 

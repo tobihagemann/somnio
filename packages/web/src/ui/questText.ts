@@ -1,6 +1,7 @@
 import { boardTurnsAt, heldQuest, isTeachingId, objectiveLines, roleLabelKey, teaching, turnInGrant } from '@somnio/core';
 import type { ActiveQuest, Bounty, ObjectiveLine, Quest, QuestReward } from '@somnio/core';
 import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
+import type { Role } from '@somnio/protocol';
 import type { QuestTurnedIn } from '@/client';
 import { bountyTitleIn, itemName, t } from '@/i18n';
 import { element } from './dom';
@@ -56,12 +57,21 @@ export function acceptedSaid(held: ActiveQuest): QuestAccepted {
 
 /**
  * What a quest pays, as a carrier's panel and the Quest log say it under what it asks: "Reward: 60c,
- * 30 practice toward Toughening, a piece of gear", or a bounty's "a magic item".
+ * 30 practice toward Toughening, a piece of gear", a bounty's "an uncommon item", or to a reader
+ * with a role, a set piece's "a piece of your role's set".
  */
-export function rewardNote(reward: QuestReward | undefined, study: string | undefined): HTMLElement[] {
-  const item = reward?.gear === undefined ? [] : [reward.gearRarity === 'magic' ? t('a magic item') : t('a piece of gear')];
-  const parts = [...paidParts(reward?.coins, reward?.practice, study), ...item];
+export function rewardNote(reward: QuestReward | undefined, study: string | undefined, role: Role | undefined): HTMLElement[] {
+  const item = rewardItem(reward, role);
+  const parts = [...paidParts(reward?.coins, reward?.practice, study), ...(item === undefined ? [] : [item])];
   return parts.length === 0 ? [] : [note(t('Reward: %@', parts.join(', ')))];
+}
+
+/** How a quest's reward says the item it pays, by the reader's role; `undefined` for a reward of no item. */
+function rewardItem(reward: QuestReward | undefined, role: Role | undefined): string | undefined {
+  if (reward?.gear === undefined) return undefined;
+  if (reward.setPiece === true && role !== undefined) return t("a piece of your role's set");
+  if (reward.gearRarity === 'uncommon') return t('an uncommon item');
+  return t('a piece of gear');
 }
 
 /** How full the quest log is, the quests held against its room, as the tracker and the Quest log say it: "4/10". */
@@ -115,7 +125,7 @@ export function turnInSaid({ held, study, coins, items }: QuestTurnedIn): QuestT
   return {
     title: questTitle(said, held.definition),
     paid: paid.join(' · '),
-    items: items.map(({ baseId, tier, rarity }) => ({ name: itemName(baseId, tier, t), rarity })),
+    items: items.map(({ baseId, tier, rarity, line }) => ({ name: itemName(baseId, tier, line, t), rarity })),
   };
 }
 

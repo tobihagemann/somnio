@@ -14,7 +14,7 @@ import type { ClientEntity, QuestNews, SpeechBubbleRequest, TargetMark } from '@
 import { GameplayTransport } from '@/transport';
 import { fakeSocketFactory } from './helpers/fakeSocket';
 import { TEST_REGISTRY, interiorSector, outdoorSector } from '../../core/test/support/worldFixture.ts';
-import { carrying, inventoryFrame, item } from './helpers/inventory';
+import { carrying, inventoryFrame, item, setOf } from './helpers/inventory';
 import { clientEntity, enterSpaceFrame, entityFrame, makeDoor, sectorFrame } from './helpers/worldFixture';
 import {
   NO_STATS,
@@ -1034,6 +1034,20 @@ describe('the Bag', () => {
     expect(rig.sent).toEqual([{ tag: 'moveItem', payload: { itemId: 'cap-0', place: 9 } }]);
   });
 
+  it("asks to change a worn piece for a set piece in the bag only for the set's role", () => {
+    const wimple = setOf(1, 'healer')[0]!;
+    const asked = (lucidity: SomnioMessage) => {
+      const rig = makeRig();
+      rig.controller.connectionState = 'attached';
+      rig.controller.dispatch(lucidity);
+      rig.controller.dispatch(inventoryFrame(carrying({ worn: [item('cap')], bag: [wimple] })));
+      rig.session.moveItem('cap-1', 0);
+      return rig.sent.filter(({ tag }) => tag === 'moveItem');
+    };
+    expect(asked(FIGHTER_KIT)).toEqual([]);
+    expect(asked(HEALER_KIT)).toEqual([{ tag: 'moveItem', payload: { itemId: 'cap-1', place: 0 } }]);
+  });
+
   it('puts nothing away into a full bag', () => {
     const rig = makeRig();
     rig.controller.connectionState = 'attached';
@@ -1100,13 +1114,13 @@ describe('the Bag', () => {
   it('announces what was dropped', () => {
     const rig = makeRig();
     rig.controller.dispatch(inventoryFrame(carrying({ bag: [item('cap')] })));
-    rig.controller.dispatch(inventoryFrame(carrying(), { dropped: { kind: 'item', baseId: 'cap', tier: 1, rarity: 'plain' } }));
-    expect(rig.controller.chatHistory).toEqual([{ kind: 'dropped', contents: { kind: 'item', baseId: 'cap', tier: 1, rarity: 'plain' } }]);
+    rig.controller.dispatch(inventoryFrame(carrying(), { dropped: { kind: 'item', baseId: 'cap', tier: 1, rarity: 'common' } }));
+    expect(rig.controller.chatHistory).toEqual([{ kind: 'dropped', contents: { kind: 'item', baseId: 'cap', tier: 1, rarity: 'common' } }]);
   });
 });
 
 describe('a drop', () => {
-  const DAGGER_DROP = { kind: 'item', baseId: 'dagger', tier: 1, rarity: 'magic' } as const;
+  const DAGGER_DROP = { kind: 'item', baseId: 'dagger', tier: 1, rarity: 'uncommon' } as const;
   const lootFrame = (lootId: string, at: { x: number; z: number }): SomnioMessage => ({ tag: 'loot', payload: { lootId, ...at, contents: DAGGER_DROP } });
   const pickUps = (rig: Rig) => rig.sent.filter((message) => message.tag === 'pickUp');
   const at = (rig: Rig) => rig.controller.entities.get('self')!.position;
@@ -2299,34 +2313,41 @@ describe('the shop', () => {
   it('announces what a trade bought, sold, or bought back, and not the coins it moved, among the item lines', () => {
     const { rig } = atMercus();
     rig.controller.dispatch(
-      inventoryFrame(carrying({ coins: 40, bag: [CUDGEL, DAGGER] }), { trade: { kind: 'bought', baseId: 'dagger', tier: 1, rarity: 'plain', coins: 60 } }),
+      inventoryFrame(carrying({ coins: 40, bag: [CUDGEL, DAGGER] }), { trade: { kind: 'bought', baseId: 'dagger', tier: 1, rarity: 'common', coins: 60 } }),
     );
     rig.controller.dispatch(
-      inventoryFrame(carrying({ coins: 70, bag: [CUDGEL] }), { trade: { kind: 'sold', baseId: 'dagger', tier: 1, rarity: 'plain', coins: 30 } }),
+      inventoryFrame(carrying({ coins: 70, bag: [CUDGEL] }), { trade: { kind: 'sold', baseId: 'dagger', tier: 1, rarity: 'common', coins: 30 } }),
     );
     rig.controller.dispatch(
-      inventoryFrame(carrying({ coins: 40, bag: [CUDGEL, DAGGER] }), { trade: { kind: 'boughtBack', baseId: 'dagger', tier: 1, rarity: 'plain', coins: 30 } }),
+      inventoryFrame(carrying({ coins: 40, bag: [CUDGEL, DAGGER] }), { trade: { kind: 'boughtBack', baseId: 'dagger', tier: 1, rarity: 'common', coins: 30 } }),
+    );
+    // A set piece is named by its line's design, so its line goes into the chat line.
+    rig.controller.dispatch(
+      inventoryFrame(carrying({ coins: 80, bag: [CUDGEL, DAGGER] }), {
+        trade: { kind: 'sold', baseId: 'cap', tier: 3, rarity: 'epic', line: 'healer', coins: 40 },
+      }),
     );
     expect(rig.controller.chatHistory).toEqual([
       { kind: 'bought', baseId: 'dagger', tier: 1, coins: 60 },
       { kind: 'sold', baseId: 'dagger', tier: 1, coins: 30 },
       { kind: 'boughtBack', baseId: 'dagger', tier: 1, coins: 30 },
+      { kind: 'sold', baseId: 'cap', tier: 3, line: 'healer', coins: 40 },
     ]);
-    expect(rig.controller.chatHistory.map(chatLineCategory)).toEqual(['itemInfo', 'itemInfo', 'itemInfo']);
+    expect(rig.controller.chatHistory.map(chatLineCategory)).toEqual(['itemInfo', 'itemInfo', 'itemInfo', 'itemInfo']);
   });
 
   it('holds what the shopkeeper sells back as each inventory frame says, and nothing once a frame leaves it out', () => {
     const { rig } = atMercus();
     expect(rig.session.buyBackItems).toEqual([]);
     rig.controller.dispatch(
-      inventoryFrame(carrying({ coins: 115 }), { trade: { kind: 'sold', baseId: 'cudgel', tier: 1, rarity: 'plain', coins: 15 } }, [
+      inventoryFrame(carrying({ coins: 115 }), { trade: { kind: 'sold', baseId: 'cudgel', tier: 1, rarity: 'common', coins: 15 } }, [
         CUDGEL,
         { ...DAGGER, baseId: 'lantern' as 'dagger' },
       ]),
     );
     expect(rig.session.buyBackItems).toEqual([CUDGEL]);
     rig.controller.dispatch(
-      inventoryFrame(carrying({ coins: 100, bag: [CUDGEL] }), { trade: { kind: 'boughtBack', baseId: 'cudgel', tier: 1, rarity: 'plain', coins: 15 } }),
+      inventoryFrame(carrying({ coins: 100, bag: [CUDGEL] }), { trade: { kind: 'boughtBack', baseId: 'cudgel', tier: 1, rarity: 'common', coins: 15 } }),
     );
     expect(rig.session.buyBackItems).toEqual([]);
   });
@@ -2343,7 +2364,7 @@ describe('the shop', () => {
 
     rig.now = 300;
     rig.controller.dispatch(
-      inventoryFrame(carrying({ coins: 40, bag: [CUDGEL, DAGGER] }), { trade: { kind: 'bought', baseId: 'dagger', tier: 1, rarity: 'plain', coins: 60 } }),
+      inventoryFrame(carrying({ coins: 40, bag: [CUDGEL, DAGGER] }), { trade: { kind: 'bought', baseId: 'dagger', tier: 1, rarity: 'common', coins: 60 } }),
     );
     const answered = repaints();
     rig.now = 799;
@@ -3081,7 +3102,7 @@ describe('a left press on a body', () => {
     rig.controller.dispatch({ tag: 'energy', payload: FULL });
     rig.controller.dispatch({
       tag: 'loot',
-      payload: { lootId: 'loot-1', x: 10, z: 11.02, contents: { kind: 'item', baseId: 'dagger', tier: 1, rarity: 'magic' } },
+      payload: { lootId: 'loot-1', x: 10, z: 11.02, contents: { kind: 'item', baseId: 'dagger', tier: 1, rarity: 'uncommon' } },
     });
     rig.session.runTick(0);
     rig.session.pressEntity(GUARD);
@@ -3899,11 +3920,17 @@ describe('abilities', () => {
     const rig = fighter();
     expect(rig.session.abilities).toEqual(['brace', 'lunge']);
     expect(rig.session.abilitySlots()).toEqual([
-      { abilityId: 'brace', rank: 1, refusal: undefined, cooldown: undefined },
-      { abilityId: 'lunge', rank: 2, refusal: 'recipient', cooldown: undefined },
+      { abilityId: 'brace', cooldownSeconds: 15, channelSeconds: undefined, refusal: undefined, cooldown: undefined },
+      { abilityId: 'lunge', cooldownSeconds: 8, channelSeconds: undefined, refusal: 'recipient', cooldown: undefined },
     ]);
     rig.session.select(GHOST);
-    expect(rig.session.abilitySlots()[1]).toEqual({ abilityId: 'lunge', rank: 2, refusal: undefined, cooldown: undefined });
+    expect(rig.session.abilitySlots()[1]).toEqual({
+      abilityId: 'lunge',
+      cooldownSeconds: 8,
+      channelSeconds: undefined,
+      refusal: undefined,
+      cooldown: undefined,
+    });
   });
 
   it.each<[string, (rig: Rig) => void]>([
@@ -3947,8 +3974,14 @@ describe('abilities', () => {
     // Lunge runs 8 s at rank 2, so 6 s left of it began 2 s ago.
     rig.controller.dispatch({ tag: 'cooldowns', payload: { globalSeconds: 0.5, cooldowns: [{ abilityId: 'lunge', seconds: 6 }] } });
     expect(rig.session.abilitySlots()).toEqual([
-      { abilityId: 'brace', rank: 1, refusal: undefined, cooldown: { startedAtMs: 750, endsAtMs: 1500, global: true } },
-      { abilityId: 'lunge', rank: 2, refusal: undefined, cooldown: { startedAtMs: -1000, endsAtMs: 7000, global: false } },
+      { abilityId: 'brace', cooldownSeconds: 15, channelSeconds: undefined, refusal: undefined, cooldown: { startedAtMs: 750, endsAtMs: 1500, global: true } },
+      {
+        abilityId: 'lunge',
+        cooldownSeconds: 8,
+        channelSeconds: undefined,
+        refusal: undefined,
+        cooldown: { startedAtMs: -1000, endsAtMs: 7000, global: false },
+      },
     ]);
     rig.now = 1500;
     rig.session.useAbility('brace');
@@ -3959,6 +3992,37 @@ describe('abilities', () => {
     expect(rig.session.abilitySlots()[1]!.cooldown).toBeUndefined();
     rig.session.useAbility('lunge');
     expect(uses(rig)).toEqual(['brace', 'lunge']);
+  });
+
+  it('times a cooldown by the set worn as it starts, and keeps its start through a later frame once a piece of the set is taken off', () => {
+    const rig = fighter();
+    rig.session.select(GHOST);
+    rig.controller.dispatch(inventoryFrame(carrying({ worn: setOf(6, 'fighter') })));
+    // Lunge runs 8 s at rank 2, a third shorter with the Fighters' six pieces.
+    const lunge = 16 / 3;
+    expect(rig.session.abilitySlots()[1]!.cooldownSeconds).toBeCloseTo(lunge);
+    rig.now = 1000;
+    rig.controller.dispatch({ tag: 'cooldowns', payload: { globalSeconds: 0.75, cooldowns: [{ abilityId: 'lunge', seconds: lunge }] } });
+    expect(rig.session.abilitySlots()[1]!.cooldown).toEqual({ startedAtMs: 1000, endsAtMs: 1000 + lunge * 1000, global: false });
+
+    rig.now = 2000;
+    rig.controller.dispatch(inventoryFrame(carrying({ worn: setOf(5, 'fighter') })));
+    expect(rig.session.abilitySlots()[1]!.cooldownSeconds).toBe(8);
+    rig.now = 3000;
+    rig.controller.dispatch({
+      tag: 'cooldowns',
+      payload: {
+        globalSeconds: 0.75,
+        cooldowns: [
+          { abilityId: 'brace', seconds: 15 },
+          { abilityId: 'lunge', seconds: lunge - 2 },
+        ],
+      },
+    });
+    const [brace, lunging] = rig.session.abilitySlots().map(({ cooldown }) => cooldown);
+    expect(brace).toEqual({ startedAtMs: 3000, endsAtMs: 18000, global: false });
+    expect(lunging?.startedAtMs).toBe(1000);
+    expect(lunging?.endsAtMs).toBeCloseTo(1000 + lunge * 1000);
   });
 
   it('runs its state hook as an ability comes in reach or leaves its cooldown, and not on a tick that changes neither', () => {
@@ -4176,7 +4240,7 @@ describe('a channel', () => {
     const rig = healer();
     rig.controller.dispatch({
       tag: 'loot',
-      payload: { lootId: 'loot-1', x: 8, z: 12, contents: { kind: 'item', baseId: 'dagger', tier: 1, rarity: 'magic' } },
+      payload: { lootId: 'loot-1', x: 8, z: 12, contents: { kind: 'item', baseId: 'dagger', tier: 1, rarity: 'uncommon' } },
     });
     tapGround(rig, { x: 10, z: 14 });
     ticks(rig, 0, 300);

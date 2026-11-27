@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
-import { inventoryMessage } from '@somnio/core';
+import { inventoryMessage, rollSetPiece } from '@somnio/core';
 import type { Character, Inventory, ItemInstance, Point, Sector } from '@somnio/core';
-import { plain } from '../../core/test/support/items.ts';
+import { common } from '../../core/test/support/items.ts';
 import { COINS, CUDGEL, MOONSTONE, arena, carrying, characterOf, energy, lucidity, payloads } from './support/combat.ts';
 import { collectMessages } from './support/frames.ts';
 import { attachPlayer, makeNPC } from './support/sectorFactory.ts';
@@ -11,10 +11,10 @@ const MERCUS = 'npc:TestSector/mercus';
 const PUGNAX = 'npc:TestSector/pugnax';
 const AT_MERCUS: Point = { x: 4, z: 5 };
 const AT_PUGNAX: Point = { x: 16, z: 5 };
-const DAGGER: ItemInstance = { id: '00000000-0000-7000-8000-000000000004', ...plain('dagger') };
+const DAGGER: ItemInstance = { id: '00000000-0000-7000-8000-000000000004', ...common('dagger') };
 const RARE_AMULET: ItemInstance = {
   id: '00000000-0000-7000-8000-000000000005',
-  ...plain('amulet'),
+  ...common('amulet'),
   rarity: 'rare',
   affixes: [
     { affixId: 'health', value: 4 },
@@ -27,7 +27,7 @@ const CUDGEL_IN_BAG = carrying({ coins: COINS, bag: [CUDGEL] });
 /** A bag with no room left, of caps. */
 const FULL_BAG: ItemInstance[] = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxBagItems }, (_, index) => ({
   id: `00000000-0000-7000-8000-1${String(index).padStart(11, '0')}`,
-  ...plain('cap'),
+  ...common('cap'),
 }));
 
 const SHOP_FLOOR: Partial<Sector> = {
@@ -46,17 +46,17 @@ function shop(at: Point = AT_MERCUS, options: { inventory?: Inventory; character
 type Shop = ReturnType<typeof shop>;
 
 describe('buying from the shopkeeper', () => {
-  it('takes the price from the purse and adds a plain one of the ware to the bag, in one frame that says what was bought', async () => {
+  it('takes the price from the purse and adds a common one of the ware to the bag, in one frame that says what was bought', async () => {
     const s = shop();
     s.world.space.handleBuy(MERCUS, 'dagger', s.dreamer.entityId);
-    expect(s.inventory()).toEqual({ coins: 40, equipped: { mainHand: CUDGEL }, bag: [{ place: 0, item: { id: expect.any(String), ...plain('dagger') } }] });
+    expect(s.inventory()).toEqual({ coins: 40, equipped: { mainHand: CUDGEL }, bag: [{ place: 0, item: { id: expect.any(String), ...common('dagger') } }] });
     const bought = s.inventory().bag[0]!;
     expect(await s.framesAfterJoin()).toEqual([
       {
         coins: 40,
         equipped: [{ slot: 'mainHand', item: CUDGEL }],
         bag: [bought],
-        trade: { kind: 'bought', baseId: 'dagger', tier: 1, rarity: 'plain', coins: 60 },
+        trade: { kind: 'bought', baseId: 'dagger', tier: 1, rarity: 'common', coins: 60 },
       },
     ]);
   });
@@ -64,7 +64,7 @@ describe('buying from the shopkeeper', () => {
   it('sells another of a ware the dreamer already carries', () => {
     const s = shop();
     s.world.space.handleBuy(MERCUS, 'cudgel', s.dreamer.entityId);
-    expect(s.inventory()).toEqual({ coins: 70, equipped: { mainHand: CUDGEL }, bag: [{ place: 0, item: { id: expect.any(String), ...plain('cudgel') } }] });
+    expect(s.inventory()).toEqual({ coins: 70, equipped: { mainHand: CUDGEL }, bag: [{ place: 0, item: { id: expect.any(String), ...common('cudgel') } }] });
   });
 
   it.each<[string, Point, string, string, { inventory?: Inventory; character?: Partial<Character> }]>([
@@ -86,17 +86,17 @@ describe('buying from the shopkeeper', () => {
 });
 
 describe('selling to the shopkeeper', () => {
-  it('buys a plain item from the bag for half its value, in one frame that says what was sold and holds it to buy back', async () => {
+  it('buys a common item from the bag for half its value, in one frame that says what was sold and holds it to buy back', async () => {
     const s = shop(AT_MERCUS, { inventory: CUDGEL_IN_BAG });
     s.world.space.handleSell(MERCUS, CUDGEL.id, s.dreamer.entityId);
     expect(s.inventory()).toEqual({ coins: 115, equipped: {}, bag: [] });
     expect(await s.framesAfterJoin()).toEqual([
-      { coins: 115, equipped: [], bag: [], trade: { kind: 'sold', baseId: 'cudgel', tier: 1, rarity: 'plain', coins: 15 }, buyBack: [CUDGEL] },
+      { coins: 115, equipped: [], bag: [], trade: { kind: 'sold', baseId: 'cudgel', tier: 1, rarity: 'common', coins: 15 }, buyBack: [CUDGEL] },
     ]);
   });
 
-  it('pays a plain sword 75', () => {
-    const sword: ItemInstance = { id: '00000000-0000-7000-8000-000000000006', ...plain('sword') };
+  it('pays a common sword 75', () => {
+    const sword: ItemInstance = { id: '00000000-0000-7000-8000-000000000006', ...common('sword') };
     const s = shop(AT_MERCUS, { inventory: carrying({ bag: [sword] }) });
     s.world.space.handleSell(MERCUS, sword.id, s.dreamer.entityId);
     expect(s.inventory().coins).toBe(75);
@@ -162,8 +162,8 @@ describe('buying back from the shopkeeper', () => {
   });
 
   it('says the tier of the item sold and bought back, not that of a like item worn', async () => {
-    const worn: ItemInstance = { id: '00000000-0000-7000-8000-000000000007', ...plain('tunic') };
-    const finer: ItemInstance = { id: '00000000-0000-7000-8000-000000000008', ...plain('tunic'), tier: 3 };
+    const worn: ItemInstance = { id: '00000000-0000-7000-8000-000000000007', ...common('tunic') };
+    const finer: ItemInstance = { id: '00000000-0000-7000-8000-000000000008', ...common('tunic'), tier: 3 };
     const s = shop(AT_MERCUS, { inventory: carrying({ worn: [worn], bag: [finer] }) });
     s.world.space.handleSell(MERCUS, finer.id, s.dreamer.entityId);
     s.world.space.handleBuyBack(MERCUS, finer.id, s.dreamer.entityId);
@@ -171,6 +171,18 @@ describe('buying back from the shopkeeper', () => {
       ['sold', 3],
       ['boughtBack', 3],
     ]);
+  });
+
+  it("says a set piece's line on what was sold and bought back, and gives it back with its line", async () => {
+    const wimple: ItemInstance = { id: '00000000-0000-7000-8000-000000000009', ...rollSetPiece('cap', 3, 'healer', () => 0.5) };
+    const s = shop(AT_MERCUS, { inventory: carrying({ coins: COINS, bag: [wimple] }) });
+    s.world.space.handleSell(MERCUS, wimple.id, s.dreamer.entityId);
+    s.world.space.handleBuyBack(MERCUS, wimple.id, s.dreamer.entityId);
+    expect((await s.framesAfterJoin()).map(({ trade }) => [trade?.kind, trade?.line])).toEqual([
+      ['sold', 'healer'],
+      ['boughtBack', 'healer'],
+    ]);
+    expect(s.inventory().bag).toEqual([{ place: 0, item: wimple }]);
   });
 
   it('leaves the frame without the list once he holds nothing to buy back', async () => {

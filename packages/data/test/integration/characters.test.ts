@@ -1,6 +1,6 @@
 import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { NO_LUCIDITY, NO_QUESTS, NO_STATS, fullPools, headingFromCardinal, plainInstance } from '@somnio/core';
+import { NO_LUCIDITY, NO_QUESTS, NO_STATS, fullPools, headingFromCardinal, commonInstance } from '@somnio/core';
 import type { Character, Inventory, Lucidity, QuestLog } from '@somnio/core';
 import { PostgresAccountRepository } from '../../src/repositories/accounts.ts';
 import { CharacterNameTakenError, PostgresCharacterRepository, hasBeenPlayed } from '../../src/repositories/characters.ts';
@@ -32,7 +32,7 @@ describe('character repository', () => {
 
   it('round-trips create and findByName with every energy field, the starting coins and items, and never played', async () => {
     const account = await accounts.create('alice@example.com', 'hash');
-    const kit: Inventory = { coins: 100, equipped: {}, bag: bagOf([plainInstance('cudgel')]) };
+    const kit: Inventory = { coins: 100, equipped: {}, bag: bagOf([commonInstance('cudgel')]) };
     const created = await characters.create(account.id, 'Alice the Bold', 'lumina', kit);
     const fetched = await characters.findByName('Alice the Bold');
     expect(fetched?.id).toBe(created.id);
@@ -58,11 +58,11 @@ describe('character repository', () => {
     const owner = await accounts.create('owner-a@example.com', 'h');
     const other = await accounts.create('owner-b@example.com', 'h');
     await characters.create(owner.id, 'ADMIN', 'vigils', NOTHING);
-    await expect(characters.create(other.id, 'admin', 'vigils', { coins: 100, equipped: {}, bag: bagOf([plainInstance('cudgel')]) })).rejects.toThrow(
+    await expect(characters.create(other.id, 'admin', 'vigils', { coins: 100, equipped: {}, bag: bagOf([commonInstance('cudgel')]) })).rejects.toThrow(
       CharacterNameTakenError,
     );
     // All-Cyrillic "АDMIN" slips past `name_normalized`; the confusable skeleton catches it.
-    await expect(characters.create(other.id, 'АDMIN', 'vigils', { coins: 100, equipped: {}, bag: bagOf([plainInstance('cudgel')]) })).rejects.toThrow(
+    await expect(characters.create(other.id, 'АDMIN', 'vigils', { coins: 100, equipped: {}, bag: bagOf([commonInstance('cudgel')]) })).rejects.toThrow(
       CharacterNameTakenError,
     );
     expect(await characters.findByAccount(other.id)).toEqual([]);
@@ -137,7 +137,7 @@ describe('character repository', () => {
   it('persists a checkpoint atomically and skips a stale one without touching the coins or the items', async () => {
     const account = await accounts.create('checkpoint-tester@example.com', 'stub');
     const original = await characters.create(account.id, 'Checkpoint', 'vigils', NOTHING);
-    const carried: Inventory = { coins: 100, equipped: { mainHand: plainInstance('cudgel') }, bag: [] };
+    const carried: Inventory = { coins: 100, equipped: { mainHand: commonInstance('cudgel') }, bag: [] };
 
     const fresh = {
       ...original,
@@ -261,8 +261,8 @@ describe('character repository', () => {
   it("deletes one of the account's characters with its rows, and not another account's", async () => {
     const owner = await accounts.create('deleter@example.com', 'h');
     const stranger = await accounts.create('stranger@example.com', 'h');
-    const doomed = await characters.create(owner.id, 'Doomed', 'vigils', { coins: 100, equipped: {}, bag: bagOf([plainInstance('cudgel')]) });
-    const keptKit: Inventory = { coins: 100, equipped: {}, bag: bagOf([plainInstance('cudgel')]) };
+    const doomed = await characters.create(owner.id, 'Doomed', 'vigils', { coins: 100, equipped: {}, bag: bagOf([commonInstance('cudgel')]) });
+    const keptKit: Inventory = { coins: 100, equipped: {}, bag: bagOf([commonInstance('cudgel')]) };
     const kept = await characters.create(owner.id, 'Kept', 'vigils', keptKit);
     const grown = {
       ...doomed,
@@ -270,7 +270,7 @@ describe('character repository', () => {
       quests: { active: [{ questId: 'follow-through-task' as const, progress: [1] }], done: ['fighter-trial' as const] },
       lastSeen: new Date(),
     };
-    expect(await characters.persistCheckpoint(grown, { coins: 100, equipped: {}, bag: bagOf([plainInstance('dagger')]) })).toBe(true);
+    expect(await characters.persistCheckpoint(grown, { coins: 100, equipped: {}, bag: bagOf([commonInstance('dagger')]) })).toBe(true);
 
     expect(await characters.delete(stranger.id, doomed.id)).toBe(false);
     expect(await characters.delete(owner.id, doomed.id)).toBe(true);

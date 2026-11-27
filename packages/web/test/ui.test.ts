@@ -1824,6 +1824,19 @@ describe('the service panel', () => {
       expect(p.buttons()).toEqual(['Turn in (disabled)', 'Close']);
       p.panel.render(memor(), { ranks: [] }, { active: [{ questId: 'into-the-crypt', progress: [1] }], done }, [], NOTHING, false, [], true, false);
       expect(p.buttons()).toEqual(['Turn in', 'Close']);
+      // To a dreamer with a role, it pays a piece of that role's set.
+      p.panel.render(
+        memor(),
+        { role: 'healer', ranks: [] },
+        { active: [{ questId: 'into-the-crypt', progress: [1] }], done },
+        [],
+        NOTHING,
+        false,
+        [],
+        true,
+        false,
+      );
+      expect(p.quest('into-the-crypt')).toContain("Reward: 250c, 60 practice, a piece of your role's set");
     });
   });
 
@@ -1848,7 +1861,7 @@ describe('the service panel', () => {
     it("lists the day's bounties by their land with what each asks and pays, and takes one", () => {
       const p = mount();
       show(p, NO_QUESTS);
-      expect(p.quest(bountyIdOf(ARENA))).toBe('Bounty: ArenaDrive off 6 Ghosts there.Reward: 72c, a magic itemTake the quest');
+      expect(p.quest(bountyIdOf(ARENA))).toBe('Bounty: ArenaDrive off 6 Ghosts there.Reward: 72c, an uncommon itemTake the quest');
       expect(p.quest(bountyIdOf(GRAVES))).toContain('Gather 4 cracked skulls from Skeleton Warriors.');
       expect(p.panel.root.querySelector('.service-heading')).toBeNull();
       expect(p.panel.root.querySelector('button[aria-label="Take Bounty: Graveyard. Gather 4 cracked skulls from Skeleton Warriors."]')).not.toBeNull();
@@ -1859,7 +1872,7 @@ describe('the service panel', () => {
     it('shows one taken with how far it has come, one done with its turn-in, greyed out while the bag is full, and one turned in as such', () => {
       const p = mount();
       show(p, { active: [held(ARENA, 2)], done: [bountyIdOf(GRAVES)] });
-      expect(p.quest(bountyIdOf(ARENA))).toBe('Bounty: ArenaTakenDrive off 6 Ghosts there. 2 of 6Reward: 72c, a magic item');
+      expect(p.quest(bountyIdOf(ARENA))).toBe('Bounty: ArenaTakenDrive off 6 Ghosts there. 2 of 6Reward: 72c, an uncommon item');
       expect(p.quest(bountyIdOf(GRAVES))).toBe('Bounty: GraveyardTurned in');
       expect(p.buttons()).toEqual(['Close']);
 
@@ -1890,7 +1903,7 @@ describe('the service panel', () => {
       const taken: Bounty = { ...ARENA, count: 4, reward: { coins: 48, gear: 1 } };
       expect(bountyIdOf(taken)).toBe(bountyIdOf(ARENA));
       show(p, { active: [held(taken, 2)], done: [] });
-      expect(p.quest(bountyIdOf(ARENA))).toBe('Bounty: ArenaTakenDrive off 4 Ghosts there. 2 of 4Reward: 48c, a magic item');
+      expect(p.quest(bountyIdOf(ARENA))).toBe('Bounty: ArenaTakenDrive off 4 Ghosts there. 2 of 4Reward: 48c, an uncommon item');
       show(p, { active: [held(taken, 4)], done: [] });
       expect(p.panel.root.querySelector('button[aria-label="Turn in Bounty: Arena. Drive off 4 Ghosts there."]')).not.toBeNull();
     });
@@ -1918,7 +1931,7 @@ describe('the service panel', () => {
       const p = mount();
       p.render(mercus(), { ranks: [] }, carrying({ coins: 100, worn: [item('dagger')], bag: [item('cudgel'), rare, item('moonstone')] }));
       expect(p.text()).toContain('Shopkeeper');
-      expect(p.text()).toContain('Mercus sells plain gear and buys what you find.');
+      expect(p.text()).toContain('Mercus sells common gear and buys what you find.');
       expect(p.panel.root.querySelector('.shop-purse')?.textContent).toBe('Your purse100c');
       expect(p.panel.root.querySelector('.service-body .shop-purse')).toBeNull();
       expect(headings(p.panel)).toEqual(['For sale']);
@@ -1997,9 +2010,10 @@ describe('the service panel', () => {
       expect([p.panel.root.classList.contains('hidden'), p.panel.open]).toEqual([false, true]);
     });
 
-    it("draws each ware's and each item's to buy back as its icon, edged in its rarity's colour", () => {
+    it("draws each ware's and each item's to buy back as its icon, edged in its rarity's colour, a set piece's as its line's design", () => {
       const p = mount();
-      p.render(mercus(), { ranks: [] }, carrying({ coins: 100 }), false, { buyBack: [rare, { ...item('tunic'), tier: 3 }] });
+      const wimple: ItemInstance = { ...item('cap', 'wimple'), tier: 3, rarity: 'epic', line: 'healer' };
+      p.render(mercus(), { ranks: [] }, carrying({ coins: 100 }), false, { buyBack: [rare, { ...item('tunic'), tier: 3 }, wimple] });
       const icon = (row: string) => {
         const node = p.panel.root.querySelector<HTMLImageElement>(`${row} .ware-head > img`);
         return [
@@ -2009,10 +2023,12 @@ describe('the service panel', () => {
           [...(node?.classList ?? [])].find((name) => name.startsWith('hud-rarity--')),
         ];
       };
-      expect(icon('[data-ware="sword"]')).toEqual([ITEM_ICONS.sword, '', true, 'hud-rarity--plain']);
-      expect(icon('[data-ware="tunic"]')).toEqual([WARDROBE_ICONS.tunic[1], '', true, 'hud-rarity--plain']);
+      expect(icon('[data-ware="sword"]')).toEqual([ITEM_ICONS.sword, '', true, 'hud-rarity--common']);
+      expect(icon('[data-ware="tunic"]')).toEqual([WARDROBE_ICONS.tunic[1], '', true, 'hud-rarity--common']);
       expect(icon('[data-item="amulet-rare"]')).toEqual([WARDROBE_ICONS.amulet[1], '', true, 'hud-rarity--rare']);
-      expect(icon('[data-item="tunic-1"]')).toEqual(['/assets/UI/Items/tunic-t3.png', '', true, 'hud-rarity--plain']);
+      expect(icon('[data-item="tunic-1"]')).toEqual(['/assets/UI/Items/tunic-t3.png', '', true, 'hud-rarity--common']);
+      expect(icon('[data-item="wimple"]')).toEqual(['/assets/UI/Items/cap-healer-t3.png', '', true, 'hud-rarity--epic']);
+      expect(p.panel.root.querySelector('[data-item="wimple"] .ware-name')?.textContent).toBe('Linen wimple');
     });
 
     it('sells nothing into a full bag, and says so', () => {
@@ -2075,11 +2091,11 @@ describe('the service panel', () => {
     it('renders in German, naming each ware and each item to buy back in the locale', () => {
       setLocale('de');
       const p = mount();
-      const cap: ItemInstance = { ...item('cap'), rarity: 'magic', affixes: [{ affixId: 'guard', value: 2 }] };
+      const cap: ItemInstance = { ...item('cap'), rarity: 'uncommon', affixes: [{ affixId: 'guard', value: 2 }] };
       p.render(mercus(), { ranks: [] }, carrying({ coins: 100 }), false, { buyBack: [cap] });
       expect(headings(p.panel)).toEqual(['Im Angebot', 'Zurückkaufen']);
       expect(ware(p.panel, 'sword')).toContain('Kurzschwert');
-      expect(sale(p.panel, 'cap-1')).toBe('Boten-Strohhut des BollwerksMagisch+2 Deckung+5 % Erholung des GeistesFür 25c zurückkaufen');
+      expect(sale(p.panel, 'cap-1')).toBe('Boten-Strohhut des BollwerksUngewöhnlich+2 Deckung+5 % Erholung des GeistesFür 25c zurückkaufen');
     });
   });
 });
@@ -3664,7 +3680,7 @@ describe('the play field and the panels through the shell', () => {
     p.press('Buy for 60c');
     expect(action('cudgel').disabled).toBe(true);
     p.deliver(
-      inventoryFrame(carrying({ coins: 40, bag: [cudgel, dagger] }), { trade: { kind: 'bought', baseId: 'dagger', tier: 1, rarity: 'plain', coins: 60 } }),
+      inventoryFrame(carrying({ coins: 40, bag: [cudgel, dagger] }), { trade: { kind: 'bought', baseId: 'dagger', tier: 1, rarity: 'common', coins: 60 } }),
     );
     clock += 600;
     p.shell.session.runTick(clock);
@@ -3674,7 +3690,7 @@ describe('the play field and the panels through the shell', () => {
     bagged.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, pointerType: 'mouse', button: 2 }));
     bagged.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
     p.deliver(
-      inventoryFrame(carrying({ coins: 55, bag: [dagger] }), { trade: { kind: 'sold', baseId: 'cudgel', tier: 1, rarity: 'plain', coins: 15 } }, [cudgel]),
+      inventoryFrame(carrying({ coins: 55, bag: [dagger] }), { trade: { kind: 'sold', baseId: 'cudgel', tier: 1, rarity: 'common', coins: 15 } }, [cudgel]),
     );
     clock += 600;
     p.shell.session.runTick(clock);
@@ -4121,6 +4137,15 @@ describe('the play field and the panels through the shell', () => {
       p.press('Take the quest');
       expect(p.sent()).toEqual([{ tag: 'answerQuestOffer', payload: { offerId: 7, take: true } }]);
       expect(shown()).toBe(false);
+    });
+
+    it("says a quest that pays a set piece pays a piece of gear without a role, and a piece of the player's role's set once they have one", () => {
+      const p = playing();
+      const reward = (): string | null | undefined => [...prompt().querySelectorAll('p')].find((node) => node.textContent.startsWith('Reward:'))?.textContent;
+      p.deliver({ tag: 'questOffer', payload: { offerId: 7, fromName: 'Bren', questId: 'into-the-crypt' } });
+      expect(reward()).toBe('Reward: 250c, 60 practice, a piece of gear');
+      p.deliver({ tag: 'lucidity', payload: { role: 'healer', ranks: [] } });
+      expect(reward()).toBe("Reward: 250c, 60 practice, a piece of your role's set");
     });
 
     it('answers only the offer a button was shown for, so one replaced as it is pressed answers nothing', () => {

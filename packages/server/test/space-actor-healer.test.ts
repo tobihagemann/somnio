@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { COMBAT } from '@somnio/core';
-import type { Character, Point } from '@somnio/core';
+import type { Character, ItemInstance, Point } from '@somnio/core';
 import type { SomnioMessage } from '@somnio/protocol';
 import type { PlayerTransient } from '../src/world/spaceActor.ts';
 import {
@@ -17,6 +17,7 @@ import {
   engage,
   lucidity,
   payloads,
+  setWorn,
   wearing,
   wounded,
 } from './support/combat.ts';
@@ -485,6 +486,53 @@ describe('Radiance', () => {
     space.handleUseAbility('radiance', alice.entityId);
     expect([alice, near, far, fallen].map(({ entityId }) => energyOf(space, entityId).healthCurrent)).toEqual([65, 65, 50, 0]);
     expect(energyOf(space, alice.entityId).spiritCurrent).toBe(78);
+  });
+});
+
+describe("the Healers' set", () => {
+  /** A Healer at `ALICE_AT` with the Moonstone in hand and the pieces given, targeting a dreamer at `BOB_AT` at 50 health. */
+  function setHealer(worn: ItemInstance[]) {
+    const field = arena({}, { ghost: false });
+    const alice = attachPlayer(field.space, ALICE_AT, 'alice', { character: HEALER, inventory: wearing(MOONSTONE, ...worn) });
+    const bob = attachPlayer(field.space, BOB_AT, 'bob', { character: wounded(50) });
+    field.space.handleTarget(bob.entityId, alice.entityId);
+    return { ...field, alice, bob };
+  }
+
+  it.each([
+    ['no set', undefined, 10],
+    ['two pieces', 'healer', 14],
+  ] as const)('holds Renewal for its seconds: %s', async (_label, line, seconds) => {
+    const { space, bob, alice } = setHealer(setWorn(2, line));
+    space.handleUseAbility('renewal', alice.entityId);
+    expect(payloads(await collectMessages(bob.outbox), 'effects')).toEqual([{ entityId: bob.entityId, effects: [{ effectId: 'renewing', seconds }] }]);
+  });
+
+  it.each([
+    ['no set', undefined, 1.5, 30],
+    // A third shorter, and its heal untouched by the step that strengthens Radiance's.
+    ['six pieces', 'healer', 1, 20],
+  ] as const)('channels Deep mend for its seconds and heals its 35: %s', async (_label, line, seconds, channelSteps) => {
+    const { space, steps, alice, bob } = setHealer(setWorn(6, line));
+    space.handleUseAbility('deep-mend', alice.entityId);
+    steps(channelSteps - 1);
+    expect(energyOf(space, bob.entityId).healthCurrent).toBe(50);
+    steps(1);
+    expect(energyOf(space, bob.entityId).healthCurrent).toBe(85);
+    expect(phases(await collectMessages(alice.outbox))).toEqual([
+      ['start', seconds],
+      ['done', undefined],
+    ]);
+  });
+
+  it.each([
+    ['no set', undefined, 15],
+    // A third more.
+    ['six pieces', 'healer', 20],
+  ] as const)('heals with Radiance: %s', (_label, line, healed) => {
+    const { space, alice, bob } = setHealer(setWorn(6, line));
+    space.handleUseAbility('radiance', alice.entityId);
+    expect(energyOf(space, bob.entityId).healthCurrent).toBe(50 + healed);
   });
 });
 

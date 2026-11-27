@@ -115,6 +115,10 @@
     "en": "%1$@: %2$@",
     "de": "%1$@: %2$@"
   },
+  "(%1$@) %2$@": {
+    "en": "(%1$@) %2$@",
+    "de": "(%1$@) %2$@"
+  },
   "%@ Balance": {
     "en": "%@ Balance",
     "de": "%@ Gleichgewicht"
@@ -199,9 +203,9 @@
     "en": "%@ s to answer",
     "de": "Noch %@ s zum Antworten"
   },
-  "%@ sells plain gear and buys what you find.": {
-    "en": "%@ sells plain gear and buys what you find.",
-    "de": "%@ verkauft schlichte Ausrüstung und kauft, was du findest."
+  "%@ sells common gear and buys what you find.": {
+    "en": "%@ sells common gear and buys what you find.",
+    "de": "%@ verkauft gewöhnliche Ausrüstung und kauft, was du findest."
   },
   "%@ shares a quest": {
     "en": "%@ shares a quest",
@@ -503,6 +507,10 @@
     "en": "Close %@",
     "de": "%@ schließen"
   },
+  "Common": {
+    "en": "Common",
+    "de": "Gewöhnlich"
+  },
   "Copyright": {
     "en": "© Copyright 2026 Tobias Hagemann",
     "de": "© Copyright 2026 Tobias Hagemann"
@@ -615,6 +623,10 @@
     "en": "Enter a valid email address.",
     "de": "Gib eine gültige E-Mail-Adresse ein."
   },
+  "Epic": {
+    "en": "Epic",
+    "de": "Episch"
+  },
   "Equip": {
     "en": "Equip",
     "de": "Anlegen"
@@ -642,6 +654,10 @@
   "Fighter Hall": {
     "en": "Fighter Hall",
     "de": "Halle der Kämpfer"
+  },
+  "Fighters only": {
+    "en": "Fighters only",
+    "de": "Nur Kämpfer"
   },
   "Fits only the %@ slot.": {
     "en": "Fits only the %@ slot.",
@@ -706,6 +722,10 @@
   "Healer Hall": {
     "en": "Healer Hall",
     "de": "Halle der Heiler"
+  },
+  "Healers only": {
+    "en": "Healers only",
+    "de": "Nur Heiler"
   },
   "Health": {
     "en": "Health",
@@ -815,10 +835,6 @@
     "en": "Logged out one other browser.",
     "de": "Einen anderen Browser abgemeldet."
   },
-  "Magic": {
-    "en": "Magic",
-    "de": "Magisch"
-  },
   "Main hand": {
     "en": "Main hand",
     "de": "Haupthand"
@@ -870,6 +886,10 @@
   "Mystic Tower": {
     "en": "Mystic Tower",
     "de": "Turm der Mystiker"
+  },
+  "Mystics only": {
+    "en": "Mystics only",
+    "de": "Nur Mystiker"
   },
   "Name:": {
     "en": "Name:",
@@ -979,6 +999,18 @@
     "en": "Offence",
     "de": "Angriff"
   },
+  "Only Fighters can wear this.": {
+    "en": "Only Fighters can wear this.",
+    "de": "Nur Kämpfer können das tragen."
+  },
+  "Only Healers can wear this.": {
+    "en": "Only Healers can wear this.",
+    "de": "Nur Heiler können das tragen."
+  },
+  "Only Mystics can wear this.": {
+    "en": "Only Mystics can wear this.",
+    "de": "Nur Mystiker können das tragen."
+  },
   "Options": {
     "en": "Options",
     "de": "Optionen"
@@ -994,10 +1026,6 @@
   "People:": {
     "en": "People:",
     "de": "Volk:"
-  },
-  "Plain": {
-    "en": "Plain",
-    "de": "Schlicht"
   },
   "Play": {
     "en": "Play",
@@ -1403,6 +1431,10 @@
     "en": "UI borders by Kenney.",
     "de": "UI-Rahmen von Kenney."
   },
+  "Uncommon": {
+    "en": "Uncommon",
+    "de": "Ungewöhnlich"
+  },
   "Unequip": {
     "en": "Unequip",
     "de": "Ablegen"
@@ -1635,13 +1667,17 @@
     "en": "Yourself",
     "de": "Du selbst"
   },
-  "a magic item": {
-    "en": "a magic item",
-    "de": "ein magisches Ausrüstungsstück"
-  },
   "a piece of gear": {
     "en": "a piece of gear",
     "de": "ein Ausrüstungsstück"
+  },
+  "a piece of your role's set": {
+    "en": "a piece of your role's set",
+    "de": "ein Teil des Sets deiner Rolle"
+  },
+  "an uncommon item": {
+    "en": "an uncommon item",
+    "de": "ein ungewöhnliches Ausrüstungsstück"
   },
   "cooling down": {
     "en": "cooling down",

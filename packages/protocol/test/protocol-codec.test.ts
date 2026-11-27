@@ -32,10 +32,11 @@ import {
   decodeSomnioMessage,
   encodeSomnioMessage,
   MAX_WIRE_FRAME_SIZE,
+  sameOutfit,
   truncateToUTF8Bytes,
   utf8ByteLength,
 } from '../src/index.ts';
-import type { SomnioMessage } from '../src/index.ts';
+import type { OutfitPiece, SomnioMessage } from '../src/index.ts';
 import { GOLDEN_FRAME_ENTRIES } from './support/goldenFrameCatalog.ts';
 
 /**
@@ -132,10 +133,10 @@ describe('runtime validation the erased types cannot do', () => {
     condition: 'hale',
   };
   const lucidity = { ranks: [{ teachingId: 'strike', rank: 1, practice: 0 }] };
-  const item = { id: '0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b', baseId: 'sword', tier: 1, rarity: 'magic', affixes: [{ affixId: 'damage', value: 2 }] };
+  const item = { id: '0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b', baseId: 'sword', tier: 1, rarity: 'uncommon', affixes: [{ affixId: 'damage', value: 2 }] };
   const bagged = { place: 0, item };
   const inventory = { coins: 100, equipped: [], bag: [bagged] };
-  const loot = { lootId: 'loot-1', x: 1, z: 2, contents: { kind: 'item', baseId: 'cap', tier: 1, rarity: 'magic' } };
+  const loot = { lootId: 'loot-1', x: 1, z: 2, contents: { kind: 'item', baseId: 'cap', tier: 1, rarity: 'uncommon' } };
   const outfitPiece = { slot: 'chest', baseId: 'tunic', tier: 3 };
   const character = { id: 'c', name: 'Saibot', people: 'vigils' };
   const say = { entityId: 'a', name: 'Alice', kind: 'say', text: 'hallo', clarity: 1, x: 0, z: 0 };
@@ -237,6 +238,24 @@ describe('runtime validation the erased types cannot do', () => {
     ['a tier below 1', 'inventory', { ...inventory, bag: [{ place: 0, item: { ...item, tier: 0 } }] }, /tier: expected a tier of 1 or more/],
     ['an unknown rarity', 'inventory', { ...inventory, bag: [{ place: 0, item: { ...item, rarity: 'legendary' } }] }, /unknown value "legendary"/],
     [
+      'an unknown line',
+      'inventory',
+      { ...inventory, bag: [{ place: 0, item: { ...item, rarity: 'epic', line: 'bard' } }] },
+      /item\.line: unknown value "bard"/,
+    ],
+    [
+      'an epic item without its line',
+      'inventory',
+      { ...inventory, bag: [{ place: 0, item: { ...item, rarity: 'epic' } }] },
+      /bag\[0\]\.item\.line: expected the line of an epic item, got nothing/,
+    ],
+    [
+      'a line on an item that is not epic',
+      'inventory',
+      { ...inventory, bag: [{ place: 0, item: { ...item, line: 'healer' } }] },
+      /bag\[0\]\.item\.line: expected no line on an item of rarity "uncommon", got "healer"/,
+    ],
+    [
       'a negative affix value',
       'inventory',
       { ...inventory, bag: [{ place: 0, item: { ...item, affixes: [{ affixId: 'damage', value: -1 }] } }] },
@@ -292,14 +311,26 @@ describe('runtime validation the erased types cannot do', () => {
     [
       'an unknown trade',
       'inventory',
-      { ...inventory, trade: { kind: 'stolen', baseId: 'dagger', tier: 1, rarity: 'plain', coins: 60 } },
+      { ...inventory, trade: { kind: 'stolen', baseId: 'dagger', tier: 1, rarity: 'common', coins: 60 } },
       /trade\.kind: unknown value "stolen"/,
     ],
     [
       'a trade for negative coins',
       'inventory',
-      { ...inventory, trade: { kind: 'sold', baseId: 'dagger', tier: 1, rarity: 'plain', coins: -1 } },
+      { ...inventory, trade: { kind: 'sold', baseId: 'dagger', tier: 1, rarity: 'common', coins: -1 } },
       /trade\.coins: expected a non-negative number/,
+    ],
+    [
+      'a trade of an epic item without its line',
+      'inventory',
+      { ...inventory, trade: { kind: 'sold', baseId: 'cap', tier: 3, rarity: 'epic', coins: 160 } },
+      /trade\.line: expected the line of an epic item, got nothing/,
+    ],
+    [
+      'a trade of an item that is not epic with a line',
+      'inventory',
+      { ...inventory, trade: { kind: 'sold', baseId: 'cap', tier: 3, rarity: 'rare', line: 'mystic', coins: 60 } },
+      /trade\.line: expected no line on an item of rarity "rare", got "mystic"/,
     ],
     ['an unknown kind of pick-up', 'inventory', { ...inventory, pickedUp: { kind: 'relic', baseId: 'cap' } }, /pickedUp\.kind: unknown value "relic"/],
     ['an unknown kind of reward', 'inventory', { ...inventory, rewarded: [{ kind: 'relic', baseId: 'cap' }] }, /rewarded\[0\]\.kind: unknown value "relic"/],
@@ -308,7 +339,7 @@ describe('runtime validation the erased types cannot do', () => {
       'inventory',
       {
         ...inventory,
-        rewarded: Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxBagItems + 1 }, () => ({ kind: 'item', baseId: 'cap', tier: 1, rarity: 'magic' })),
+        rewarded: Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxBagItems + 1 }, () => ({ kind: 'item', baseId: 'cap', tier: 1, rarity: 'uncommon' })),
       },
       /rewarded: exceeds 24 records \(got 25\)/,
     ],
@@ -333,8 +364,25 @@ describe('runtime validation the erased types cannot do', () => {
       { ...loot, contents: { kind: 'trophy', monsterKind: 'Skeleton Warrior' } },
       /contents\.monsterKind: expected an id/,
     ],
-    ['an item drop of no tier', 'loot', { ...loot, contents: { kind: 'item', baseId: 'cap', rarity: 'magic' } }, /contents\.tier: expected Int32, got nothing/],
+    [
+      'an item drop of no tier',
+      'loot',
+      { ...loot, contents: { kind: 'item', baseId: 'cap', rarity: 'uncommon' } },
+      /contents\.tier: expected Int32, got nothing/,
+    ],
     ['loot of an unknown rarity', 'loot', { ...loot, contents: { ...loot.contents, rarity: 'legendary' } }, /contents\.rarity: unknown value "legendary"/],
+    [
+      'epic loot without its line',
+      'loot',
+      { ...loot, contents: { ...loot.contents, rarity: 'epic' } },
+      /contents\.line: expected the line of an epic item, got nothing/,
+    ],
+    [
+      'a line on loot that is not epic',
+      'inventory',
+      { ...inventory, pickedUp: { ...loot.contents, line: 'fighter' } },
+      /pickedUp\.line: expected no line on an item of rarity "uncommon", got "fighter"/,
+    ],
     ['loot shared by a string', 'loot', { ...loot, shared: 'yes' }, /shared: expected a bool/],
     ['loot without its contents', 'loot', { lootId: 'loot-1', x: 1, z: 2 }, /contents: expected an object/],
     ['loot past the metre cap', 'loot', { ...loot, x: SOMNIO_PROTOCOL_CONSTANTS.maxCoordinateMetres + 1 }, /x: exceeds 10000 metres/],
@@ -358,6 +406,7 @@ describe('runtime validation the erased types cannot do', () => {
     ['an outfit wearing one slot twice', 'outfit', { entityId: 'a', outfit: [outfitPiece, outfitPiece] }, /outfit\[1\]\.slot: slot "chest" worn twice/],
     ['an outfit piece in a ring slot', 'outfit', { entityId: 'a', outfit: [{ ...outfitPiece, slot: 'ring1' }] }, /outfit\[0\]\.slot: unknown value "ring1"/],
     ['an outfit piece of tier 0', 'outfit', { entityId: 'a', outfit: [{ ...outfitPiece, tier: 0 }] }, /outfit\[0\]\.tier: expected a tier of 1 or more/],
+    ['an outfit piece of an unknown line', 'outfit', { entityId: 'a', outfit: [{ ...outfitPiece, line: 'bard' }] }, /outfit\[0\]\.line: unknown value "bard"/],
     ['an outfit piece of a base outside the id alphabet', 'outfit', { entityId: 'a', outfit: [{ ...outfitPiece, baseId: 'Tunic' }] }, /baseId: expected an id/],
     [
       'a player without a people',
@@ -726,6 +775,39 @@ describe('round trips', () => {
     expect('trade' in decoded.payload).toBe(false);
   });
 
+  /** The golden frames carry an Epic's line on each item frame and outfit piece. A neutral one sent with `line: null` decodes without the key. */
+  it('decodes a neutral item, trade, drop, and outfit piece without a line key', () => {
+    const item = { id: 'cap-1', baseId: 'cap', tier: 3, rarity: 'rare', line: null, affixes: [] };
+    const contents = { kind: 'item', baseId: 'cap', tier: 3, rarity: 'rare', line: null };
+    const inventory = decodeSomnioMessage(
+      frame('inventory', {
+        coins: 0,
+        equipped: [{ slot: 'head', item }],
+        bag: [],
+        trade: { kind: 'sold', baseId: 'cap', tier: 3, rarity: 'rare', line: null, coins: 60 },
+        dropped: contents,
+      }),
+    );
+    const loot = decodeSomnioMessage(frame('loot', { lootId: 'loot-1', x: 0, z: 0, contents }));
+    const outfit = decodeSomnioMessage(frame('outfit', { entityId: 'a', outfit: [{ slot: 'head', baseId: 'cap', tier: 3, line: null }] }));
+    if (inventory.tag !== 'inventory' || loot.tag !== 'loot' || outfit.tag !== 'outfit') throw new Error('decoded the wrong tag');
+    const decoded = [
+      inventory.payload.equipped[0]!.item,
+      inventory.payload.trade!,
+      inventory.payload.dropped!,
+      loot.payload.contents,
+      outfit.payload.outfit[0]!,
+    ];
+    expect(decoded.map((value) => 'line' in value)).toEqual([false, false, false, false, false]);
+  });
+
+  it('sameOutfit tells two outfits apart by a line alone', () => {
+    const neutral: OutfitPiece[] = [{ slot: 'head', baseId: 'cap', tier: 3 }];
+    const healer: OutfitPiece[] = [{ slot: 'head', baseId: 'cap', tier: 3, line: 'healer' }];
+    const mystic: OutfitPiece[] = [{ slot: 'head', baseId: 'cap', tier: 3, line: 'mystic' }];
+    expect([sameOutfit(neutral, healer), sameOutfit(healer, mystic), sameOutfit(healer, [{ ...healer[0]! }])]).toEqual([false, false, true]);
+  });
+
   /** World time is fractional and far past what an integer or a narrowed float field could carry. */
   it('enterSpace round-trips a fractional world time near year 500 exactly', () => {
     const message: SomnioMessage = {
@@ -799,7 +881,7 @@ describe('string literal sets', () => {
   });
 
   it('pins Rarity', () => {
-    expect(RARITIES).toEqual(['plain', 'magic', 'rare']);
+    expect(RARITIES).toEqual(['common', 'uncommon', 'rare', 'epic']);
   });
 
   it('pins SectorKind', () => {
@@ -877,7 +959,7 @@ describe('string literal sets', () => {
  */
 describe('protocol constants', () => {
   it('pins the frame and handshake constants', () => {
-    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(26);
+    expect(SOMNIO_PROTOCOL_CONSTANTS.helloVersion).toBe(27);
     expect(SOMNIO_PROTOCOL_CONSTANTS.maxFrameLength).toBe(1_048_576);
     expect(SOMNIO_PROTOCOL_CONSTANTS.frameSizeSlack).toBe(64);
     expect(MAX_WIRE_FRAME_SIZE).toBe(1_048_640);

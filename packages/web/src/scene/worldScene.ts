@@ -634,7 +634,7 @@ export class WorldScene implements WorldRenderSurface {
     this.loot = new LootMarkers(
       OVERLAY_ORIENTATION,
       (contents) => {
-        const model = contents.kind === 'item' ? this.assets.ground(contents.baseId, contents.tier) : this.assets.trophy(contents.monsterKind);
+        const model = contents.kind === 'item' ? this.assets.ground(contents.baseId, contents.tier, contents.line) : this.assets.trophy(contents.monsterKind);
         if (model !== undefined) enableShadows(model);
         return model;
       },
@@ -798,11 +798,14 @@ export class WorldScene implements WorldRenderSurface {
     for (const model of models) disposeSubtree(model);
   }
 
-  /** What every item drop lies as, once each: each base's ground model, and armour and jewellery's for each tier past the first, whose own is its base's. */
+  /**
+   * What every item drop lies as, once each: each base's ground model, and armour and jewellery's for
+   * each neutral tier past the first, whose own is its base's, and for each role's line.
+   */
   private groundDrops(): (THREE.Object3D | undefined)[] {
     return [
       ...this.registry.groundModels.map((rule) => this.assets.ground(rule.id, 1)),
-      ...this.registry.wardrobe.filter((row) => row.tier > 1).map((row) => this.assets.ground(row.base, row.tier)),
+      ...this.registry.wardrobe.filter((row) => row.tier > 1 || row.line !== undefined).map((row) => this.assets.ground(row.base, row.tier, row.line)),
     ];
   }
 
@@ -1428,11 +1431,11 @@ export class WorldScene implements WorldRenderSurface {
   /**
    * A drop of a base or a trophy of a kind this build does not know is not drawn, so nothing can be
    * pressed for it. A trophy lies as its kind's model, or as its name alone for a kind with none,
-   * its name drawn plain. One shown as it falls is thrown there. Under reduced motion or in a stalled
+   * its name drawn as a common item's. One shown as it falls is thrown there. Under reduced motion or in a stalled
    * tab it lies there at once, and a hand it left empties with the `outfit` that follows.
    */
   showLoot({ lootId, x, z, contents, from }: LootMessage): void {
-    const labelKey = contents.kind === 'item' ? itemLabelKey(contents.baseId, contents.tier) : trophyLabelKey(contents.monsterKind);
+    const labelKey = contents.kind === 'item' ? itemLabelKey(contents.baseId, contents.tier, contents.line) : trophyLabelKey(contents.monsterKind);
     if (labelKey === undefined) return;
     const item = contents.kind === 'item' ? contents : undefined;
     const thrown = from === undefined || this.effects.stalled(this.now()) ? undefined : this.throwFrom(from, item?.baseId);
@@ -2421,7 +2424,7 @@ export class WorldScene implements WorldRenderSurface {
     const people = state.people;
     if (people === undefined) return [];
     return wornPieces(state.outfit).flatMap((piece) => {
-      const row = wardrobeRow(this.registry, piece.baseId, piece.tier);
+      const row = wardrobeRow(this.registry, piece.baseId, piece.tier, piece.line);
       const stem = row === undefined ? undefined : wornStem(row, people, piece.slot);
       return row === undefined || stem === undefined ? [] : [{ row, stem, slot: piece.slot }];
     });

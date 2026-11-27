@@ -8,7 +8,7 @@ import type { ConnectionState } from '../src/connection/connectionActor.ts';
 import { FRAME_BUDGETS, FRAME_LIMITS } from '../src/connection/frameLimits.ts';
 import { ConnectionOutbox } from '../src/connection/outbox.ts';
 import { interiorSector } from '../../core/test/support/worldFixture.ts';
-import { plain } from '../../core/test/support/items.ts';
+import { common } from '../../core/test/support/items.ts';
 import { COINS, CUDGEL, GHOST, MOONSTONE, RESPAWN_MS, WAND, carrying, energy, lucidity, payloads, wearing } from './support/combat.ts';
 import { collectMessages, recordingOutbox } from './support/frames.ts';
 import { testLogger } from './support/logger.ts';
@@ -88,7 +88,7 @@ const cases: { label: string; message: SomnioMessage; state: ConnectionState['ki
   { label: 'post-attach outfit', message: { tag: 'outfit', payload: { entityId: 'peer', outfit: [] } }, state: 'attached' },
   {
     label: 'post-attach loot',
-    message: { tag: 'loot', payload: { lootId: 'loot-1', x: 10, z: 12, contents: { kind: 'item', baseId: 'dagger', tier: 1, rarity: 'plain' } } },
+    message: { tag: 'loot', payload: { lootId: 'loot-1', x: 10, z: 12, contents: { kind: 'item', baseId: 'dagger', tier: 1, rarity: 'common' } } },
     state: 'attached',
   },
   { label: 'post-attach lootGone', message: { tag: 'lootGone', payload: { lootId: 'loot-1' } }, state: 'attached' },
@@ -328,7 +328,7 @@ describe('an attached connection', () => {
       carrying({ coins: COINS }),
       () => ({ tag: 'buy', payload: { carrierId: MERCUS, baseId: 'dagger' } }),
       (a) => a.own().inventory,
-      { coins: 40, equipped: {}, bag: [{ place: 0, item: { id: expect.any(String), ...plain('dagger') } }] },
+      { coins: 40, equipped: {}, bag: [{ place: 0, item: { id: expect.any(String), ...common('dagger') } }] },
     ],
     [
       'a sale',

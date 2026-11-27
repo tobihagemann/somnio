@@ -32,7 +32,7 @@ describe('inventory round trip', () => {
     const joined = await joinFreshPlayer(server.url, 'starter');
     expect(joinInventory(joined)).toEqual({
       coins: 100,
-      equipped: [{ slot: 'mainHand', item: { id: expect.any(String), baseId: 'cudgel', tier: 1, rarity: 'plain', affixes: [] } }],
+      equipped: [{ slot: 'mainHand', item: { id: expect.any(String), baseId: 'cudgel', tier: 1, rarity: 'common', affixes: [] } }],
       bag: [],
     });
     await joined.client.close();

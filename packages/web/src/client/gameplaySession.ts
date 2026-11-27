@@ -28,6 +28,7 @@ import {
   SpeechPace,
   abilitiesTaught,
   ability,
+  abilityChannelSeconds,
   abilityCooldownSeconds,
   abilityRefusal,
   abilityRank,
@@ -62,6 +63,7 @@ import {
   questComplete,
   reachDistance,
   questsOf,
+  setBonusesOf,
   speechReadSeconds,
   turnInGrant,
   windedAfter,
@@ -86,6 +88,7 @@ import type {
   QuestLog,
   QuestMarker,
   QuestOrBountyId,
+  SetBonuses,
 } from '@somnio/core';
 import { canvasWidthMeasurer, wrapSpeech } from '@/scene/speechBubbleText';
 import { wheelDeltaToZoomDelta } from '@/scene/cameraRig';
@@ -148,8 +151,10 @@ export interface CooldownSpan {
 /** What an ability's slot on the belt shows. */
 export interface AbilitySlotState {
   abilityId: AbilityId;
-  /** The rank the player holds of the teaching that teaches it. */
-  rank: number;
+  /** Its cooldown, at the rank the player holds and with the set they wear. */
+  cooldownSeconds: number;
+  /** How long it channels, the same way, or `undefined` for one that lands at once. */
+  channelSeconds: number | undefined;
   /** Why the server would not act on it now, but for its cooldowns; `undefined` when it would. */
   refusal: AbilityRefusal | undefined;
   /** The cooldown it waits on while one runs: the later-ending of its own and the global one. */
@@ -1157,6 +1162,11 @@ export class GameplaySession {
     }
   }
 
+  /** What the set the player wears changes in their abilities, as the server reads it. */
+  private get setBonuses(): SetBonuses {
+    return setBonusesOf(this.inventory.equipped, this.lucidity.role);
+  }
+
   /** The abilities on the belt, in its order: those the player's ranks teach. */
   get abilities(): AbilityId[] {
     return abilitiesTaught(this.lucidity.ranks);
@@ -1167,11 +1177,19 @@ export class GameplaySession {
     const now = this.now();
     const running = (span: CooldownSpan | undefined): CooldownSpan | undefined => (span !== undefined && now < span.endsAtMs ? span : undefined);
     const global = running(this.cooldowns.global);
+    const bonuses = this.setBonuses;
     return this.abilities.map((abilityId) => {
       const own = running(this.cooldowns.abilities[abilityId]);
       const cooldown = own === undefined || (global !== undefined && global.endsAtMs > own.endsAtMs) ? global : own;
       const refusal = this.abilityRefusal(abilityId, { globalReadyAt: now, readyAt: {} });
-      return { abilityId, rank: abilityRank(this.lucidity.ranks, abilityId), refusal, cooldown };
+      const rank = abilityRank(this.lucidity.ranks, abilityId);
+      return {
+        abilityId,
+        cooldownSeconds: abilityCooldownSeconds(abilityId, rank, bonuses),
+        channelSeconds: abilityChannelSeconds(abilityId, rank, bonuses),
+        refusal,
+        cooldown,
+      };
     });
   }
 
@@ -1401,7 +1419,7 @@ export class GameplaySession {
 
   /**
    * Wears an item in `slot`, or in the slot the server chooses for its base; from the bag, whatever
-   * that slot wore takes its place there, and a worn ring changes ring slots.
+   * that slot wore takes its place there, and a worn bracelet changes wrists.
    */
   equip(itemId: string, slot?: EquipSlot): void {
     if (this.controller.connectionState !== 'attached') return;
@@ -1416,7 +1434,7 @@ export class GameplaySession {
 
   /** Moves an item to a place in the bag, a worn one put away there, as `moveItem` rules it on both sides. */
   moveItem(itemId: string, place: number): void {
-    if (this.controller.connectionState !== 'attached' || moveItem(this.inventory, itemId, place) === undefined) return;
+    if (this.controller.connectionState !== 'attached' || moveItem(this.inventory, this.lucidity.role, itemId, place) === undefined) return;
     this.send({ tag: 'moveItem', payload: { itemId, place } });
   }
 
@@ -1696,9 +1714,10 @@ export class GameplaySession {
   onQuestNews: ((news: QuestNews) => void) | undefined;
 
   /**
-   * The cooldowns a `cooldowns` frame tells of, on the session's clock. Each began as long before
-   * its end as it runs in all, which the ability's rank says, so a snapshot after a door shows it
-   * part spent.
+   * The cooldowns a `cooldowns` frame tells of, on the session's clock. One already running keeps
+   * when it began and takes only its end from the frame, since the set worn may have changed since
+   * it was used. Any other began as long before its end as it runs in all, which the ability's rank
+   * and the set worn say, so a snapshot after a door shows it part spent.
    */
   private cooldownsFrom({ globalSeconds, cooldowns }: CooldownsMessage): Cooldowns {
     const now = this.now();
@@ -1707,18 +1726,24 @@ export class GameplaySession {
       endsAtMs: now + seconds * 1000,
       global,
     });
+    const bonuses = this.setBonuses;
     const abilities: Cooldowns['abilities'] = {};
     for (const { abilityId, seconds } of cooldowns) {
       if (!isAbilityId(abilityId)) continue;
+      const running = this.cooldowns.abilities[abilityId];
+      if (running !== undefined && now < running.endsAtMs) {
+        abilities[abilityId] = { ...running, endsAtMs: now + seconds * 1000 };
+        continue;
+      }
       // Ranks count from 1, so one the client does not hold yet reads as the first.
       const rank = Math.max(1, abilityRank(this.lucidity.ranks, abilityId));
-      abilities[abilityId] = span(seconds, abilityCooldownSeconds(abilityId, rank), false);
+      abilities[abilityId] = span(seconds, abilityCooldownSeconds(abilityId, rank, bonuses), false);
     }
     return { global: globalSeconds > 0 ? span(globalSeconds, GLOBAL_COOLDOWN_SECONDS, true) : undefined, abilities };
   }
 
-  private announceTrade({ kind, baseId, tier, coins }: TradeMessage): void {
-    this.controller.appendChat({ kind, baseId, tier, coins });
+  private announceTrade({ kind, baseId, tier, line, coins }: TradeMessage): void {
+    this.controller.appendChat({ kind, baseId, tier, ...(line === undefined ? {} : { line }), coins });
   }
 
   /**

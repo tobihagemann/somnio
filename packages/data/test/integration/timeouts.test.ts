@@ -1,7 +1,7 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { plainInstance } from '@somnio/core';
+import { commonInstance } from '@somnio/core';
 import type { Character, Inventory } from '@somnio/core';
 import { createDatabase } from '../../src/db.ts';
 import type { DatabaseTimeouts, SomnioDatabase } from '../../src/db.ts';
@@ -80,7 +80,7 @@ describe('the pool timeouts', () => {
 
   /** The character row is updated before the items are replaced, so this cancel lands part-way through the checkpoint. */
   it('rolls back the part of a checkpoint already run when a later statement times out', async () => {
-    const character = await newCharacter({ coins: 5, equipped: {}, bag: [{ place: 0, item: plainInstance('dagger') }] });
+    const character = await newCharacter({ coins: 5, equipped: {}, bag: [{ place: 0, item: commonInstance('dagger') }] });
     const before = await storedRow(character.id);
     const itemsBefore = await new PostgresItemRepository(harness.db).load(character.id);
     const release = await holdLock(harness.connect(), (transaction) =>

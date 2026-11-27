@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, it } from 'vitest';
 import { boardDay, bountyIdOf, bountyLands, dayBounties } from '@somnio/core';
 import type { Bounty, Character, Inventory, ItemInstance, Lucidity, QuestLog } from '@somnio/core';
 import { PostgresCharacterRepository, PostgresItemRepository, PostgresQuestRepository } from '@somnio/data';
-import { plain } from '../../../core/test/support/items.ts';
+import { common } from '../../../core/test/support/items.ts';
 import { bootTestServer, closeAndAwaitCleanup, drainFrames, frame, joinFreshPlayer, loginOverWire, pollUntil, startDatabase } from './support/harness.ts';
 import type { DatabaseHarness, TestServer } from './support/harness.ts';
 
@@ -48,10 +48,10 @@ it('what a dreamer has grown into, carries, and has taken on joins as it was sto
   };
   const energy = { healthCurrent: 40, healthMax: 100, balanceCurrent: 60, balanceMax: 100, spiritCurrent: 30, spiritMax: 100 };
   // Nothing here adds to a pool, so the stored maxima stand.
-  const moonstone: ItemInstance = { id: '00000000-0000-7000-8000-0000000000a1', ...plain('moonstone') };
+  const moonstone: ItemInstance = { id: '00000000-0000-7000-8000-0000000000a1', ...common('moonstone') };
   const sword: ItemInstance = {
     id: '00000000-0000-7000-8000-0000000000a2',
-    ...plain('sword'),
+    ...common('sword'),
     rarity: 'rare',
     affixes: [
       { affixId: 'damage', value: 2 },
@@ -59,7 +59,12 @@ it('what a dreamer has grown into, carries, and has taken on joins as it was sto
       { affixId: 'balance-recovery', value: 12 },
     ],
   };
-  const amulet: ItemInstance = { id: '00000000-0000-7000-8000-0000000000a3', ...plain('amulet'), rarity: 'magic', affixes: [{ affixId: 'health', value: 5 }] };
+  const amulet: ItemInstance = {
+    id: '00000000-0000-7000-8000-0000000000a3',
+    ...common('amulet'),
+    rarity: 'uncommon',
+    affixes: [{ affixId: 'health', value: 5 }],
+  };
   const inventory: Inventory = { coins: 137, equipped: { mainHand: sword, offHand: moonstone }, bag: [{ place: 0, item: amulet }] };
   const quests: QuestLog = { active: [{ questId: 'drawing-back-task', progress: [22] }], done: ['healer-trial'] };
   const stored = await seeded('lucid', { lucidity, energy, quests }, inventory);

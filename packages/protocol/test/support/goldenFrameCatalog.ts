@@ -1,5 +1,5 @@
 import { SOMNIO_PROTOCOL_CONSTANTS } from '../../src/index.ts';
-import type { SectorView, SomnioMessage } from '../../src/index.ts';
+import type { ItemMessage, SectorView, SomnioMessage } from '../../src/index.ts';
 
 /**
  * The canonical golden-frame set: one named frame per message tag, plus fully populated nested
@@ -34,6 +34,21 @@ const BOUNTY = {
   count: 4,
   reward: { coins: 120, gear: 3 },
 } as const;
+
+/** A Healer's set piece. */
+const SET_PIECE: ItemMessage = {
+  id: CAP_ID,
+  baseId: 'cap',
+  tier: 3,
+  rarity: 'epic',
+  line: 'healer',
+  affixes: [
+    { affixId: 'health', value: 14 },
+    { affixId: 'guard', value: 5 },
+    { affixId: 'balance', value: 12 },
+    { affixId: 'balance-recovery', value: 20 },
+  ],
+};
 
 /** Every record array populated at once, both ground mark shapes, and a placement that carries a non-zero `yaw` and `elevation`. */
 const outdoorSector: SectorView = {
@@ -377,11 +392,15 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
               ],
             },
           },
-          { slot: 'offHand', item: { id: MOONSTONE_ID, baseId: 'moonstone', tier: 1, rarity: 'plain', affixes: [] } },
+          { slot: 'offHand', item: { id: MOONSTONE_ID, baseId: 'moonstone', tier: 1, rarity: 'common', affixes: [] } },
         ],
-        bag: [{ place: 3, item: { id: CAP_ID, baseId: 'cap', tier: 1, rarity: 'magic', affixes: [{ affixId: 'guard', value: 2 }] } }],
+        bag: [{ place: 3, item: { id: CAP_ID, baseId: 'cap', tier: 1, rarity: 'uncommon', affixes: [{ affixId: 'guard', value: 2 }] } }],
       },
     },
+  },
+  {
+    name: 'inventory-set-piece',
+    message: { tag: 'inventory', payload: { coins: 100, equipped: [{ slot: 'head', item: SET_PIECE }], bag: [] } },
   },
   {
     name: 'inventory-after-trade',
@@ -391,8 +410,21 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
         coins: 105,
         equipped: [],
         bag: [],
-        trade: { kind: 'sold', baseId: 'cap', tier: 1, rarity: 'magic', coins: 25 },
-        buyBack: [{ id: CAP_ID, baseId: 'cap', tier: 1, rarity: 'magic', affixes: [{ affixId: 'guard', value: 2 }] }],
+        trade: { kind: 'sold', baseId: 'cap', tier: 1, rarity: 'uncommon', coins: 25 },
+        buyBack: [{ id: CAP_ID, baseId: 'cap', tier: 1, rarity: 'uncommon', affixes: [{ affixId: 'guard', value: 2 }] }],
+      },
+    },
+  },
+  {
+    name: 'inventory-after-trade-set-piece',
+    message: {
+      tag: 'inventory',
+      payload: {
+        coins: 260,
+        equipped: [],
+        bag: [],
+        trade: { kind: 'sold', baseId: 'cap', tier: 3, rarity: 'epic', line: 'healer', coins: 160 },
+        buyBack: [SET_PIECE],
       },
     },
   },
@@ -403,8 +435,8 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
       payload: {
         coins: 80,
         equipped: [],
-        bag: [{ place: 0, item: { id: CAP_ID, baseId: 'cap', tier: 1, rarity: 'magic', affixes: [{ affixId: 'guard', value: 2 }] } }],
-        trade: { kind: 'boughtBack', baseId: 'cap', tier: 1, rarity: 'magic', coins: 25 },
+        bag: [{ place: 0, item: { id: CAP_ID, baseId: 'cap', tier: 1, rarity: 'uncommon', affixes: [{ affixId: 'guard', value: 2 }] } }],
+        trade: { kind: 'boughtBack', baseId: 'cap', tier: 1, rarity: 'uncommon', coins: 25 },
       },
     },
   },
@@ -412,7 +444,7 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
     name: 'inventory-after-drop',
     message: {
       tag: 'inventory',
-      payload: { coins: 100, equipped: [], bag: [], dropped: { kind: 'item', baseId: 'cap', tier: 1, rarity: 'magic' } },
+      payload: { coins: 100, equipped: [], bag: [], dropped: { kind: 'item', baseId: 'cap', tier: 1, rarity: 'uncommon' } },
     },
   },
   {
@@ -422,8 +454,8 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
       payload: {
         coins: 100,
         equipped: [],
-        bag: [{ place: 3, item: { id: CAP_ID, baseId: 'cap', tier: 1, rarity: 'magic', affixes: [{ affixId: 'guard', value: 2 }] } }],
-        pickedUp: { kind: 'item', baseId: 'cap', tier: 1, rarity: 'magic' },
+        bag: [{ place: 3, item: { id: CAP_ID, baseId: 'cap', tier: 1, rarity: 'uncommon', affixes: [{ affixId: 'guard', value: 2 }] } }],
+        pickedUp: { kind: 'item', baseId: 'cap', tier: 1, rarity: 'uncommon' },
       },
     },
   },
@@ -445,7 +477,14 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
   },
   {
     name: 'loot',
-    message: { tag: 'loot', payload: { lootId: LOOT_ID, x: 31.5, z: -12.25, contents: { kind: 'item', baseId: 'cap', tier: 2, rarity: 'magic' } } },
+    message: { tag: 'loot', payload: { lootId: LOOT_ID, x: 31.5, z: -12.25, contents: { kind: 'item', baseId: 'cap', tier: 2, rarity: 'uncommon' } } },
+  },
+  {
+    name: 'loot-set-piece',
+    message: {
+      tag: 'loot',
+      payload: { lootId: LOOT_ID, x: 31.5, z: -12.25, contents: { kind: 'item', baseId: 'cap', tier: 3, rarity: 'epic', line: 'healer' } },
+    },
   },
   {
     name: 'loot-trophy',
@@ -458,7 +497,7 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
     name: 'loot-shared',
     message: {
       tag: 'loot',
-      payload: { lootId: LOOT_ID, x: 31.5, z: -12.25, contents: { kind: 'item', baseId: 'cap', tier: 2, rarity: 'magic' }, shared: true },
+      payload: { lootId: LOOT_ID, x: 31.5, z: -12.25, contents: { kind: 'item', baseId: 'cap', tier: 2, rarity: 'uncommon' }, shared: true },
     },
   },
   {
@@ -469,7 +508,7 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
         lootId: LOOT_ID,
         x: 31.5,
         z: -12.25,
-        contents: { kind: 'item', baseId: 'cap', tier: 2, rarity: 'magic' },
+        contents: { kind: 'item', baseId: 'cap', tier: 2, rarity: 'uncommon' },
         shared: true,
         from: { x: 32.25, z: -11.5, entityId: PLAYER_ID },
       },
@@ -576,6 +615,19 @@ export const GOLDEN_FRAME_ENTRIES: readonly GoldenFrameEntry[] = [
         outfit: [
           { slot: 'mainHand', baseId: 'dagger', tier: 1 },
           { slot: 'chest', baseId: 'tunic', tier: 3 },
+        ],
+      },
+    },
+  },
+  {
+    name: 'outfit-set-piece',
+    message: {
+      tag: 'outfit',
+      payload: {
+        entityId: OTHER_PLAYER_ID,
+        outfit: [
+          { slot: 'offHand', baseId: 'moonstone', tier: 1 },
+          { slot: 'head', baseId: 'cap', tier: 3, line: 'healer' },
         ],
       },
     },

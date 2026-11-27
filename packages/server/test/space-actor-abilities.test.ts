@@ -16,6 +16,7 @@ import {
   face,
   lucidity,
   payloads,
+  setWorn,
   strikeAndLeave,
   wearing,
 } from './support/combat.ts';
@@ -351,5 +352,57 @@ describe('an ability at its third rank', () => {
     space.handleUseAbility('cleave', fighter.entityId);
     steps(5);
     expect(payloads(await collectMessages(fighter.outbox), 'vitals').at(-1)).toEqual({ entityId: GHOST, health: 0.82 });
+  });
+});
+
+describe("the Fighters' set", () => {
+  it.each([
+    // A landed cudgel swing's 11 at Cleave's first rank, 6.6, taken whole as 7 of the Ghost's 60.
+    ['no set', undefined, 0.88],
+    // A fifth harder, 7.92, taken whole as 8.
+    ['two pieces', 'fighter', 0.87],
+  ] as const)('strikes each nightmare with Cleave by its share of the swing: %s', async (_label, line, health) => {
+    const { space, steps } = arena();
+    const fighter = attachPlayer(space, BESIDE_GHOST, 'fighter', {
+      character: { lucidity: lucidity('fighter', { strike: 1, cleave: 1 }) },
+      inventory: wearing(CUDGEL, ...setWorn(2, line)),
+    });
+    face(space, fighter.entityId, GHOST_AT);
+    space.handleTarget(GHOST, fighter.entityId);
+    space.handleUseAbility('cleave', fighter.entityId);
+    steps(5);
+    expect(payloads(await collectMessages(fighter.outbox), 'vitals').at(-1)).toEqual({ entityId: GHOST, health });
+  });
+
+  it.each([
+    ['no set', undefined, 4],
+    ['four pieces', 'fighter', 6],
+  ] as const)('holds Brace for its seconds: %s', async (_label, line, seconds) => {
+    const { space } = arena({}, { ghost: false });
+    const alice = attachPlayer(space, { x: 5, z: 5 }, 'alice', { character: BRACER, inventory: wearing(...setWorn(4, line)) });
+    space.handleUseAbility('brace', alice.entityId);
+    expect(payloads(await collectMessages(alice.outbox), 'effects')).toEqual([{ entityId: alice.entityId, effects: [{ effectId: 'braced', seconds }] }]);
+  });
+
+  it.each([
+    // Lunge's 12 spent from 100.
+    ['no set', undefined, 10, 88],
+    // A third shorter, and 10 of the 12 given back.
+    ['six pieces', 'fighter', 20 / 3, 98],
+  ] as const)('cools Lunge down and gives Balance back: %s', async (_label, line, seconds, balance) => {
+    const { space } = arena();
+    const fighter = attachPlayer(space, BESIDE_GHOST, 'fighter', {
+      character: { lucidity: lucidity('fighter', { strike: 2, lunge: 1 }) },
+      inventory: wearing(...setWorn(6, line)),
+    });
+    space.handleTarget(GHOST, fighter.entityId);
+    space.handleUseAbility('lunge', fighter.entityId);
+    const messages = await collectMessages(fighter.outbox);
+    const [cooldown] = payloads(messages, 'cooldowns').at(-1)!.cooldowns;
+    expect(cooldown!.abilityId).toBe('lunge');
+    expect(cooldown!.seconds).toBeCloseTo(seconds, 9);
+    expect(energyOf(space, fighter.entityId).balanceCurrent).toBe(balance);
+    // The attach's frame, then one for the use: the give-back lands with the cost, so no frame shows the Balance between them.
+    expect(payloads(messages, 'energy').map((energy) => energy.balanceCurrent)).toEqual([100, balance]);
   });
 });

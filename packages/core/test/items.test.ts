@@ -2,12 +2,14 @@ import { ROLES } from '@somnio/protocol';
 import { describe, expect, it, vi } from 'vitest';
 import { coreCatalog, catalogViolations, lookupIn } from '../src/catalog.ts';
 import { AFFIXES } from '../src/affixes.ts';
-import { BASE_ITEMS, itemLabelKey, newItemId, plainInstance } from '../src/items.ts';
+import { BASE_ITEMS, itemLabelKey, newItemId, commonInstance } from '../src/items.ts';
+import type { Tier } from '../src/items.ts';
 import { TEACHINGS, roleLabelKey } from '../src/lucidity.ts';
 import { ELITE_TRAITS, MONSTER_KINDS } from '../src/monsterKinds.ts';
 import { PEOPLES, peopleLabelKey } from '../src/people.ts';
 import { BOUNTY_KINDS, BOUNTY_LABEL_KEY } from '../src/bounties.ts';
 import { QUESTS, TROPHIES } from '../src/quests.ts';
+import { SET_BONUSES, SET_TITLE_KEYS } from '../src/sets.ts';
 
 const CORE_KEYS = [
   '%@ of Haste',
@@ -28,6 +30,7 @@ const CORE_KEYS = [
   'Bear claw',
   'Beech leaf',
   'Bind',
+  'Bind also Weakens its nightmare.',
   'Boar',
   "Boar's tusk",
   'Bogey',
@@ -35,11 +38,16 @@ const CORE_KEYS = [
   'Bone dagger',
   'Bounty: %@',
   'Brace',
+  'Brace lasts 2 s longer.',
   'Brush trousers',
   'Buckler',
+  'Burial hauberk',
   'Calm',
+  'Candle gloves',
   'Challenge',
+  'Chapel boots',
   'Cleave',
+  'Cleave strikes each nightmare a fifth harder.',
   'Climbing boots',
   'Compass rose',
   'Courier shoulders',
@@ -47,15 +55,22 @@ const CORE_KEYS = [
   'Courier tunic',
   'Cracked skull',
   'Cracked skulls',
+  'Crypt chausses',
+  'Crypt gauntlets',
+  'Crypt grille',
+  'Crypt pauldrons',
+  'Crypt sabatons',
   'Cudgel',
   'Dagger',
   'Deck boots',
   'Deep mend',
+  "Deep mend's channel is a third shorter.",
   'Depth',
   'Dispatch gloves',
   'Dispatch wristband',
   'Drawing back',
   'Dream-bolt',
+  'Dream-bolt harms a fifth more.',
   'Drive off %@ Boars there.',
   'Drive off %@ Bogeys there.',
   'Drive off %@ Ghosts there.',
@@ -71,6 +86,7 @@ const CORE_KEYS = [
   "Ferryman's raincoat",
   'Field trousers',
   'Fighter',
+  "Fighters' set (%1$@/6)",
   'Find Memor in the Graveyard.',
   "Find the Mystics' tower on the square.",
   'Find the hidden places Tacita speaks of.',
@@ -85,35 +101,50 @@ const CORE_KEYS = [
   'Gather 3 cracked skulls from Skeleton Warriors.',
   'Ghost',
   'Ghostly wisp',
+  'Grave iron kettle helm',
   'Guard',
   'Healer',
+  "Healers' set (%1$@/6)",
   'Hide mitts',
   'Into the crypt',
   'Iron buckler',
   'Lantern cage',
   'Leaf gaiters',
   'Leaf shoulder',
+  'Linen wimple',
   'Lumina',
   'Lunge',
+  "Lunge's cooldown is a third shorter, and each Lunge gives back 10 Balance.",
   'Mace',
   'Maple twig',
+  'Marsh boots',
+  'Marsh eye',
+  'Marsh shoulders',
+  'Marsh trousers',
+  'Marsh veil',
+  'Marsh witch hat',
   'Meet Pugnax and Sana in their halls.',
   'Mend 60 health on other dreamers.',
   'Mending others',
   'Moonstone',
   'Mystic',
+  "Mystics' set (%1$@/6)",
   "Navigator's epaulettes",
   'Necromancer',
   "Necromancer's sigil",
   'Oiled storm brim',
   'Old bone',
   'Pelt guards',
+  'Portcullis',
   'Radiance',
+  'Radiance heals a third more.',
   'Rally',
   'Read the bounty board on the square.',
+  'Reed eye',
   'Reed knot',
   'Reedwork gloves',
   'Renewal',
+  'Renewal lasts 4 s longer.',
   'Restless graves',
   'Round shield',
   'Sabre',
@@ -156,13 +187,20 @@ const CORE_KEYS = [
   "Trapper's hide band",
   'Umbrae',
   'Veil',
+  'Vigil shoulders',
+  'Vigil stole',
+  'Vigil trousers',
   'Vigils',
   'Visit Mercus in his shop.',
+  'Votive candle',
+  'Votive gloves',
   'Wader trousers',
   'Walk to the North Wood and come back.',
   'Wand',
   'War axe',
   'Ward',
+  'Ward holds a quarter more.',
+  'Wax taper',
   'Weaken',
   'Wheat-ear pendant',
   'Wolf',
@@ -192,6 +230,24 @@ describe('items', () => {
     ]);
   });
 
+  it("resolves a set piece by its line's design at a tier the line has one, and to nothing at a tier it has none", () => {
+    expect(
+      (['cap', 'shoulders', 'tunic', 'gloves', 'trousers', 'boots', 'amulet', 'bracelet'] as const).map((baseId) =>
+        ROLES.map((role) => itemLabelKey(baseId, 3, role)),
+      ),
+    ).toEqual([
+      ['Grave iron kettle helm', 'Linen wimple', 'Marsh witch hat'],
+      ['Crypt pauldrons', 'Vigil shoulders', 'Marsh shoulders'],
+      ['Burial hauberk', 'Vigil stole', 'Marsh veil'],
+      ['Crypt gauntlets', 'Votive gloves', 'Candle gloves'],
+      ['Crypt chausses', 'Vigil trousers', 'Marsh trousers'],
+      ['Crypt sabatons', 'Chapel boots', 'Marsh boots'],
+      ['Portcullis', 'Votive candle', 'Marsh eye'],
+      ['Crypt grille', 'Wax taper', 'Reed eye'],
+    ]);
+    expect(itemLabelKey('cap', 1, 'healer')).toBeUndefined();
+  });
+
   it('resolves nothing for an unknown id, the purse and inherited object keys included, or for a tier no design is made in', () => {
     expect(itemLabelKey('longsword', 1)).toBeUndefined();
     expect(itemLabelKey('purse', 1)).toBeUndefined();
@@ -204,7 +260,7 @@ describe('items', () => {
     const now = vi.spyOn(Date, 'now');
     const made = [1_700_000_000_000, 1_700_000_000_001, 1_800_000_000_000].map((ms) => {
       now.mockReturnValue(ms);
-      return plainInstance('dagger');
+      return commonInstance('dagger');
     });
     now.mockRestore();
     expect(made.every(({ id }) => /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id))).toBe(true);
@@ -225,9 +281,13 @@ describe('core catalog', () => {
     expect(catalogViolations(coreCatalog, CORE_KEYS)).toEqual([]);
   });
 
-  it('holds exactly the labels of the items and their suffixes, the peoples, the roles, the teachings, the nightmares, elites included, the quests and their objectives, the bounties, and the trophies', () => {
+  it('holds exactly the labels of the items and their suffixes, the peoples, the roles, the teachings, the nightmares, elites included, the quests and their objectives, the bounties, the trophies, and the sets', () => {
     const labels = [
-      ...Object.values(BASE_ITEMS).flatMap((item) => ('tierLabelKeys' in item ? Object.values(item.tierLabelKeys) : [item.labelKey])),
+      ...Object.values(BASE_ITEMS).flatMap((item) =>
+        'tierLabelKeys' in item
+          ? [...Object.values(item.tierLabelKeys), ...Object.values(item.lineLabelKeys).flatMap((tiers: Partial<Record<Tier, string>>) => Object.values(tiers))]
+          : [item.labelKey],
+      ),
       ...Object.values(AFFIXES).map((line) => line.nameKey),
       ...PEOPLES.map(peopleLabelKey),
       ...ROLES.map(roleLabelKey),
@@ -238,6 +298,8 @@ describe('core catalog', () => {
       BOUNTY_LABEL_KEY,
       ...Object.values(BOUNTY_KINDS).flatMap((lines) => Object.values(lines)),
       ...Object.values(TROPHIES),
+      ...Object.values(SET_TITLE_KEYS),
+      ...Object.values(SET_BONUSES).flatMap((steps) => steps.map((step) => step.textKey)),
     ];
     // Each role's Spirit deepening is its own teaching under one label, and the Mystic's trial says each of its places by one line.
     expect([...new Set(labels)].sort()).toEqual(CORE_KEYS);

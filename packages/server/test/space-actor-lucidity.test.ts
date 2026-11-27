@@ -1,10 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { NO_LUCIDITY, NO_QUESTS, OUTDOOR_SPACE_ID, boardTurnsAt, bountyIdOf, doorOpenAt, monsterKind, parseModelRegistry, resolveDoor } from '@somnio/core';
+import {
+  NO_LUCIDITY,
+  NO_QUESTS,
+  OUTDOOR_SPACE_ID,
+  boardTurnsAt,
+  bountyIdOf,
+  doorOpenAt,
+  isWardrobeBase,
+  monsterKind,
+  parseModelRegistry,
+  resolveDoor,
+} from '@somnio/core';
 import type { BaseItemId, Character, Inventory, ItemInstance, Lucidity, MonsterKindId, MonsterSpawn, Point, QuestId, QuestLog, Sector } from '@somnio/core';
 import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { Role, SomnioMessage } from '@somnio/protocol';
 import registryJSON from '@somnio/core/data/ModelRegistry.json' with { type: 'json' };
-import { plain } from '../../core/test/support/items.ts';
+import { common } from '../../core/test/support/items.ts';
 import { outdoorSector } from '../../core/test/support/worldFixture.ts';
 import { DEV_SECTORS_DIRECTORY } from '../src/config.ts';
 import { loadSectorCache, loadWorld } from '../src/sectors/sectorCache.ts';
@@ -173,13 +184,13 @@ function strike(world: Town, nightmare: string, swings: number, ...strikers: str
 const fullBag = (): ItemInstance[] =>
   Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxBagItems }, (_, index) => ({
     id: `00000000-0000-7000-8000-1${String(index).padStart(11, '0')}`,
-    ...plain('cap'),
+    ...common('cap'),
   }));
 
 const inventoryOf = (world: Town, entityId: string): Inventory => world.space.snapshotForPlayer(entityId)!.inventory;
 
 describe("a trial's reward", () => {
-  const BUCKLER: ItemInstance = { id: '00000000-0000-7000-8000-000000000031', ...plain('buckler') };
+  const BUCKLER: ItemInstance = { id: '00000000-0000-7000-8000-000000000031', ...common('buckler') };
   const passed = (role: Role): Partial<Character> => {
     const questId = `${role}-trial` as QuestId;
     return { quests: holding(questId, role === 'mystic' ? [1, 1, 1] : [1]) };
@@ -268,9 +279,9 @@ describe('a trial', () => {
     const messages = await collectMessages(alice.outbox);
     expect(payloads(messages, 'inventory').at(-1)).toEqual({
       coins: 100,
-      equipped: [{ slot: 'offHand', item: { id: expect.any(String), ...plain('moonstone') } }],
+      equipped: [{ slot: 'offHand', item: { id: expect.any(String), ...common('moonstone') } }],
       bag: [],
-      rewarded: [{ kind: 'item', baseId: 'moonstone', tier: 1, rarity: 'plain' }],
+      rewarded: [{ kind: 'item', baseId: 'moonstone', tier: 1, rarity: 'common' }],
     });
     // The Moonstone follows the role in what the dreamer is sent.
     const order = messages.flatMap((message) => (message.tag === 'inventory' || message.tag === 'lucidity' ? [message.tag] : []));
@@ -303,9 +314,9 @@ describe('a trial', () => {
     });
     expect(payloads(await collectMessages(alice.outbox), 'inventory').at(-1)).toEqual({
       coins: 100,
-      equipped: [{ slot: 'offHand', item: { id: expect.any(String), ...plain('wand') } }],
+      equipped: [{ slot: 'offHand', item: { id: expect.any(String), ...common('wand') } }],
       bag: [],
-      rewarded: [{ kind: 'item', baseId: 'wand', tier: 1, rarity: 'plain' }],
+      rewarded: [{ kind: 'item', baseId: 'wand', tier: 1, rarity: 'common' }],
     });
   });
 
@@ -700,7 +711,7 @@ describe('a quest', () => {
     expect(questsOf(world.space, carol.entityId)).toEqual(holding('into-the-crypt', [0], ['restless-graves', 'cracked-skulls']));
   });
 
-  it('pays its coins, its practice, and its gear on its turn-in, and with a full bag waits, granting nothing, until there is room', async () => {
+  it("pays its coins, its practice, and a piece of the dreamer's role's set on its turn-in, and with a full bag waits, granting nothing, until there is room", async () => {
     const world = graveyard();
     const caps = fullBag();
     const character = {
@@ -720,12 +731,13 @@ describe('a quest', () => {
     const { coins, bag } = inventoryOf(world, alice.entityId);
     expect(coins).toBe(COINS + 250);
     const gear = bag.find(({ item }) => item.baseId !== 'cap')!.item;
-    expect(gear).toMatchObject({ tier: 3, rarity: expect.not.stringMatching('plain') });
+    expect(gear).toMatchObject({ tier: 3, rarity: 'epic', line: 'fighter' });
+    expect(isWardrobeBase(gear.baseId)).toBe(true);
     expect(bag).toHaveLength(SOMNIO_PROTOCOL_CONSTANTS.maxBagItems);
     // The frame says what the turn-in gave, so the dreamer is told of the gear.
     expect(payloads(await collectMessages(alice.outbox), 'inventory').at(-1)).toMatchObject({
       coins: COINS + 250,
-      rewarded: [{ kind: 'item', baseId: gear.baseId, tier: 3, rarity: gear.rarity }],
+      rewarded: [{ kind: 'item', baseId: gear.baseId, tier: 3, rarity: 'epic', line: 'fighter' }],
     });
   });
 
@@ -902,7 +914,7 @@ describe('the bounty board', () => {
     expect(questsOf(world.space, carol.entityId)).toEqual(NO_QUESTS);
   });
 
-  it('counts a drive-off of its kind in its land, and pays its coins and a magic item at the board once', () => {
+  it('counts a drive-off of its kind in its land, and pays its coins and an uncommon item at the board once', () => {
     const day = dayAsking('driveOff');
     const world = graveyardOn(day);
     const bounty = offered(day)[0]!;
@@ -927,7 +939,7 @@ describe('the bounty board', () => {
     const { coins, bag } = inventoryOf(world, alice.entityId);
     expect(coins).toBe(before.coins + bounty.reward.coins);
     // The space's loot rolls land at the top of every range, which a quest's own odds make rare.
-    expect(bag.slice(before.bag.length).map(({ item }) => [item.tier, item.rarity])).toEqual([[bounty.reward.gear, 'magic']]);
+    expect(bag.slice(before.bag.length).map(({ item }) => [item.tier, item.rarity])).toEqual([[bounty.reward.gear, 'uncommon']]);
   });
 
   it('with a full bag waits, granting nothing, until there is room', () => {

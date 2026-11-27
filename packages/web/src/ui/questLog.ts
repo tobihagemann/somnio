@@ -1,5 +1,6 @@
 import { heldQuest, mayShare, questComplete } from '@somnio/core';
 import type { QuestLog, QuestOrBountyId } from '@somnio/core';
+import type { Role } from '@somnio/protocol';
 import { t } from '@/i18n';
 import { button, element, setHidden } from './dom';
 import { countdown, questLines, questLogCount, questTitle, returnLine, rewardNote, runsOutAt, tickCountdowns } from './questText';
@@ -34,12 +35,15 @@ export class QuestLogList {
     this.nodes = [this.empty, this.list];
   }
 
-  /** `study` is the teaching the player studies, which a quest's practice goes toward, and `wallMs` the time now in epoch milliseconds. */
-  render(quests: QuestLog, study: string | undefined, wallMs: number): void {
+  /**
+   * `study` is the teaching the player studies, which a quest's practice goes toward, `role` the
+   * player's, which a set piece it pays is of, and `wallMs` the time now in epoch milliseconds.
+   */
+  render(quests: QuestLog, study: string | undefined, role: Role | undefined, wallMs: number): void {
     // A button replaced between press and release is never pressed, and the shell renders on every
     // `energy` frame, so the log is rebuilt only when what it says has changed.
     const entries = quests.active.map((held) => ({ held, returnTo: questComplete(held) ? returnLine(held, this.carrierName) : undefined }));
-    const shown = JSON.stringify([study, entries]);
+    const shown = JSON.stringify([study, role, entries]);
     if (shown === this.shown) return;
     this.shown = shown;
     this.count.textContent = questLogCount(entries.length);
@@ -69,7 +73,7 @@ export class QuestLogList {
             element('div', { className: 'hud-quest__head', children: [element('strong', { text: title })] }),
             ...questLines(said, held),
             ...(runsOut === undefined ? [] : [runsOut.node]),
-            ...rewardNote(said.reward, study),
+            ...rewardNote(said.reward, study, role),
             ...(returnTo === undefined ? [] : [element('p', { className: 'hud-quest__return', text: returnTo })]),
             element('div', { className: 'hud-quest__actions', children: actions }),
           ],

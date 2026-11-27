@@ -180,8 +180,8 @@ describe('a bounty', () => {
     ]);
   });
 
-  it('pays its coins, and a magic item only when it pays one', () => {
-    expect(bountyQuest(GRAVEYARD).reward).toStrictEqual({ coins: 120, gear: 3, gearRarity: 'magic' });
+  it('pays its coins, and an uncommon item only when it pays one', () => {
+    expect(bountyQuest(GRAVEYARD).reward).toStrictEqual({ coins: 120, gear: 3, gearRarity: 'uncommon' });
     expect(bountyQuest(ARENA).reward).toStrictEqual({ coins: 72 });
   });
 

@@ -1,10 +1,14 @@
 import {
   COMBAT,
   NO_LUCIDITY,
+  SET_BONUSES,
+  SET_TITLE_KEYS,
   balancePerSecond,
   maxPools,
   mendAmount,
   monsterKind,
+  setBonusesOf,
+  shownSetPieces,
   spiritPerSecond,
   statsOf,
   strikeChance,
@@ -15,7 +19,7 @@ import type { Inventory, StatId } from '@somnio/core';
 import type { LucidityMessage } from '@somnio/protocol';
 import { itemName, t } from '@/i18n';
 import { decimal } from './belt';
-import { statLine } from './itemText';
+import { setStepLine, statLine } from './itemText';
 
 /** One line of the Stats tab: what it measures, its whole total, and where that comes from. */
 interface StatRow {
@@ -40,7 +44,8 @@ function percent(share: number): string {
 
 /**
  * The dreamer's whole totals as the rules read them, from their ranks and what they wear: the pools,
- * the swing, how often a nightmare's strike lands, recovery, and a Healer's mend or a Mystic's ward.
+ * the swing, how often a nightmare's strike lands, recovery, a Healer's mend or a Mystic's ward, and
+ * how much of their role's set they wear, with each of its steps in effect.
  */
 export function statGroups(inventory: Inventory, lucidity: LucidityMessage): StatGroup[] {
   const stats = statsOf(inventory.equipped, lucidity);
@@ -77,7 +82,11 @@ export function statGroups(inventory: Inventory, lucidity: LucidityMessage): Sta
                 t('Damage a swing'),
                 String(swing.damage),
                 [
-                  t('%1$@: %2$@', mainHand === undefined ? t('Bare hands') : itemName(mainHand.baseId, mainHand.tier, t), String(swing.damage - stats.damage)),
+                  t(
+                    '%1$@: %2$@',
+                    mainHand === undefined ? t('Bare hands') : itemName(mainHand.baseId, mainHand.tier, mainHand.line, t),
+                    String(swing.damage - stats.damage),
+                  ),
                   sources('damage'),
                 ]
                   .filter((part) => part !== undefined)
@@ -112,8 +121,15 @@ export function statGroups(inventory: Inventory, lucidity: LucidityMessage): Sta
   ];
   if (lucidity.role === 'healer')
     groups.push({ title: t('Mending'), rows: [row('mend', t('Health a mend'), String(mendAmount(stats)), sources('mendDepth'))] });
-  if (lucidity.role === 'mystic')
-    groups.push({ title: t('Warding'), rows: [row('ward', t('Ward strength'), percent(wardShare(stats)), added('wardStrength'))] });
+  if (lucidity.role === 'mystic') {
+    const ward = percent(wardShare(stats, setBonusesOf(inventory.equipped, lucidity.role)));
+    groups.push({ title: t('Warding'), rows: [row('ward', t('Ward strength'), ward, added('wardStrength'))] });
+  }
+  const pieces = shownSetPieces(inventory.equipped, lucidity.role);
+  if (lucidity.role !== undefined && pieces > 0) {
+    const steps = SET_BONUSES[lucidity.role].filter((step) => pieces >= step.pieces);
+    groups.push({ title: t(SET_TITLE_KEYS[lucidity.role], String(pieces)), rows: steps.map((step) => row(`set${step.pieces}`, setStepLine(step), '')) });
+  }
   return groups;
 }
 

@@ -1203,11 +1203,17 @@ export class AppShell {
     const framing = inWorld && !this.session.fallen;
     this.hud.renderTarget(framing ? this.framed(this.session.target) : undefined, this.session.gazeLocked);
     this.fallenNotice.render({ fallen: this.session.fallen, raise: this.session.raiseOf(selfId) }, performance.now());
-    this.questOfferPrompt.render(inWorld ? this.session.questOffer() : undefined, this.session.quests, this.session.lucidity.study, performance.now());
+    this.questOfferPrompt.render(
+      inWorld ? this.session.questOffer() : undefined,
+      this.session.quests,
+      this.session.lucidity.study,
+      this.session.lucidity.role,
+      performance.now(),
+    );
     this.hud.renderChat(this.controller.chatHistory);
     this.hud.renderPlayers(this.controller.players, { own: this.controller.selfDisplayName, target: target?.name });
     this.hud.renderCharacter(this.session.inventory, this.session.lucidity, shop ? this.session.tradeLocked() : undefined);
-    this.hud.renderQuests(this.session.quests, this.session.lucidity.study);
+    this.hud.renderQuests(this.session.quests, this.session.lucidity.study, this.session.lucidity.role);
     this.hud.tick(performance.now(), this.clock());
   }
 }

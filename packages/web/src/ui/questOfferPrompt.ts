@@ -1,5 +1,6 @@
 import { bountyQuest, quest, questLogFull } from '@somnio/core';
 import type { QuestLog } from '@somnio/core';
+import type { Role } from '@somnio/protocol';
 import { wholeSecondsLeft } from '@/client';
 import type { ClientQuestOffer } from '@/client';
 import { t } from '@/i18n';
@@ -41,15 +42,15 @@ export class QuestOfferPrompt {
     });
   }
 
-  /** `study` is the teaching the player studies, which the quest's practice would go toward. */
-  render(offer: ClientQuestOffer | undefined, quests: QuestLog, study: string | undefined, nowMs: number): void {
+  /** `study` is the teaching the player studies, which the quest's practice would go toward, and `role` the player's, which a set piece it pays would be of. */
+  render(offer: ClientQuestOffer | undefined, quests: QuestLog, study: string | undefined, role: Role | undefined, nowMs: number): void {
     this.offer = offer;
     // A button replaced between press and release is never pressed, so the prompt is built anew only
     // when what it says changes, and each button answers the offer it was built for.
-    const shown = offer === undefined ? undefined : JSON.stringify([offer.offerId, offer.questId, study]);
+    const shown = offer === undefined ? undefined : JSON.stringify([offer.offerId, offer.questId, study, role]);
     if (shown !== this.shown) {
       this.shown = shown;
-      if (offer !== undefined) this.say(offer, study);
+      if (offer !== undefined) this.say(offer, study, role);
     }
     const full = questLogFull(quests);
     if (this.take !== undefined) this.take.disabled = full;
@@ -67,7 +68,7 @@ export class QuestOfferPrompt {
     if (this.secondsLeft.textContent !== text) this.secondsLeft.textContent = text;
   }
 
-  private say(offer: ClientQuestOffer, study: string | undefined): void {
+  private say(offer: ClientQuestOffer, study: string | undefined, role: Role | undefined): void {
     const said = offer.bounty === undefined ? quest(offer.questId) : bountyQuest(offer.bounty);
     const heading = t('%@ shares a quest', offer.fromName);
     this.root.setAttribute('aria-label', heading);
@@ -76,7 +77,7 @@ export class QuestOfferPrompt {
     this.body.replaceChildren(
       element('p', { className: 'quest-offer-prompt__quest', children: [element('strong', { text: questTitle(said, offer.bounty) })] }),
       ...questLines(said, undefined),
-      ...rewardNote(said.reward, study),
+      ...rewardNote(said.reward, study, role),
       element('p', { className: 'form-note', text: turnIn }),
     );
     this.take = button(t('Take the quest'), () => this.onAnswer(offer.offerId, true));

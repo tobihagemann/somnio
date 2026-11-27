@@ -1,14 +1,15 @@
 import { sql } from 'kysely';
 import { Migrator } from 'kysely/migration';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { newItemId, plainInstance } from '@somnio/core';
-import { plain } from '../../../core/test/support/items.ts';
+import { newItemId, commonInstance } from '@somnio/core';
+import { common } from '../../../core/test/support/items.ts';
 import { LegacyDatabaseError, MigrationError, migrateToLatest } from '../../src/migrate.ts';
 import { down as dreamersDown, up as dreamersUp } from '../../src/migrations/0001_dreamers.ts';
 import { down as itemsDown, up as itemsUp } from '../../src/migrations/0002_items.ts';
 import { down as questsDown, up as questsUp } from '../../src/migrations/0003_quests.ts';
 import { down as newcomerErrandDown, up as newcomerErrandUp } from '../../src/migrations/0004_newcomer_errand.ts';
 import { down as dropNPCDialogStatesDown, up as dropNPCDialogStatesUp } from '../../src/migrations/0005_drop_npc_dialog_states.ts';
+import { down as wardrobeSlotsDown, up as wardrobeSlotsUp } from '../../src/migrations/0006_wardrobe_slots.ts';
 import { PostgresCharacterRepository } from '../../src/repositories/characters.ts';
 import { PostgresItemRepository } from '../../src/repositories/items.ts';
 import { PostgresQuestRepository } from '../../src/repositories/quests.ts';
@@ -162,11 +163,11 @@ describe('upgrading a database from the first schema', () => {
   }
 
   it.each([
-    ['a Healer their Moonstone', 'Hale', 37, { offHand: { id: expect.any(String), ...plain('moonstone') } }],
-    ['a Mystic a plain focus', 'Myst', 250, { offHand: { id: expect.any(String), ...plain('wand') } }],
+    ['a Healer their Moonstone', 'Hale', 37, { offHand: { id: expect.any(String), ...common('moonstone') } }],
+    ['a Mystic a plain focus', 'Myst', 250, { offHand: { id: expect.any(String), ...common('wand') } }],
     ['a dreamer with no role nothing', 'Plain', 0, {}],
   ])('keeps the coins, gives the starter kit in place of the rows, and puts in hand for %s', async (_label, name, coins, equipped) => {
-    expect(await inventoryOf(name)).toEqual({ coins, equipped, bag: [{ place: 0, item: { id: expect.any(String), ...plain('cudgel') } }] });
+    expect(await inventoryOf(name)).toEqual({ coins, equipped, bag: [{ place: 0, item: { id: expect.any(String), ...common('cudgel') } }] });
   });
 
   it('keeps the role and the ranks of a dreamer who held a task, and drops the task', async () => {
@@ -277,12 +278,12 @@ describe('upgrading a database from the ring slots', () => {
     expect(await new PostgresItemRepository(harness.db).load(characterId)).toEqual({
       coins: 0,
       equipped: {
-        mainHand: { id: held, baseId: 'cudgel', tier: 1, rarity: 'plain', affixes: [] },
-        bracelet1: { id: onLeft, baseId: 'bracelet', tier: 2, rarity: 'magic', affixes: [{ affixId: 'mend-depth', value: 3 }] },
-        bracelet2: { id: onRight, baseId: 'bracelet', tier: 1, rarity: 'plain', affixes: [] },
+        mainHand: { id: held, baseId: 'cudgel', tier: 1, rarity: 'common', affixes: [] },
+        bracelet1: { id: onLeft, baseId: 'bracelet', tier: 2, rarity: 'uncommon', affixes: [{ affixId: 'mend-depth', value: 3 }] },
+        bracelet2: { id: onRight, baseId: 'bracelet', tier: 1, rarity: 'common', affixes: [] },
       },
       bag: [
-        { place: 3, item: { id: cap, baseId: 'cap', tier: 2, rarity: 'magic', affixes: [{ affixId: 'guard', value: 2 }] } },
+        { place: 3, item: { id: cap, baseId: 'cap', tier: 2, rarity: 'uncommon', affixes: [{ affixId: 'guard', value: 2 }] } },
         {
           place: 7,
           item: {
@@ -302,11 +303,76 @@ describe('upgrading a database from the ring slots', () => {
   });
 
   it('saves shoulders worn in their slot and loads them back', async () => {
-    const shoulders = { ...plainInstance('shoulders'), tier: 2 as const };
+    const shoulders = { ...commonInstance('shoulders'), tier: 2 as const };
     const repository = new PostgresItemRepository(harness.db);
     const before = await repository.load(characterId);
     await sql`INSERT INTO items (id, character_id, base_id, tier, rarity, affixes, equipped_slot, bag_place)
-      VALUES (${shoulders.id}, ${characterId}, 'shoulders', 2, 'plain', '[]', 'shoulders', NULL)`.execute(harness.db);
+      VALUES (${shoulders.id}, ${characterId}, 'shoulders', 2, 'common', '[]', 'shoulders', NULL)`.execute(harness.db);
     expect(await repository.load(characterId)).toEqual({ ...before, equipped: { ...before.equipped, shoulders } });
+  });
+});
+
+describe('upgrading a database from the plain and magic rarities', () => {
+  let harness: DatabaseHarness;
+  let characterId: string;
+  const [plainCap, magicAmulet, rareSword] = [newItemId(), newItemId(), newItemId()];
+
+  beforeAll(async () => {
+    harness = await startDatabase({ migrate: false });
+    const oldRarities = new Migrator({
+      db: harness.db,
+      provider: {
+        getMigrations: () =>
+          Promise.resolve({
+            '0001_dreamers': { up: dreamersUp, down: dreamersDown },
+            '0002_items': { up: itemsUp, down: itemsDown },
+            '0003_quests': { up: questsUp, down: questsDown },
+            '0004_newcomer_errand': { up: newcomerErrandUp, down: newcomerErrandDown },
+            '0005_drop_npc_dialog_states': { up: dropNPCDialogStatesUp, down: dropNPCDialogStatesDown },
+            '0006_wardrobe_slots': { up: wardrobeSlotsUp, down: wardrobeSlotsDown },
+          }),
+      },
+    });
+    expect((await oldRarities.migrateToLatest()).error).toBeUndefined();
+    const accountId = crypto.randomUUID();
+    characterId = crypto.randomUUID();
+    await sql`INSERT INTO accounts (id, password_hash, email) VALUES (${accountId}, 'h', 'rarities@example.com')`.execute(harness.db);
+    await sql`INSERT INTO characters (
+      id, account_id, name, people, space, position_x, position_z, facing,
+      health_current, health_max, balance_current, balance_max, spirit_current, spirit_max, last_seen, name_skeleton, coins
+    ) VALUES (
+      ${characterId}, ${accountId}, 'Hoarder', 'vigils', 'EdariaLibrary', 0, 0, 0, 100, 100, 100, 100, 100, 100, NOW(), 'hoarder', 0
+    )`.execute(harness.db);
+    await sql`INSERT INTO items (id, character_id, base_id, tier, rarity, affixes, equipped_slot, bag_place) VALUES
+      (${plainCap}, ${characterId}, 'cap', 3, 'plain', '[]', 'head', NULL),
+      (${magicAmulet}, ${characterId}, 'amulet', 2, 'magic', '[{"affixId": "spirit", "value": 9}]', NULL, 4),
+      (${rareSword}, ${characterId}, 'sword', 3, 'rare', '[{"affixId": "damage", "value": 5}, {"affixId": "swing-speed", "value": 10}, {"affixId": "balance", "value": 12}]', 'mainHand', NULL)
+    `.execute(harness.db);
+    await migrateToLatest(harness.db);
+  });
+
+  afterAll(async () => {
+    await harness.stop();
+  });
+
+  it('renames plain to common and magic to uncommon, keeps rare, and gives no item a line', async () => {
+    expect(await new PostgresItemRepository(harness.db).load(characterId)).toEqual({
+      coins: 0,
+      equipped: {
+        mainHand: {
+          id: rareSword,
+          baseId: 'sword',
+          tier: 3,
+          rarity: 'rare',
+          affixes: [
+            { affixId: 'damage', value: 5 },
+            { affixId: 'swing-speed', value: 10 },
+            { affixId: 'balance', value: 12 },
+          ],
+        },
+        head: { id: plainCap, baseId: 'cap', tier: 3, rarity: 'common', affixes: [] },
+      },
+      bag: [{ place: 4, item: { id: magicAmulet, baseId: 'amulet', tier: 2, rarity: 'uncommon', affixes: [{ affixId: 'spirit', value: 9 }] } }],
+    });
   });
 });

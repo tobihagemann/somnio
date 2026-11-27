@@ -5,7 +5,7 @@ import { bountyDay, bountyIdOf, bountyOf, bountyQuest, isBountyId } from './boun
 import type { Bounty, BountyId } from './bounties.ts';
 import { distance } from './geometry.ts';
 import type { Point } from './geometry.ts';
-import type { BaseItemId, Rarity, Tier } from './items.ts';
+import type { BaseItemId, NeutralRarity, Tier } from './items.ts';
 import { FIRST_TEACHING, TEACHING_IDS, TRIAL_QUESTS, TRIAL_REWARDS, teaching, teachingStanding } from './lucidity.ts';
 import type { HeldRank, TeachingId } from './lucidity.ts';
 import { isMonsterKindId } from './monsterKinds.ts';
@@ -41,8 +41,10 @@ export interface QuestReward {
   coins?: number;
   practice?: number;
   gear?: Tier;
-  /** The one rarity the item is rolled at, as a bounty's is magic; without it, `QUEST_GEAR_RARITIES` rolls one. */
-  gearRarity?: Rarity;
+  /** The one rarity the item is rolled at, as a bounty's is uncommon; without it, `QUEST_GEAR_RARITIES` rolls one. */
+  gearRarity?: NeutralRarity;
+  /** The item is a piece of the dreamer's role's set, for a dreamer with a role. */
+  setPiece?: true;
 }
 
 export interface Quest {
@@ -139,7 +141,7 @@ export interface TurnInGrant {
   role: Role | undefined;
   /** The teaching whose first rank it teaches: a trial's role's first, or a gate's. */
   teaches: TeachingId | undefined;
-  /** The plain item a trial gives. */
+  /** The common item a trial gives. */
   trialItem: BaseItemId | undefined;
   /** Whether it pays coins or gives an item, which one `inventory` frame carries to the dreamer. */
   paysInventory: boolean;

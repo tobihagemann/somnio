@@ -502,7 +502,7 @@
   },
   "hello": {
     "payload": {
-      "protocolVersion": 26
+      "protocolVersion": 27
     },
     "tag": "hello"
   },
@@ -531,7 +531,7 @@
             ],
             "baseId": "cap",
             "id": "0190a1b2-c3d6-7b2c-8d3e-4f5a6b7c8d9e",
-            "rarity": "magic",
+            "rarity": "uncommon",
             "tier": 1
           },
           "place": 3
@@ -567,7 +567,7 @@
             "affixes": [],
             "baseId": "moonstone",
             "id": "0190a1b2-c3d5-7a1b-9c2d-3e4f5a6b7c8d",
-            "rarity": "plain",
+            "rarity": "common",
             "tier": 1
           },
           "slot": "offHand"
@@ -589,7 +589,7 @@
             ],
             "baseId": "cap",
             "id": "0190a1b2-c3d6-7b2c-8d3e-4f5a6b7c8d9e",
-            "rarity": "magic",
+            "rarity": "uncommon",
             "tier": 1
           },
           "place": 0
@@ -601,7 +601,7 @@
         "baseId": "cap",
         "coins": 25,
         "kind": "boughtBack",
-        "rarity": "magic",
+        "rarity": "uncommon",
         "tier": 1
       }
     },
@@ -614,7 +614,7 @@
       "dropped": {
         "baseId": "cap",
         "kind": "item",
-        "rarity": "magic",
+        "rarity": "uncommon",
         "tier": 1
       },
       "equipped": []
@@ -634,7 +634,7 @@
             ],
             "baseId": "cap",
             "id": "0190a1b2-c3d6-7b2c-8d3e-4f5a6b7c8d9e",
-            "rarity": "magic",
+            "rarity": "uncommon",
             "tier": 1
           },
           "place": 3
@@ -645,7 +645,7 @@
       "pickedUp": {
         "baseId": "cap",
         "kind": "item",
-        "rarity": "magic",
+        "rarity": "uncommon",
         "tier": 1
       }
     },
@@ -664,7 +664,7 @@
           ],
           "baseId": "cap",
           "id": "0190a1b2-c3d6-7b2c-8d3e-4f5a6b7c8d9e",
-          "rarity": "magic",
+          "rarity": "uncommon",
           "tier": 1
         }
       ],
@@ -674,8 +674,51 @@
         "baseId": "cap",
         "coins": 25,
         "kind": "sold",
-        "rarity": "magic",
+        "rarity": "uncommon",
         "tier": 1
+      }
+    },
+    "tag": "inventory"
+  },
+  "inventory-after-trade-set-piece": {
+    "payload": {
+      "bag": [],
+      "buyBack": [
+        {
+          "affixes": [
+            {
+              "affixId": "health",
+              "value": 14
+            },
+            {
+              "affixId": "guard",
+              "value": 5
+            },
+            {
+              "affixId": "balance",
+              "value": 12
+            },
+            {
+              "affixId": "balance-recovery",
+              "value": 20
+            }
+          ],
+          "baseId": "cap",
+          "id": "0190a1b2-c3d6-7b2c-8d3e-4f5a6b7c8d9e",
+          "line": "healer",
+          "rarity": "epic",
+          "tier": 3
+        }
+      ],
+      "coins": 260,
+      "equipped": [],
+      "trade": {
+        "baseId": "cap",
+        "coins": 160,
+        "kind": "sold",
+        "line": "healer",
+        "rarity": "epic",
+        "tier": 3
       }
     },
     "tag": "inventory"
@@ -719,6 +762,43 @@
           "kind": "item",
           "rarity": "rare",
           "tier": 3
+        }
+      ]
+    },
+    "tag": "inventory"
+  },
+  "inventory-set-piece": {
+    "payload": {
+      "bag": [],
+      "coins": 100,
+      "equipped": [
+        {
+          "item": {
+            "affixes": [
+              {
+                "affixId": "health",
+                "value": 14
+              },
+              {
+                "affixId": "guard",
+                "value": 5
+              },
+              {
+                "affixId": "balance",
+                "value": 12
+              },
+              {
+                "affixId": "balance-recovery",
+                "value": 20
+              }
+            ],
+            "baseId": "cap",
+            "id": "0190a1b2-c3d6-7b2c-8d3e-4f5a6b7c8d9e",
+            "line": "healer",
+            "rarity": "epic",
+            "tier": 3
+          },
+          "slot": "head"
         }
       ]
     },
@@ -773,7 +853,7 @@
       "contents": {
         "baseId": "cap",
         "kind": "item",
-        "rarity": "magic",
+        "rarity": "uncommon",
         "tier": 2
       },
       "lootId": "loot-12",
@@ -800,12 +880,27 @@
     },
     "tag": "loot"
   },
+  "loot-set-piece": {
+    "payload": {
+      "contents": {
+        "baseId": "cap",
+        "kind": "item",
+        "line": "healer",
+        "rarity": "epic",
+        "tier": 3
+      },
+      "lootId": "loot-12",
+      "x": 31.5,
+      "z": -12.25
+    },
+    "tag": "loot"
+  },
   "loot-shared": {
     "payload": {
       "contents": {
         "baseId": "cap",
         "kind": "item",
-        "rarity": "magic",
+        "rarity": "uncommon",
         "tier": 2
       },
       "lootId": "loot-12",
@@ -820,7 +915,7 @@
       "contents": {
         "baseId": "cap",
         "kind": "item",
-        "rarity": "magic",
+        "rarity": "uncommon",
         "tier": 2
       },
       "from": {
@@ -1007,6 +1102,25 @@
     "payload": {
       "entityId": "7c1d2e3f-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
       "outfit": []
+    },
+    "tag": "outfit"
+  },
+  "outfit-set-piece": {
+    "payload": {
+      "entityId": "7c1d2e3f-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
+      "outfit": [
+        {
+          "baseId": "moonstone",
+          "slot": "offHand",
+          "tier": 1
+        },
+        {
+          "baseId": "cap",
+          "line": "healer",
+          "slot": "head",
+          "tier": 3
+        }
+      ]
     },
     "tag": "outfit"
   },

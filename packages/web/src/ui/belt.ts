@@ -1,14 +1,4 @@
-import {
-  SOMNIO_CONSTANTS,
-  ability,
-  abilityChannelSeconds,
-  abilityCooldownSeconds,
-  abilityTeaching,
-  isTeachingId,
-  poolShare,
-  practiceNeeded,
-  teaching,
-} from '@somnio/core';
+import { SOMNIO_CONSTANTS, ability, abilityTeaching, isTeachingId, poolShare, practiceNeeded, teaching } from '@somnio/core';
 import type { Ability, AbilityId, AbilityRefusal, AttackRefusal, EngageAction, HandNeed } from '@somnio/core';
 import type { LucidityMessage } from '@somnio/protocol';
 import { wholeSecondsLeft } from '@/client';
@@ -335,11 +325,10 @@ function refusalLine(used: Ability, refusal: AbilityRefusal): string | undefined
   }
 }
 
-/** An ability's tip: its cost, timing, and reach at the rank held, what it does, and what keeps it from acting now. */
+/** An ability's tip: its cost, timing at the rank held and with the set worn, and reach, what it does, and what keeps it from acting now. */
 function abilityTip(abilityId: AbilityId, state: AbilitySlotState, key: string | undefined, nowMs: number): Tip {
   const used = ability(abilityId);
   const cost = String(used.cost);
-  const channel = abilityChannelSeconds(abilityId, state.rank);
   const ownCooldown = state.cooldown === undefined || state.cooldown.global ? undefined : state.cooldown;
   const ready = ownCooldown === undefined ? undefined : t('Ready in %@ s', String(wholeSecondsLeft(ownCooldown.endsAtMs, nowMs)));
   const warning = (state.refusal === undefined ? undefined : refusalLine(used, state.refusal)) ?? ready;
@@ -348,8 +337,8 @@ function abilityTip(abilityId: AbilityId, state: AbilitySlotState, key: string |
     ...(key === undefined ? {} : { aside: key }),
     facts: [
       { text: used.pool === 'spirit' ? t('%@ Spirit', cost) : t('%@ Balance', cost), pool: used.pool },
-      { text: channel === undefined ? t('Instant') : t('%@ s channel', decimal(channel)) },
-      { text: t('%@ s cooldown', decimal(abilityCooldownSeconds(abilityId, state.rank))) },
+      { text: state.channelSeconds === undefined ? t('Instant') : t('%@ s channel', decimal(state.channelSeconds)) },
+      { text: t('%@ s cooldown', decimal(state.cooldownSeconds)) },
     ],
     lines: [abilityReach(used), TEACHING_BLURB[abilityTeaching(abilityId)]()],
     ...(warning === undefined ? {} : { warning }),

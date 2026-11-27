@@ -111,7 +111,7 @@ import {
   offeredBounty,
   outdoorDoorIds,
   placedFixtures,
-  plainInstance,
+  commonInstance,
   poolShare,
   practiceNeeded,
   raiseSecondsFor,
@@ -136,6 +136,7 @@ import {
   sectorAt,
   sectorPointInSpace,
   sectorView,
+  setBonusesOf,
   shieldedHarm,
   soldToShopAfterSale,
   spawnArea,
@@ -202,6 +203,7 @@ import type {
   Rect,
   Sector,
   SectorNPC,
+  SetBonuses,
   Space,
   SpaceCollision,
   Stats,
@@ -693,19 +695,21 @@ export function offerIds(): () => number {
 
 type NPCDialogAction = { kind: 'wait' } | { kind: 'resetTargeting' } | { kind: 'emit'; target: PlayerSlot };
 
-/** The base and tier of everything the dreamer wears and holds, in slot order, which everyone who sees them is shown. */
+/** The base, tier, and line of everything the dreamer wears and holds, in slot order, which everyone who sees them is shown. */
 function outfitOf({ equipped }: Inventory): Outfit {
   return EQUIP_SLOTS.flatMap((slot) => {
     const item = equipped[slot];
-    return item === undefined ? [] : [{ slot, baseId: item.baseId, tier: item.tier }];
+    return item === undefined ? [] : [{ slot, baseId: item.baseId, tier: item.tier, ...(item.line === undefined ? {} : { line: item.line }) }];
   });
 }
 
-/** What a drop's viewers are shown of it: an item's base, tier, and rarity, never its stat lines, or a trophy's kind. */
+/** What a drop's viewers are shown of it: an item's base, tier, rarity, and line, never its stat lines, or a trophy's kind. */
 function lootContentsMessage(contents: LootContents): LootContentsMessage {
   switch (contents.kind) {
-    case 'item':
-      return { kind: 'item', baseId: contents.item.baseId, tier: contents.item.tier, rarity: contents.item.rarity };
+    case 'item': {
+      const { baseId, tier, rarity, line } = contents.item;
+      return { kind: 'item', baseId, tier, rarity, ...(line === undefined ? {} : { line }) };
+    }
     case 'trophy':
       return contents;
   }
@@ -801,6 +805,12 @@ function secondsLeft(until: number, now: number): number {
 /** `amount` refilled for `seconds` at `perSecond` up to `cap`, never lowering an amount already past the cap. */
 function refilled(amount: number, seconds: number, perSecond: number, cap: number): number {
   return Math.max(amount, Math.min(cap, amount + seconds * perSecond));
+}
+
+/** The seconds an effect put on at the rank given lasts, a `braced` or a `renewing` longer by the set bonuses given. */
+function effectSecondsFor(effectId: EffectId, rank: number, bonuses: SetBonuses): number {
+  const longer = effectId === 'braced' ? bonuses.bracedSeconds : effectId === 'renewing' ? bonuses.renewingSeconds : 0;
+  return effectSeconds(effectId, rank) + longer;
 }
 
 /**
@@ -1345,25 +1355,25 @@ export class SpaceActor {
 
   /**
    * Wears an item the dreamer has in a slot its base fits, as `equipItem` chooses it: from the bag,
-   * whatever that slot wore takes the item's place there, and a worn bracelet changes bracelet slots. The
-   * inventory goes back to the player alone; everyone who sees them is shown only the base and tier
-   * of what they now wear and hold.
+   * whatever that slot wore takes the item's place there, and a worn bracelet changes bracelet slots.
+   * Another role's set piece is refused. The inventory goes back to the player alone; everyone who
+   * sees them is shown only the base, tier, and line of what they now wear and hold.
    */
   handleEquip(itemId: string, slot: EquipSlot | undefined, entityId: string): void {
     const player = this.players.get(entityId);
-    this.changeInventory(player, player === undefined ? undefined : equipItem(player.inventory, itemId, slot));
+    this.changeInventory(player, player === undefined ? undefined : equipItem(player.inventory, player.character.lucidity.role, itemId, slot));
   }
 
   /** Puts what the slot wears into the dreamer's bag, which a full bag refuses. */
   handleUnequip(slot: EquipSlot, entityId: string): void {
     const player = this.players.get(entityId);
-    this.changeInventory(player, player === undefined ? undefined : unequipItem(player.inventory, slot));
+    this.changeInventory(player, player === undefined ? undefined : unequipItem(player.inventory, player.character.lucidity.role, slot));
   }
 
   /** Moves an item the dreamer has to a place in their bag, as `moveItem` rules it. */
   handleMoveItem(itemId: string, place: number, entityId: string): void {
     const player = this.players.get(entityId);
-    this.changeInventory(player, player === undefined ? undefined : moveItem(player.inventory, itemId, place));
+    this.changeInventory(player, player === undefined ? undefined : moveItem(player.inventory, player.character.lucidity.role, itemId, place));
   }
 
   /**
@@ -1379,8 +1389,8 @@ export class SpaceActor {
     if (player === undefined || item === undefined || isFallen(player)) return;
     const hand = HANDS.find((worn) => player.inventory.equipped[worn]?.id === item.id);
     player.inventory = withoutItem(player.inventory, item.id);
-    const { baseId, tier, rarity, affixes } = item;
-    const contents: LootContents = { kind: 'item', item: { baseId, tier, rarity, affixes } };
+    const { baseId, tier, rarity, affixes, line } = item;
+    const contents: LootContents = { kind: 'item', item: { baseId, tier, rarity, affixes, ...(line === undefined ? {} : { line }) } };
     const from = player.character.position;
     const landing = throwLanding(this.collision, from, heading, THROW_DISTANCE, this.npcBodies);
     this.layLoot(undefined, landing, contents, { x: from.x, z: from.z, entityId, ...(hand === undefined ? {} : { hand }) });
@@ -1571,11 +1581,15 @@ export class SpaceActor {
     if (recipient === undefined) return;
     const used = ability(abilityId);
     const rank = abilityRank(lucidity.ranks, abilityId);
+    const bonuses = this.setBonusesFor(player);
     const energy = player.character.energy;
     const pool = POOL_FIELDS[used.pool].current;
-    this.setEnergy(player, { ...energy, [pool]: energy[pool] - used.cost });
+    const spent = { ...energy, [pool]: energy[pool] - used.cost };
+    // The set's give-back lands with the cost, so a Lunge that spends the last of the Balance never touches 0 and winds no one.
+    const givenBack = abilityId === 'lunge' ? bonuses.lungeBalance : 0;
+    this.setEnergy(player, givenBack === 0 ? spent : { ...spent, balanceCurrent: Math.min(spent.balanceMax, spent.balanceCurrent + givenBack) });
     player.globalReadyAt = now + GLOBAL_COOLDOWN_SECONDS * 1000;
-    player.readyAt = { ...player.readyAt, [abilityId]: now + abilityCooldownSeconds(abilityId, rank) * 1000 };
+    player.readyAt = { ...player.readyAt, [abilityId]: now + abilityCooldownSeconds(abilityId, rank, bonuses) * 1000 };
     // The client reports a leap's moves at the gait it holds, toward where it draws the target.
     // So the way to the target at a walk goes into the pace credit, past its cap by one leap at most
     // however often Lunge is used, and recovery is held for the leap's time, not the reported gait's.
@@ -1585,7 +1599,7 @@ export class SpaceActor {
       player.paceCredit = Math.min(player.paceCredit, PACE_CREDIT_CAP_SECONDS) + metres / gaitMetresPerSecond('walk');
       player.leap = { metres, metresPerSecond: used.does.metresPerSecond };
     }
-    const channelSeconds = abilityChannelSeconds(abilityId, rank);
+    const channelSeconds = abilityChannelSeconds(abilityId, rank, bonuses);
     const monster = this.monsters.get(recipient.id);
     const evaded = monster !== undefined && this.evadesUse(monster, used.does, player);
     if (channelSeconds !== undefined) {
@@ -1600,7 +1614,7 @@ export class SpaceActor {
       );
     }
     player.outbox.sendEncoded({ tag: 'cooldowns', payload: this.cooldownsLeft(player) }, this.logger);
-    if (channelSeconds === undefined) this.deed(player, used, rank, used.aim === 'area' ? this.bodiesRound(player, used) : [recipient], evaded);
+    if (channelSeconds === undefined) this.deed(player, abilityId, rank, used.aim === 'area' ? this.bodiesRound(player, used) : [recipient], evaded);
   }
 
   /**
@@ -1667,7 +1681,7 @@ export class SpaceActor {
       this.broadcastChannel(caster, 'done');
       caster.channel = undefined;
       this.broadcastRaisesHeldBy(caster);
-      this.deed(caster, ability(channel.abilityId), channel.rank, [recipient]);
+      this.deed(caster, channel.abilityId, channel.rank, [recipient]);
     }
   }
 
@@ -1731,14 +1745,19 @@ export class SpaceActor {
    * nightmare that dreamer fought (`joinFightsOf`). A
    * calm cuts the caster's threat on every table and puts its effect on them. A leap does nothing
    * here: the caster's client moves them, and each move is judged as every move is, against the
-   * pace credit the use granted.
+   * pace credit the use granted. The caster's set is read as the deed is done, so a bolt carries
+   * the harm it was loosed with.
    */
-  private deed(caster: PlayerSlot, ability: Ability, rank: number, bodies: readonly (AbilityBody & { id: string })[], evaded = false): void {
-    const does = ability.does;
+  private deed(caster: PlayerSlot, abilityId: AbilityId, rank: number, bodies: readonly (AbilityBody & { id: string })[], evaded = false): void {
+    const does = ability(abilityId).does;
+    const bonuses = this.setBonusesFor(caster);
     switch (does.kind) {
       case 'strike': {
         const { position, facing } = caster.character;
-        const damage = swingFor(caster.inventory.equipped.mainHand, this.statsFor(caster))!.damage * scaled(does.damageShare, rank);
+        const damage =
+          swingFor(caster.inventory.equipped.mainHand, this.statsFor(caster))!.damage *
+          scaled(does.damageShare, rank) *
+          (abilityId === 'cleave' ? bonuses.cleaveShare : 1);
         for (const body of bodies) {
           const monster = this.monsters.get(body.id);
           if (monster !== undefined && swingMeets(position, facing, body)) this.blow(caster, monster, damage);
@@ -1746,7 +1765,7 @@ export class SpaceActor {
         return;
       }
       case 'harm': {
-        const damage = scaled(does.damage, rank);
+        const damage = scaled(does.damage, rank) * (abilityId === 'dream-bolt' ? bonuses.boltHarm : 1);
         const now = this.now();
         for (const body of bodies) {
           const monster = this.monsters.get(body.id);
@@ -1765,6 +1784,9 @@ export class SpaceActor {
           }
           if (dreamer !== undefined) this.joinFightsOf(caster, dreamer);
           this.applyEffect(dreamer ?? monster!, does.effectId, rank, caster);
+          if (monster !== undefined && abilityId === 'bind' && bonuses.bindWeakens && !this.holdsUntilPast(monster, 'weakened', rank, caster)) {
+            this.applyEffect(monster, 'weakened', rank, caster);
+          }
         }
         return;
       case 'leap':
@@ -1782,7 +1804,7 @@ export class SpaceActor {
         return;
       }
       case 'heal': {
-        const amount = scaled(does.amount, rank);
+        const amount = scaled(does.amount, rank) * (abilityId === 'radiance' ? bonuses.radianceHeal : 1);
         for (const body of bodies) {
           const dreamer = this.players.get(body.id);
           if (dreamer !== undefined) this.heal(caster.character.id, dreamer, amount);
@@ -1803,14 +1825,27 @@ export class SpaceActor {
 
   /**
    * Puts the effect on its holder for its seconds at the rank given, or starts those seconds over on
-   * a holder who has it. A shield is as strong as its source's stats make their wards.
+   * a holder who has it. A shield is as strong as its source's stats and set make their wards, and
+   * their set may hold a `braced` or a `renewing` longer. Both are read now, so a piece taken off
+   * later changes neither.
    */
   private applyEffect(holder: PlayerSlot | MonsterRuntime, effectId: EffectId, rank: number, source: PlayerSlot): void {
     const now = this.now();
-    const shield = effectAbsorb(effectId, rank) * wardShare(this.statsFor(source));
-    const held = heldEffect(effectId, now + effectSeconds(effectId, rank) * 1000, source.character.id, rank, now, { shield });
+    const bonuses = this.setBonusesFor(source);
+    const shield = effectAbsorb(effectId, rank) * wardShare(this.statsFor(source), bonuses);
+    const seconds = effectSecondsFor(effectId, rank, bonuses);
+    const held = heldEffect(effectId, now + seconds * 1000, source.character.id, rank, now, { shield });
     holder.effects = [...holder.effects.filter((other) => other.effectId !== effectId), held];
     this.sendEffects(holder);
+  }
+
+  /**
+   * Whether the holder already holds the effect past when one the source put on now at the rank
+   * given would end, its set's extra seconds included. A set's extra effect asks first, so it never cuts a longer one short.
+   */
+  private holdsUntilPast(holder: PlayerSlot | MonsterRuntime, effectId: EffectId, rank: number, source: PlayerSlot): boolean {
+    const endsAt = this.now() + effectSecondsFor(effectId, rank, this.setBonusesFor(source)) * 1000;
+    return holder.effects.some((held) => held.effectId === effectId && held.endsAt > endsAt);
   }
 
   /** Drops the holder's effects that `ends` picks, telling whoever is shown them when any went. */
@@ -3250,6 +3285,11 @@ export class SpaceActor {
     return statsOf(slot.inventory.equipped, slot.character.lucidity);
   }
 
+  /** What the steps of their role's set that the dreamer wears enough of change in the rules. */
+  private setBonusesFor(slot: PlayerSlot): SetBonuses {
+    return setBonusesOf(slot.inventory.equipped, slot.character.lucidity.role);
+  }
+
   /** Brings the dreamer's pool maxima to what their ranks and gear give, once either has changed. */
   private settleMaxima(slot: PlayerSlot): void {
     const energy = slot.character.energy;
@@ -3338,7 +3378,7 @@ export class SpaceActor {
     this.setOutfit(slot);
   }
 
-  /** Shows everyone who sees the dreamer what they wear and hold, when a slot's base or tier changed. */
+  /** Shows everyone who sees the dreamer what they wear and hold, when a slot's base, tier, or line changed. */
   private setOutfit(slot: PlayerSlot): void {
     const outfit = outfitOf(slot.inventory);
     if (sameOutfit(outfit, slot.outfit)) return;
@@ -3419,11 +3459,11 @@ export class SpaceActor {
     if (held === undefined || !questCarriedBy(heldQuest(held).turnIn, this.questCarrier(carrierId))) return;
     const reward = heldQuest(held).reward;
     const { role, teaches, trialItem, paysInventory } = turnInGrant(held);
-    const trialGift = trialItem === undefined ? undefined : plainInstance(trialItem);
+    const trialGift = trialItem === undefined ? undefined : commonInstance(trialItem);
     const given: Item[] = trialGift === undefined ? [] : [trialGift];
     let inventory: Inventory | undefined = trialGift === undefined ? player.inventory : grantItem(player.inventory, trialGift);
     if (inventory !== undefined && reward?.gear !== undefined) {
-      const gear = { id: newItemId(), ...rollQuestGear(reward.gear, role ?? lucidity.role, () => randomUnit(this.lootRandom), reward.gearRarity) };
+      const gear = { id: newItemId(), ...rollQuestGear(reward.gear, role ?? lucidity.role, () => randomUnit(this.lootRandom), reward) };
       inventory = bagHasRoom(inventory) ? withItem(inventory, gear) : undefined;
       given.push(gear);
     }
@@ -3535,7 +3575,7 @@ export class SpaceActor {
   }
 
   /**
-   * The shopkeeper sells a dreamer a plain one of a ware, for its price, into a bag with room. The
+   * The shopkeeper sells a dreamer a common one of a ware, for its price, into a bag with room. The
    * coins and the new item go out together in one `inventory` frame that says what was bought.
    * Anything else is dropped silently.
    */
@@ -3543,7 +3583,7 @@ export class SpaceActor {
     const asked = this.serviceFor(carrierId, entityId);
     if (asked?.service !== 'shopkeeper' || !canBuy(asked.player.inventory, baseId)) return;
     const coins = price(baseId);
-    const bought = plainInstance(baseId);
+    const bought = commonInstance(baseId);
     this.addCoins(asked.player, -coins);
     asked.player.inventory = withItem(asked.player.inventory, bought);
     this.sendInventory(asked.player, { trade: { kind: 'bought', baseId, tier: bought.tier, rarity: bought.rarity, coins } });
@@ -3561,7 +3601,9 @@ export class SpaceActor {
     asked.player.inventory = withoutItem(asked.player.inventory, sold.id);
     asked.player.soldToShop = soldToShopAfterSale(asked.player.soldToShop, sold);
     this.addCoins(asked.player, coins);
-    this.sendInventory(asked.player, { trade: { kind: 'sold', baseId: sold.baseId, tier: sold.tier, rarity: sold.rarity, coins } });
+    this.sendInventory(asked.player, {
+      trade: { kind: 'sold', baseId: sold.baseId, tier: sold.tier, rarity: sold.rarity, ...(sold.line === undefined ? {} : { line: sold.line }), coins },
+    });
   }
 
   /**
@@ -3576,7 +3618,9 @@ export class SpaceActor {
     asked.player.soldToShop = asked.player.soldToShop.filter((sold) => sold !== item);
     this.addCoins(asked.player, -coins);
     asked.player.inventory = withItem(asked.player.inventory, item);
-    this.sendInventory(asked.player, { trade: { kind: 'boughtBack', baseId: item.baseId, tier: item.tier, rarity: item.rarity, coins } });
+    this.sendInventory(asked.player, {
+      trade: { kind: 'boughtBack', baseId: item.baseId, tier: item.tier, rarity: item.rarity, ...(item.line === undefined ? {} : { line: item.line }), coins },
+    });
   }
 
   /** One snapshot per player, bumping `lastSeen` so the `last_seen` guard can order it against a racing snapshot of theirs. */

@@ -75,7 +75,7 @@ export interface Bounty {
   monsterKind: BountyKindId;
   objective: BountyObjective;
   count: number;
-  /** Its coins, and the tier of the magic item it pays besides when its roll granted one. */
+  /** Its coins, and the tier of the uncommon item it pays besides when its roll granted one. */
   reward: { coins: number; gear?: Tier };
 }
 
@@ -157,14 +157,14 @@ export function dayBounties(day: number, lands: readonly BountyLand[]): Bounty[]
 
 /**
  * The quest a bounty is: one objective, counted as a quest's are, given and taken by any bounty
- * board, and paying coins and, when it pays one, a magic item.
+ * board, and paying coins and, when it pays one, an uncommon item.
  */
 export function bountyQuest(bounty: Bounty): Quest {
   const { land, monsterKind: kind, objective, count, reward } = bounty;
   const labelKey = BOUNTY_KINDS[kind][objective];
   const asked: QuestObjective =
     objective === 'driveOff' ? { kind: 'driveOff', count, monsterKind: kind, sector: land, labelKey } : { kind: 'collect', count, monsterKind: kind, labelKey };
-  const paid: QuestReward = reward.gear === undefined ? { coins: reward.coins } : { coins: reward.coins, gear: reward.gear, gearRarity: 'magic' };
+  const paid: QuestReward = reward.gear === undefined ? { coins: reward.coins } : { coins: reward.coins, gear: reward.gear, gearRarity: 'uncommon' };
   return { labelKey: BOUNTY_LABEL_KEY, giver: BOUNTY_BOARD, turnIn: BOUNTY_BOARD, objectives: [asked], reward: paid };
 }
 

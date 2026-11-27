@@ -7,6 +7,7 @@ import {
   ability,
   abilityAllowed,
   abilityChannelSeconds,
+  abilityCooldownSeconds,
   abilityRecipient,
   abilityRefusal,
   abilityTeaching,
@@ -20,7 +21,9 @@ import { effect, scaled } from '../src/effects.ts';
 import { BASE_ITEMS } from '../src/items.ts';
 import type { BaseItemId } from '../src/items.ts';
 import { TEACHING_IDS, teaching } from '../src/lucidity.ts';
-import { holding, plain } from './support/items.ts';
+import { NO_SET_BONUSES } from '../src/sets.ts';
+import type { SetBonuses } from '../src/sets.ts';
+import { holding, common } from './support/items.ts';
 import { ranks } from './support/ranks.ts';
 
 const ABILITY_IDS = Object.keys(ABILITIES) as AbilityId[];
@@ -154,8 +157,18 @@ describe('the table', () => {
   });
 
   it('channels Deep mend alone, shorter at each rank, and lands every other ability at once', () => {
-    expect([1, 2, 3].map((rank) => abilityChannelSeconds('deep-mend', rank))).toEqual([1.5, 1.35, 1.2]);
-    expect(ABILITY_IDS.filter((id) => abilityChannelSeconds(id, 1) !== undefined)).toEqual(['deep-mend']);
+    expect([1, 2, 3].map((rank) => abilityChannelSeconds('deep-mend', rank, NO_SET_BONUSES))).toEqual([1.5, 1.35, 1.2]);
+    expect(ABILITY_IDS.filter((id) => abilityChannelSeconds(id, 1, NO_SET_BONUSES) !== undefined)).toEqual(['deep-mend']);
+  });
+
+  it("shortens Lunge's cooldown and Deep mend's channel by the set, and no other ability's", () => {
+    const set: SetBonuses = { ...NO_SET_BONUSES, lungeCooldown: 0.5, deepMendChannel: 0.5 };
+    expect(abilityCooldownSeconds('lunge', 2, set)).toBe(abilityCooldownSeconds('lunge', 2, NO_SET_BONUSES) * 0.5);
+    expect(abilityChannelSeconds('deep-mend', 2, set)).toBe(abilityChannelSeconds('deep-mend', 2, NO_SET_BONUSES)! * 0.5);
+    for (const id of ABILITY_IDS.filter((other) => other !== 'lunge')) {
+      expect(abilityCooldownSeconds(id, 1, set), id).toBe(abilityCooldownSeconds(id, 1, NO_SET_BONUSES));
+    }
+    for (const id of ABILITY_IDS.filter((other) => other !== 'deep-mend')) expect(abilityChannelSeconds(id, 1, set), id).toBeUndefined();
   });
 
   it('lists the abilities held ranks teach in teaching order, not the order they were learned', () => {
@@ -192,8 +205,8 @@ describe('the table', () => {
 });
 
 describe('the hand rule', () => {
-  const held = [undefined, ...(Object.keys(BASE_ITEMS) as BaseItemId[]).map(plain)];
-  const allowing = (fits: (item: ReturnType<typeof plain> | undefined) => boolean) => held.filter(fits).map((item) => item?.baseId);
+  const held = [undefined, ...(Object.keys(BASE_ITEMS) as BaseItemId[]).map(common)];
+  const allowing = (fits: (item: ReturnType<typeof common> | undefined) => boolean) => held.filter(fits).map((item) => item?.baseId);
 
   it("is slot 1's: the main hand attacks a nightmare and the Moonstone mends a dreamer, by the same reading of the hands", () => {
     for (const mainHand of held) {
@@ -269,7 +282,7 @@ describe('abilityAllowed', () => {
   const ready: AbilityState<Named> = {
     caster,
     ranks: ranks({ strike: 2, lunge: 1, guard: 1, brace: 1 }),
-    hands: holding(plain('cudgel'), undefined),
+    hands: holding(common('cudgel'), undefined),
     energy: { balanceCurrent: ABILITIES.lunge.cost, spiritCurrent: 0 },
     now: 10,
     globalReadyAt: 10,
@@ -286,7 +299,7 @@ describe('abilityAllowed', () => {
   it.each([
     ['the caster has fallen', { caster: { ...caster, fallen: true } }, 'fallen'],
     ['the teaching is not held', { ranks: ranks({ strike: 2 }) }, 'untaught'],
-    ['what is in the main hand does not swing', { hands: holding(plain('moonstone'), undefined) }, 'hand'],
+    ['what is in the main hand does not swing', { hands: holding(common('moonstone'), undefined) }, 'hand'],
     ['the pool is short of the cost', { energy: { balanceCurrent: ABILITIES.lunge.cost - 1, spiritCurrent: 100 } }, 'cost'],
     ['its own cooldown runs', { readyAt: { lunge: 10.1 } }, 'cooldown'],
     ['the global cooldown runs', { globalReadyAt: 10.1 }, 'cooldown'],
@@ -303,7 +316,7 @@ describe('abilityAllowed', () => {
   });
 
   it('names the first need missed, in the order the rule checks them', () => {
-    const moonstoneInMainHand = holding(plain('moonstone'), undefined);
+    const moonstoneInMainHand = holding(common('moonstone'), undefined);
     expect(abilityRefusal({ ...ready, channelling: true, hands: moonstoneInMainHand, globalReadyAt: 11 }, 'lunge', undefined)).toBe('channelling');
     expect(abilityRefusal({ ...ready, hands: moonstoneInMainHand, globalReadyAt: 11 }, 'lunge', undefined)).toBe('hand');
   });

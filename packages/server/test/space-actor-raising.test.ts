@@ -3,7 +3,7 @@ import { COMBAT, PRACTICE } from '@somnio/core';
 import type { Character, Inventory, ItemInstance, Point } from '@somnio/core';
 import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { Energy, SomnioMessage } from '@somnio/protocol';
-import { plain } from '../../core/test/support/items.ts';
+import { common } from '../../core/test/support/items.ts';
 import { ConnectionOutbox } from '../src/connection/outbox.ts';
 import { BESIDE_GHOST, GHOST, MOONSTONE, arena, carrying, characterOf, energy, energyOf, engage, lucidity, payloads, wearing } from './support/combat.ts';
 import { collectMessages, recordingOutbox } from './support/frames.ts';
@@ -122,8 +122,8 @@ describe('mending', () => {
     const { space, steps } = arena({}, { ghost: false });
     const gloves: ItemInstance = {
       id: '00000000-0000-7000-8000-000000000031',
-      ...plain('gloves'),
-      rarity: 'magic',
+      ...common('gloves'),
+      rarity: 'uncommon',
       affixes: [{ affixId: 'mend-depth', value: 3 }],
     };
     const { healer, target } = pair(space, HEALER, { energy: energy({ healthCurrent: 50 }) }, wearing(MOONSTONE, gloves));

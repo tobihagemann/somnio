@@ -2,9 +2,9 @@ import type { BaggedItem, Inventory } from '../../src/domain/inventory.ts';
 import { equipSlot } from '../../src/items.ts';
 import type { BaseItemId, Hands, Item, ItemInstance } from '../../src/items.ts';
 
-/** A plain tier-1 item of the base. */
-export function plain(baseId: BaseItemId): Item {
-  return { baseId, tier: 1, rarity: 'plain', affixes: [] };
+/** A common tier-1 item of the base. */
+export function common(baseId: BaseItemId): Item {
+  return { baseId, tier: 1, rarity: 'common', affixes: [] };
 }
 
 /** The hands holding what is given, each left empty for `undefined`. */

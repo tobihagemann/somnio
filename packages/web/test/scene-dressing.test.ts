@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { ModelRegistry, WardrobeRow } from '@somnio/core';
-import type { Outfit } from '@somnio/protocol';
+import type { Outfit, Role } from '@somnio/protocol';
 import { ClientWorld } from '@/client';
 import type { ClientEntity } from '@/client';
 import { DRESSING_BUDGET_MS, WorldScene } from '@/scene/worldScene';
@@ -57,14 +57,15 @@ const HAIR_FIT = 'Hayfield courier';
 const SOPORS: [number, number, number] = [1.27, 1.18, 1.13];
 
 /**
- * A cap that tucks the hair and a tall hat over it, a tunic over the torso at tiers 1 and 3, boots with a strap no
- * body can carry, and a mantle, worn alike by every people.
+ * A cap that tucks the hair and a tall hat over it, a tunic over the torso at tiers 1 and 3 and the Healers' at tier 3,
+ * boots with a strap no body can carry, and a mantle, worn alike by every people.
  */
 const WARDROBE: WardrobeRow[] = [
   { base: 'cap', tier: 1, ground: 'GroundCap', covers: [], hairFit: HAIR_FIT, wear: { default: 'WearCap' } },
   { base: 'cap', tier: 2, ground: 'GroundCapT2', covers: [], wear: { default: 'WearTallHat' } },
   { base: 'tunic', tier: 1, ground: 'GroundTunic', covers: ['Torso'], wear: { default: 'WearTunic' } },
   { base: 'tunic', tier: 3, ground: 'GroundTunicT3', covers: ['Torso'], wear: { default: 'WearTunicT3' } },
+  { base: 'tunic', tier: 3, line: 'healer', ground: 'GroundTunicHealerT3', covers: ['Torso'], wear: { default: 'WearTunicHealerT3' } },
   { base: 'boots', tier: 1, ground: 'GroundBoots', covers: ['ThighL'], wear: { default: 'WearTornBoots' } },
   { base: 'shoulders', tier: 1, ground: 'GroundShoulders', covers: [], wear: { default: 'WearMantle' } },
 ];
@@ -606,6 +607,18 @@ describe('dressing a body', () => {
     expect(TUNIC_IMAGE.close).toHaveBeenCalledOnce();
   });
 
+  it("dresses a dreamer in a set piece's own design, and again in the neutral one once only the line changes", async () => {
+    const { scene, models, wear, load } = dressingScene();
+    scene.placeEntity(dreamer('peer-1', [{ slot: 'chest', baseId: 'tunic', tier: 3, line: 'healer' }]));
+    expect(wear.mock.calls).toEqual([['WearTunicHealerT3']]);
+    await load('WearTunicHealerT3');
+    dressAll(scene);
+    expect(vertexCount(bakeOf(models[0]!)!)).toBe(pieceVertices('WearTunicHealerT3') + regionVertices(models[0]!, 'Crown', 'ThighL'));
+
+    scene.updateOutfit('peer-1', [{ slot: 'chest', baseId: 'tunic', tier: 3 }]);
+    expect(wear.mock.calls.at(-1)).toEqual(['WearTunicT3']);
+  });
+
   it('dresses the local player before the dreamers queued ahead of them', async () => {
     const { scene, models, load } = dressingScene();
     for (let index = 0; index < 3; index++) scene.placeEntity(dreamer(`peer-${index}`, outfit({ chest: 'tunic' })));
@@ -619,18 +632,24 @@ describe('dressing a body', () => {
   });
 
   /** A program compiled on its first draw stalls the frame it draws in. */
-  it("compiles a dressed body's program and each design's drop past tier 1 in the prewarm", async () => {
-    // A drop of its own material type for each tier, so each is a program of its own.
-    const lying = (tier: number): THREE.Object3D =>
-      new THREE.Group().add(new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.1, 0.3), tier === 1 ? new THREE.MeshLambertMaterial() : new THREE.MeshToonMaterial()));
-    const { scene, models, load } = dressingScene({ ground: (_baseId, tier) => lying(tier) });
+  it("compiles a dressed body's program and each design's drop past tier 1 and each line's in the prewarm", async () => {
+    // A drop of its own material type for each tier and for the line, so each is a program of its own.
+    const lying = (tier: number, line: Role | undefined): THREE.Object3D =>
+      new THREE.Group().add(
+        new THREE.Mesh(
+          new THREE.BoxGeometry(0.3, 0.1, 0.3),
+          line !== undefined ? new THREE.MeshPhongMaterial() : tier === 1 ? new THREE.MeshLambertMaterial() : new THREE.MeshToonMaterial(),
+        ),
+      );
+    const { scene, models, load } = dressingScene({ ground: (_baseId, tier, line) => lying(tier, line) });
     const { compileAsync, uncompiled } = recordingCompiler();
     await scene.prewarm({ compileAsync });
 
     scene.placeEntity(dreamer('self', outfit({ chest: 'tunic' })));
     await load('WearTunic');
     dressAll(scene);
-    scene.showLoot({ lootId: 'tunic', x: 1, z: 1, contents: { kind: 'item', baseId: 'tunic', tier: 3, rarity: 'plain' } });
+    scene.showLoot({ lootId: 'tunic', x: 1, z: 1, contents: { kind: 'item', baseId: 'tunic', tier: 3, rarity: 'common' } });
+    scene.showLoot({ lootId: 'stole', x: 2, z: 1, contents: { kind: 'item', baseId: 'tunic', tier: 3, rarity: 'epic', line: 'healer' } });
     scene.tick(0.016);
 
     expect(bakeOf(models.at(-1)!)).toBeDefined();

@@ -1,9 +1,9 @@
-import { RARITIES } from '@somnio/protocol';
+import { ROLES } from '@somnio/protocol';
 import { describe, expect, it } from 'vitest';
-import { AFFIXES, affix, itemNameKeys, rollItem } from '../src/affixes.ts';
+import { AFFIXES, affix, itemNameKeys, rollItem, rollSetPiece } from '../src/affixes.ts';
 import type { AffixId } from '../src/affixes.ts';
 import { hashString, seededSequence } from '../src/hash.ts';
-import { BASE_ITEMS, baseItem } from '../src/items.ts';
+import { BASE_ITEMS, NEUTRAL_RARITIES, baseItem, isWardrobeBase } from '../src/items.ts';
 import type { BaseItemId, Item, Tier } from '../src/items.ts';
 
 const ROLLED_BASES = (Object.keys(BASE_ITEMS) as BaseItemId[]).filter((baseId) => baseItem(baseId).trialOnly !== true);
@@ -13,18 +13,20 @@ const SAMPLES_PER_BASE = 200;
 /** The tiers nightmares drop. */
 const DROPPED_TIERS = [1, 2, 3] as const satisfies readonly Tier[];
 
-/** Every rarity of every base that rolls, rolled at the tier from one seed. */
+/** Every rarity a roll gives of every base that rolls, rolled at the tier from one seed. */
 function sample(tier: Tier): Item[] {
   const random = seededSequence(hashString(`affixes ${tier}`));
-  return ROLLED_BASES.flatMap((baseId) => RARITIES.flatMap((rarity) => Array.from({ length: SAMPLES_PER_BASE }, () => rollItem(baseId, tier, rarity, random))));
+  return ROLLED_BASES.flatMap((baseId) =>
+    NEUTRAL_RARITIES.flatMap((rarity) => Array.from({ length: SAMPLES_PER_BASE }, () => rollItem(baseId, tier, rarity, random))),
+  );
 }
 
 describe.each(DROPPED_TIERS)('rollItem at tier %i', (tier) => {
   const items = sample(tier);
 
-  it('rolls no affix on a plain item, one or two on a magic one, and three or four on a rare one, each count turning up', () => {
+  it('rolls no affix on a common item, one or two on an uncommon one, and three or four on a rare one, each count turning up', () => {
     const counts = (rarity: Item['rarity']) => new Set(items.filter((item) => item.rarity === rarity).map((item) => item.affixes.length));
-    expect([counts('plain'), counts('magic'), counts('rare')]).toEqual([new Set([0]), new Set([1, 2]), new Set([3, 4])]);
+    expect([counts('common'), counts('uncommon'), counts('rare')]).toEqual([new Set([0]), new Set([1, 2]), new Set([3, 4])]);
   });
 
   it("keeps each item's base and tier", () => {
@@ -65,7 +67,33 @@ describe.each(DROPPED_TIERS)('rollItem at tier %i', (tier) => {
   });
 
   it('never rolls the Moonstone', () => {
-    expect(() => rollItem('moonstone', tier, 'plain', seededSequence(1))).toThrow();
+    expect(() => rollItem('moonstone', tier, 'common', seededSequence(1))).toThrow();
+  });
+});
+
+describe('rollSetPiece', () => {
+  const random = seededSequence(hashString('set pieces'));
+  const pieces = ROLLED_BASES.filter(isWardrobeBase).flatMap((baseId) =>
+    ROLES.flatMap((role) => Array.from({ length: SAMPLES_PER_BASE }, () => ({ role, piece: rollSetPiece(baseId, 3, role, random) }))),
+  );
+
+  it("rolls an epic of the role's line at the tier, with four lines allowed on its slot, none twice, each within its range", () => {
+    for (const { role, piece } of pieces) {
+      expect([piece.tier, piece.rarity, piece.line, piece.affixes.length]).toEqual([3, 'epic', role, 4]);
+      expect(new Set(piece.affixes.map((rolled) => rolled.affixId)).size).toBe(4);
+      for (const { affixId, value } of piece.affixes) {
+        const [least, most] = affix(affixId).tiers[3]!;
+        expect(affix(affixId).slots.includes(baseItem(piece.baseId).slot) && value >= least && value <= most, `${affixId} ${value}`).toBe(true);
+      }
+    }
+  });
+
+  it('makes no set piece at a tier its designs do not exist at', () => {
+    expect(() => rollSetPiece('cap', 1, 'healer', seededSequence(1))).toThrow();
+  });
+
+  it("names a set piece by its line's design alone, without the suffix of its strongest roll", () => {
+    expect(itemNameKeys(rollSetPiece('cap', 3, 'healer', seededSequence(1)))).toEqual({ labelKey: 'Linen wimple' });
   });
 });
 
@@ -91,11 +119,11 @@ describe('AFFIXES', () => {
 });
 
 describe('itemNameKeys', () => {
-  const trousers = (tier: Tier, affixes: Item['affixes']): Item => ({ baseId: 'trousers', tier, rarity: 'magic', affixes });
+  const trousers = (tier: Tier, affixes: Item['affixes']): Item => ({ baseId: 'trousers', tier, rarity: 'uncommon', affixes });
 
-  it('names a plain item after its base alone, by its design at its tier', () => {
-    expect(itemNameKeys({ baseId: 'trousers', tier: 1, rarity: 'plain', affixes: [] })).toEqual({ labelKey: 'Field trousers' });
-    expect(itemNameKeys({ baseId: 'trousers', tier: 3, rarity: 'plain', affixes: [] })).toEqual({ labelKey: 'Wader trousers' });
+  it('names a common item after its base alone, by its design at its tier', () => {
+    expect(itemNameKeys({ baseId: 'trousers', tier: 1, rarity: 'common', affixes: [] })).toEqual({ labelKey: 'Field trousers' });
+    expect(itemNameKeys({ baseId: 'trousers', tier: 3, rarity: 'common', affixes: [] })).toEqual({ labelKey: 'Wader trousers' });
   });
 
   it('adds the suffix of the line rolled nearest the most it rolls at the item tier', () => {

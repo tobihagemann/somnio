@@ -1,5 +1,6 @@
-import { baseItem, itemLabelKey } from './items.ts';
-import type { BaseItemId, Item, Rarity, RolledAffix, SlotKind, StatId, Tier } from './items.ts';
+import type { Role } from '@somnio/protocol';
+import { baseItem, isSetTier, itemLabelKey } from './items.ts';
+import type { BaseItemId, Item, NeutralRarity, Rarity, RolledAffix, SlotKind, StatId, Tier, WardrobeBaseId } from './items.ts';
 
 /** A stat line an item may roll. */
 interface Affix {
@@ -83,7 +84,7 @@ export function affix(affixId: AffixId): Affix {
 }
 
 /** The fewest and the most affixes an item of each rarity rolls. */
-const AFFIX_COUNTS = { plain: [0, 0], magic: [1, 2], rare: [3, 4] } as const satisfies Record<Rarity, readonly [number, number]>;
+const AFFIX_COUNTS = { common: [0, 0], uncommon: [1, 2], rare: [3, 4], epic: [4, 4] } as const satisfies Record<Rarity, readonly [number, number]>;
 
 /** A whole number from the least to the most, both included, by a roll in `[0, 1)`. */
 function rollWithin([least, most]: readonly [number, number], random: () => number): number {
@@ -91,13 +92,11 @@ function rollWithin([least, most]: readonly [number, number], random: () => numb
 }
 
 /**
- * An item of the base rolled at the tier and rarity: as many affixes as the rarity rolls, each one
- * allowed on the base's slot at that tier and none twice, each with a value in its range. `random`
- * gives rolls in `[0, 1)`. The Moonstone is never rolled.
+ * As many affixes as the rarity rolls for an item of the base at the tier, each one allowed on the
+ * base's slot at that tier and none twice, each with a value in its range.
  */
-export function rollItem(baseId: BaseItemId, tier: Tier, rarity: Rarity, random: () => number): Item {
+function rollAffixes(baseId: BaseItemId, tier: Tier, rarity: Rarity, random: () => number): RolledAffix[] {
   const base = baseItem(baseId);
-  if (base.trialOnly === true) throw new Error(`${baseId} is never rolled`);
   const pool = AFFIX_IDS.filter((affixId) => affix(affixId).slots.includes(base.slot) && affix(affixId).tiers[tier] !== undefined);
   const count = rollWithin(AFFIX_COUNTS[rarity], random);
   if (count > pool.length) throw new Error(`${baseId} rolls at most ${pool.length} affixes at tier ${tier}`);
@@ -106,7 +105,26 @@ export function rollItem(baseId: BaseItemId, tier: Tier, rarity: Rarity, random:
     const affixId = pool.splice(Math.floor(random() * pool.length), 1)[0]!;
     affixes.push({ affixId, value: rollWithin(affix(affixId).tiers[tier]!, random) });
   }
-  return { baseId, tier, rarity, affixes };
+  return affixes;
+}
+
+/**
+ * An item of the base rolled at the tier and rarity, with the affixes the rarity rolls. `random`
+ * gives rolls in `[0, 1)`. The Moonstone is never rolled.
+ */
+export function rollItem(baseId: BaseItemId, tier: Tier, rarity: NeutralRarity, random: () => number): Item {
+  if (baseItem(baseId).trialOnly === true) throw new Error(`${baseId} is never rolled`);
+  return { baseId, tier, rarity, affixes: rollAffixes(baseId, tier, rarity, random) };
+}
+
+/**
+ * A piece of the role's set of the base, rolled at the tier: epic, with the affixes an epic rolls.
+ * It is the one way an epic is made, and only at a tier of `SET_TIERS`, the tiers its designs exist at.
+ * `random` gives rolls in `[0, 1)`.
+ */
+export function rollSetPiece(baseId: WardrobeBaseId, tier: Tier, role: Role, random: () => number): Item {
+  if (!isSetTier(tier)) throw new Error(`no set piece is made at tier ${tier}`);
+  return { baseId, tier, rarity: 'epic', affixes: rollAffixes(baseId, tier, 'epic', random), line: role };
 }
 
 /**
@@ -128,9 +146,9 @@ function strongestRoll(item: Item): RolledAffix | undefined {
   return strongest?.line;
 }
 
-/** The catalog keys of an item's name: its base's at its tier, and the suffix of its strongest roll when it has one. */
+/** The catalog keys of an item's name: its base's at its tier in its line, and the suffix of its strongest roll when it has one. An epic takes no suffix, since it goes by its design alone. */
 export function itemNameKeys(item: Item): { labelKey: string; suffixKey?: string } {
-  const strongest = strongestRoll(item);
-  const labelKey = itemLabelKey(item.baseId, item.tier);
+  const labelKey = itemLabelKey(item.baseId, item.tier, item.line);
+  const strongest = item.rarity === 'epic' ? undefined : strongestRoll(item);
   return strongest === undefined ? { labelKey } : { labelKey, suffixKey: affix(strongest.affixId).nameKey };
 }

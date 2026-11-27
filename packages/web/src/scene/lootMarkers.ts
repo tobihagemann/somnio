@@ -3,8 +3,8 @@
  * where it fell, turned by a yaw of its own so neighbouring drops do not line up, and its name under
  * it on screen in its rarity's colour, through the world, since nothing has to be pressed to read it.
  * The name stands clear of the model, and below the feet of a body standing on the drop, so a press
- * on it reaches a drop under a body. A rare drop raises a beam of light in its gold, and a magic or a
- * rare one glows on the ground under its model. A trophy lies as its kind's model the same way. A
+ * on it reaches a drop under a body. A rare or an epic drop raises a beam of light in its colour, and an
+ * uncommon, a rare, or an epic one glows on the ground under its model. A trophy lies as its kind's model the same way. A
  * drop draws its name alone while its model is not loaded, and for good when it has none.
  *
  * A drop shown as it falls is thrown there, as Diablo pops its loot: released from where it was
@@ -22,8 +22,8 @@
  * drop lies nearer than a drawn one by more than `RECHOOSE_MARGIN_METRES`, so a drop that comes
  * near, or one waiting when a far drop in the air lands, takes the marker of one now among the
  * furthest. A drop in the air keeps its marker until it lands, and one drawn from waiting lies
- * there without a flight. Every name draws with a clone of one material, every beam with one
- * material, and every glow with one of two that differ only in colour, so each program compiles
+ * there without a flight. Every name draws with a clone of one material, every beam with one of two
+ * materials, and every glow with one of three, which differ only in colour, so each program compiles
  * once, in the scene's prewarm, and none adds a light. A flight moves the model alone, so it compiles nothing.
  *
  * A drop picked up goes at once. Any other that goes fades out where it lay over
@@ -58,8 +58,8 @@ export const LOOT_MARKER_POOL_SIZE = 16;
  */
 const RECHOOSE_MARGIN_METRES = 0.25;
 
-/** Each rarity's colour, in the name, the glow, and the beam, and on the HUD wherever an item is named: plain as bone, magic blue, rare gold. */
-export const RARITY_COLORS: Readonly<Record<Rarity, number>> = { plain: 0xe8e2d4, magic: 0x7f9bff, rare: 0xffd24d };
+/** Each rarity's colour, in the name, the glow, and the beam, and on the HUD wherever an item is named: common white, uncommon green, rare blue, epic purple. */
+export const RARITY_COLORS: Readonly<Record<Rarity, number>> = { common: 0xf2efe8, uncommon: 0x7aea4b, rare: 0x4998fe, epic: 0xd06fed };
 
 /** How far round a drop's model, as it lies, a mouse press still lands on it. */
 const LOOT_PICK_METRES = 0.1;
@@ -186,8 +186,8 @@ export class LootMarkers {
   private readonly glowGeometry = new THREE.PlaneGeometry(GLOW_RADIUS * 2, GLOW_RADIUS * 2).rotateX(-Math.PI / 2);
   private readonly beamGeometry = new THREE.PlaneGeometry(BEAM_WIDTH, BEAM_HEIGHT).translate(0, BEAM_HEIGHT / 2, 0);
   private readonly plateMaterial = new THREE.MeshBasicMaterial({ transparent: true, depthTest: false, depthWrite: false, toneMapped: false });
-  private readonly glowMaterials: Record<'magic' | 'rare', THREE.MeshBasicMaterial>;
-  private readonly beamMaterial: THREE.MeshBasicMaterial;
+  private readonly glowMaterials: Record<Exclude<Rarity, 'common'>, THREE.MeshBasicMaterial>;
+  private readonly beamMaterials: Record<BeamRarity, THREE.MeshBasicMaterial>;
   private readonly markers: Marker[] = [];
   /** Every drop to draw, in the order it came, which breaks a tie between drops as near the player. */
   private readonly shown = new Map<string, ShownLoot>();
@@ -213,8 +213,13 @@ export class LootMarkers {
     this.reducedMotion = reducedMotion;
     this.beamYaw = new THREE.Euler().setFromQuaternion(orientation, 'YXZ').y;
     const glow = glowTexture();
-    this.glowMaterials = { magic: lightMaterial(glow, RARITY_COLORS.magic, GLOW_OPACITY), rare: lightMaterial(glow, RARITY_COLORS.rare, GLOW_OPACITY) };
-    this.beamMaterial = lightMaterial(beamTexture(), RARITY_COLORS.rare, BEAM_OPACITY);
+    this.glowMaterials = {
+      uncommon: lightMaterial(glow, RARITY_COLORS.uncommon, GLOW_OPACITY),
+      rare: lightMaterial(glow, RARITY_COLORS.rare, GLOW_OPACITY),
+      epic: lightMaterial(glow, RARITY_COLORS.epic, GLOW_OPACITY),
+    };
+    const beam = beamTexture();
+    this.beamMaterials = { rare: lightMaterial(beam, RARITY_COLORS.rare, BEAM_OPACITY), epic: lightMaterial(beam, RARITY_COLORS.epic, BEAM_OPACITY) };
     this.root.name = LOOT_MARKERS_NAME;
   }
 
@@ -286,12 +291,12 @@ export class LootMarkers {
     }
     if (freed || this.waitingLiesNearer()) this.drawNearest();
     const pulse = this.reducedMotion ? 0 : (1 - Math.cos((seconds / BEAM_PULSE_SECONDS) * Math.PI * 2)) / 2;
-    this.beamMaterial.opacity = BEAM_OPACITY * (1 - BEAM_PULSE_DEPTH * pulse);
+    for (const material of Object.values(this.beamMaterials)) material.opacity = BEAM_OPACITY * (1 - BEAM_PULSE_DEPTH * pulse);
   }
 
   /**
    * The drops on the ground, lying where they landed or hopping as they land, each with its model
-   * and a key for what the model is, one per base and tier or trophy kind. A drop without a model, or
+   * and a key for what the model is, one per base, tier, and line or trophy kind. A drop without a model, or
    * one in the air, is left out.
    */
   lying(): { key: string; model: THREE.Object3D }[] {
@@ -408,10 +413,10 @@ export class LootMarkers {
     const toss = new THREE.Object3D();
     const holder = new THREE.Object3D();
     toss.add(holder);
-    const glow = new THREE.Mesh(this.glowGeometry, this.glowMaterials.magic);
+    const glow = new THREE.Mesh(this.glowGeometry, this.glowMaterials.uncommon);
     glow.name = LOOT_GLOW_NAME;
     glow.position.y = GROUND_RING_LIFT;
-    const beam = new THREE.Mesh(this.beamGeometry, this.beamMaterial);
+    const beam = new THREE.Mesh(this.beamGeometry, this.beamMaterials.rare);
     beam.name = LOOT_BEAM_NAME;
     beam.rotation.y = this.beamYaw;
     const label = new THREE.Object3D();
@@ -437,7 +442,8 @@ export class LootMarkers {
     this.layModel(marker, loot);
     this.showLanded(marker);
     const rarity = rarityOf(loot.contents);
-    if (rarity !== 'plain') marker.glow.material = this.glowMaterials[rarity];
+    if (rarity !== 'common') marker.glow.material = this.glowMaterials[rarity];
+    if (raisesBeam(rarity)) marker.beam.material = this.beamMaterials[rarity];
     const art = renderNamePlaque(loot.name, LOOT_LABEL_BACKGROUND, true, cssColor(RARITY_COLORS[rarity]));
     const texture = new THREE.CanvasTexture(art.canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
@@ -559,10 +565,10 @@ export class LootMarkers {
 
   /** Shows the drop's name, and the glow and the beam its rarity raises. */
   private showLanded(marker: Marker): void {
-    const rarity = marker.loot === undefined ? 'plain' : rarityOf(marker.loot.contents);
+    const rarity = marker.loot === undefined ? 'common' : rarityOf(marker.loot.contents);
     marker.label.visible = true;
-    marker.glow.visible = rarity !== 'plain';
-    marker.beam.visible = rarity === 'rare';
+    marker.glow.visible = rarity !== 'common';
+    marker.beam.visible = raisesBeam(rarity);
   }
 
   /** Ends any flight, taking a hand's model it has not let go of yet from the hand, and sets the model where the drop lies. */
@@ -634,13 +640,19 @@ function shearToss(toss: THREE.Object3D, shear: THREE.Matrix4, ease: number): vo
   toss.matrixWorldNeedsUpdate = true;
 }
 
-/** An item's rarity; a trophy is plain. */
+/** An item's rarity; a trophy is common. */
 function rarityOf(contents: LootContentsMessage): Rarity {
-  return contents.kind === 'item' ? contents.rarity : 'plain';
+  return contents.kind === 'item' ? contents.rarity : 'common';
+}
+
+type BeamRarity = 'rare' | 'epic';
+
+function raisesBeam(rarity: Rarity): rarity is BeamRarity {
+  return rarity === 'rare' || rarity === 'epic';
 }
 
 function modelKey(contents: LootContentsMessage): string {
-  return contents.kind === 'item' ? `item:${contents.baseId}:${contents.tier}` : `trophy:${contents.monsterKind}`;
+  return contents.kind === 'item' ? `item:${contents.baseId}:${contents.tier}:${contents.line ?? ''}` : `trophy:${contents.monsterKind}`;
 }
 
 /**

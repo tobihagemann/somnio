@@ -7,12 +7,13 @@ import { MOVE_ALLOWANCE_SECONDS, gaitMetresPerSecond } from '../src/gait.ts';
 import { AFFIXES, rollItem } from '../src/affixes.ts';
 import { BOUNTY_KINDS } from '../src/bounties.ts';
 import { hashString, seededSequence } from '../src/hash.ts';
-import { BASE_ITEMS, BRACELET_SLOTS, TIERS } from '../src/items.ts';
+import { BASE_ITEMS, BRACELET_SLOTS, NEUTRAL_RARITIES, SET_TIERS, TIERS } from '../src/items.ts';
 import { FIRST_TEACHING, TEACHINGS, TEACHING_IDS, TRIAL_QUESTS, isTeachingId, teaching } from '../src/lucidity.ts';
 import { BOSS_MOVES, ELITE_TRAITS, ELITE_TRAIT_IDS, MONSTER_KINDS, MONSTER_KIND_IDS, bossMoves, isEliteTraitId, monsterKind } from '../src/monsterKinds.ts';
 import { LISTENER_ROLES, QUEST_STANDINGS } from '../src/npcDialog.ts';
 import { PEOPLES } from '../src/people.ts';
 import { QUESTS, TROPHIES } from '../src/quests.ts';
+import { SET_BONUSES, SET_TITLE_KEYS } from '../src/sets.ts';
 import { SPEECH, SPEECH_PACE } from '../src/speech.ts';
 
 /**
@@ -25,8 +26,10 @@ describe('literal sets', () => {
     expect(PEOPLES).toEqual(['vigils', 'sopors', 'umbrae', 'lumina']);
   });
 
-  it('pins the tiers and the bracelet slots', () => {
+  it('pins the tiers, the set tiers, the neutral rarities, and the bracelet slots', () => {
     expect(TIERS).toEqual([1, 2, 3, 4, 5]);
+    expect(SET_TIERS).toEqual([3]);
+    expect(NEUTRAL_RARITIES).toEqual(['common', 'uncommon', 'rare']);
     expect(BRACELET_SLOTS).toEqual(['bracelet1', 'bracelet2']);
   });
 
@@ -48,6 +51,7 @@ describe('literal sets', () => {
       'skull-staff': { labelKey: 'Skull staff', slot: 'offHand', tier: 3, value: 200, focus: true, implicit: { spiritMax: 10 } },
       cap: {
         tierLabelKeys: { 1: 'Courier straw hat', 2: "Forester's feather band", 3: 'Tarred reed brim', 4: "Trapper's hide band", 5: 'Oiled storm brim' },
+        lineLabelKeys: { fighter: { 3: 'Grave iron kettle helm' }, healer: { 3: 'Linen wimple' }, mystic: { 3: 'Marsh witch hat' } },
         slot: 'head',
         tier: 1,
         value: 25,
@@ -55,6 +59,7 @@ describe('literal sets', () => {
       },
       shoulders: {
         tierLabelKeys: { 1: 'Courier shoulders', 2: 'Leaf shoulder', 3: 'Ferry guards', 4: 'Pelt guards', 5: "Navigator's epaulettes" },
+        lineLabelKeys: { fighter: { 3: 'Crypt pauldrons' }, healer: { 3: 'Vigil shoulders' }, mystic: { 3: 'Marsh shoulders' } },
         slot: 'shoulders',
         tier: 1,
         value: 40,
@@ -62,6 +67,7 @@ describe('literal sets', () => {
       },
       tunic: {
         tierLabelKeys: { 1: 'Courier tunic', 2: 'Trail cape', 3: "Ferryman's raincoat", 4: "Trapper's baldric", 5: 'Shore coat' },
+        lineLabelKeys: { fighter: { 3: 'Burial hauberk' }, healer: { 3: 'Vigil stole' }, mystic: { 3: 'Marsh veil' } },
         slot: 'chest',
         tier: 1,
         value: 50,
@@ -69,6 +75,7 @@ describe('literal sets', () => {
       },
       gloves: {
         tierLabelKeys: { 1: 'Dispatch gloves', 2: 'Bark-grip gloves', 3: 'Reedwork gloves', 4: 'Hide mitts', 5: "Sailmaker's gloves" },
+        lineLabelKeys: { fighter: { 3: 'Crypt gauntlets' }, healer: { 3: 'Votive gloves' }, mystic: { 3: 'Candle gloves' } },
         slot: 'hands',
         tier: 1,
         value: 25,
@@ -76,6 +83,7 @@ describe('literal sets', () => {
       },
       trousers: {
         tierLabelKeys: { 1: 'Field trousers', 2: 'Brush trousers', 3: 'Wader trousers', 4: 'Trail leathers', 5: 'Storm trousers' },
+        lineLabelKeys: { fighter: { 3: 'Crypt chausses' }, healer: { 3: 'Vigil trousers' }, mystic: { 3: 'Marsh trousers' } },
         slot: 'legs',
         tier: 1,
         value: 40,
@@ -83,6 +91,7 @@ describe('literal sets', () => {
       },
       boots: {
         tierLabelKeys: { 1: 'Trail boots', 2: 'Leaf gaiters', 3: 'Fen boots', 4: 'Climbing boots', 5: 'Deck boots' },
+        lineLabelKeys: { fighter: { 3: 'Crypt sabatons' }, healer: { 3: 'Chapel boots' }, mystic: { 3: 'Marsh boots' } },
         slot: 'feet',
         tier: 1,
         value: 25,
@@ -90,6 +99,7 @@ describe('literal sets', () => {
       },
       amulet: {
         tierLabelKeys: { 1: 'Wheat-ear pendant', 2: 'Beech leaf', 3: 'Lantern cage', 4: 'Bear claw', 5: 'Compass rose' },
+        lineLabelKeys: { fighter: { 3: 'Portcullis' }, healer: { 3: 'Votive candle' }, mystic: { 3: 'Marsh eye' } },
         slot: 'neck',
         tier: 1,
         value: 70,
@@ -97,6 +107,7 @@ describe('literal sets', () => {
       },
       bracelet: {
         tierLabelKeys: { 1: 'Dispatch wristband', 2: 'Maple twig', 3: 'Reed knot', 4: 'Antler tine', 5: 'Sounding weight' },
+        lineLabelKeys: { fighter: { 3: 'Crypt grille' }, healer: { 3: 'Wax taper' }, mystic: { 3: 'Reed eye' } },
         slot: 'bracelet',
         tier: 1,
         value: 50,
@@ -421,6 +432,28 @@ describe('literal sets', () => {
       'dream-bolt': 'dream-bolt',
       veil: 'veil',
     });
+  });
+
+  /** Each step's text is a catalog key the client renders, so a text swapped with another step's would promise the wrong bonus. */
+  it("pins each role's set steps and title", () => {
+    expect(SET_BONUSES).toEqual({
+      fighter: [
+        { pieces: 2, textKey: 'Cleave strikes each nightmare a fifth harder.', sets: { cleaveShare: 1.2 } },
+        { pieces: 4, textKey: 'Brace lasts 2 s longer.', sets: { bracedSeconds: 2 } },
+        { pieces: 6, textKey: "Lunge's cooldown is a third shorter, and each Lunge gives back 10 Balance.", sets: { lungeCooldown: 2 / 3, lungeBalance: 10 } },
+      ],
+      healer: [
+        { pieces: 2, textKey: 'Renewal lasts 4 s longer.', sets: { renewingSeconds: 4 } },
+        { pieces: 4, textKey: "Deep mend's channel is a third shorter.", sets: { deepMendChannel: 2 / 3 } },
+        { pieces: 6, textKey: 'Radiance heals a third more.', sets: { radianceHeal: 4 / 3 } },
+      ],
+      mystic: [
+        { pieces: 2, textKey: 'Ward holds a quarter more.', sets: { wardAbsorb: 1.25 } },
+        { pieces: 4, textKey: 'Dream-bolt harms a fifth more.', sets: { boltHarm: 1.2 } },
+        { pieces: 6, textKey: 'Bind also Weakens its nightmare.', sets: { bindWeakens: true } },
+      ],
+    });
+    expect(SET_TITLE_KEYS).toEqual({ fighter: "Fighters' set (%1$@/6)", healer: "Healers' set (%1$@/6)", mystic: "Mystics' set (%1$@/6)" });
   });
 
   /** A `lucidity` frame carries a rank for each teaching held, and its decoder refuses more than the cap. */

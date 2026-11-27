@@ -11,22 +11,30 @@ import { itemIcon } from './itemIcons';
  * presses nothing. A tap, or a hold that slides past `TAP_SLOP_PX` first, presses as usual.
  */
 
-/** One fact in a row of them, in its pool's colour when it is a cost. */
+/** One fact in a row of them, in its pool's colour when it is a cost, and in the warning's red when it rules the reader out. */
 interface TipFact {
   text: string;
   pool?: AbilityPool;
+  refused?: true;
+}
+
+/** A line of a set piece's tip: the set's title or one of its steps, dimmed while it is not in effect. */
+interface TipSetLine {
+  text: string;
+  on: boolean;
 }
 
 export interface Tip {
   title: string;
   /** An item's rarity, whose colour the title takes. */
   rarity?: Rarity;
-  /** An item's base and tier, whose icon leads the tip, edged in the rarity's colour. */
-  icon?: Pick<Item, 'baseId' | 'tier'>;
+  /** An item's base, tier, and line, whose icon leads the tip, edged in the rarity's colour. */
+  icon?: Pick<Item, 'baseId' | 'tier' | 'line'>;
   /** Beside the title: the key that works the part, or the seconds an effect has left. */
   aside?: string;
   facts?: readonly TipFact[];
-  lines?: readonly string[];
+  /** Each a plain line, or a set piece's set line, which can be dimmed. */
+  lines?: readonly (string | TipSetLine)[];
   /** Why the part cannot act now. */
   warning?: string;
 }
@@ -199,9 +207,10 @@ export function placeBeside(node: HTMLElement, anchor: HTMLElement, container: H
 /** What a tip says, as the elements that show it. */
 export function tipNodes(tip: Tip): HTMLElement[] {
   const aside = tip.aside === undefined ? [] : [element('span', { className: 'hud-tip__aside', text: tip.aside })];
-  const facts = (tip.facts ?? []).map(({ text, pool }) =>
-    element('span', { className: pool === undefined ? 'hud-tip__fact' : `hud-tip__fact hud-tip__fact--${pool}`, text }),
-  );
+  const facts = (tip.facts ?? []).map(({ text, pool, refused }) => {
+    const modifier = pool ?? (refused === true ? 'refused' : undefined);
+    return element('span', { className: modifier === undefined ? 'hud-tip__fact' : `hud-tip__fact hud-tip__fact--${modifier}`, text });
+  });
   const titles = [
     element('div', {
       className: 'hud-tip__head',
@@ -218,12 +227,16 @@ export function tipNodes(tip: Tip): HTMLElement[] {
       : [
           element('div', {
             className: tip.rarity === undefined ? 'hud-tip__top' : `hud-tip__top hud-rarity--${tip.rarity}`,
-            children: [itemIcon(tip.icon.baseId, tip.icon.tier), element('div', { className: 'hud-tip__titles', children: titles })],
+            children: [itemIcon(tip.icon.baseId, tip.icon.tier, tip.icon.line), element('div', { className: 'hud-tip__titles', children: titles })],
           }),
         ];
   return [
     ...top,
-    ...(tip.lines ?? []).map((line) => element('p', { className: 'hud-tip__line', text: line })),
+    ...(tip.lines ?? []).map((line) =>
+      typeof line === 'string'
+        ? element('p', { className: 'hud-tip__line', text: line })
+        : element('p', { className: line.on ? 'hud-tip__line' : 'hud-tip__line hud-tip__line--off', text: line.text }),
+    ),
     ...(tip.warning === undefined ? [] : [element('p', { className: 'hud-tip__warning', text: tip.warning })]),
   ];
 }

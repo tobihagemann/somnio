@@ -1,9 +1,18 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MAX_PERSONAL_DROPS, MAX_SHARED_DROPS, OUTDOOR_SPACE_ID, SCATTER_DISTANCE, SHARED_LOOT_SECONDS, THROW_DISTANCE, withinPickupReach } from '@somnio/core';
+import {
+  MAX_PERSONAL_DROPS,
+  MAX_SHARED_DROPS,
+  OUTDOOR_SPACE_ID,
+  SCATTER_DISTANCE,
+  SHARED_LOOT_SECONDS,
+  THROW_DISTANCE,
+  rollSetPiece,
+  withinPickupReach,
+} from '@somnio/core';
 import type { Inventory, ItemInstance, Point } from '@somnio/core';
 import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { SomnioMessage } from '@somnio/protocol';
-import { plain } from '../../core/test/support/items.ts';
+import { common } from '../../core/test/support/items.ts';
 import { interiorSector } from '../../core/test/support/worldFixture.ts';
 import { PersonalDrops } from '../src/world/personalDrops.ts';
 import type { PlayerCheckpoint, SpaceActor } from '../src/world/spaceActor.ts';
@@ -27,12 +36,12 @@ import { attachPlayer, makeClockedSpace, makeMonsterSpawn, makeSector, makeSecto
 import type { AttachPlayerOptions } from './support/sectorFactory.ts';
 
 /** What every dreamer sharing the Ghost finds where it was driven off, in an arena with drops. */
-const DAGGER_DROP = { kind: 'item', baseId: 'dagger', tier: 1, rarity: 'plain' } as const;
+const DAGGER_DROP = { kind: 'item', baseId: 'dagger', tier: 1, rarity: 'common' } as const;
 
 /** Caps enough to fill a bag, their ids in the order a dreamer came by them. */
 const FULL_BAG: ItemInstance[] = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxBagItems }, (_, index) => ({
   id: `00000000-0000-7000-8000-${String(index + 10).padStart(12, '0')}`,
-  ...plain('cap'),
+  ...common('cap'),
 }));
 
 /** A dreamer on a recording outbox. */
@@ -112,7 +121,7 @@ describe('a drop', () => {
     expect(gone(striker)).toEqual([{ lootId: lootOf(striker), taken: true }]);
     expect(pickedUp(striker)).toEqual([DAGGER_DROP]);
     expect(space.snapshotForPlayer(striker.entityId)!.inventory.bag).toEqual([
-      { place: 0, item: expect.objectContaining({ baseId: 'dagger', tier: 1, rarity: 'plain', affixes: [] }) },
+      { place: 0, item: expect.objectContaining({ baseId: 'dagger', tier: 1, rarity: 'common', affixes: [] }) },
     ]);
     space.handlePickUp(lootOf(striker), striker.entityId);
     expect(pickedUp(striker)).toHaveLength(1);
@@ -296,32 +305,35 @@ describe("a drop from a nightmare across the world's spaces", () => {
   });
 });
 
-/** A magic tier-3 cap whose tier and stat line have to survive the ground. */
-const MAGIC_CAP: ItemInstance = {
+/** An uncommon tier-3 cap whose tier and stat line have to survive the ground. */
+const UNCOMMON_CAP: ItemInstance = {
   id: '00000000-0000-7000-8000-000000000009',
   baseId: 'cap',
   tier: 3,
-  rarity: 'magic',
+  rarity: 'uncommon',
   affixes: [{ affixId: 'guard', value: 2 }],
 };
-const CAP_DROP = { kind: 'item', baseId: 'cap', tier: 3, rarity: 'magic' } as const;
+const CAP_DROP = { kind: 'item', baseId: 'cap', tier: 3, rarity: 'uncommon' } as const;
 
-/** Where the dreamer in West throws the magic cap from, and where it lands thrown east in the open. */
+/** A piece of the Healers' set, whose line everyone who sees it worn is shown. */
+const HEALER_GLOVES: ItemInstance = { id: '00000000-0000-7000-8000-00000000000a', ...rollSetPiece('gloves', 3, 'healer', () => 0.5) };
+
+/** Where the dreamer in West throws the uncommon cap from, and where it lands thrown east in the open. */
 const DROPPER_AT = { x: 5, z: 10 };
 const LANDED = { x: expect.closeTo(DROPPER_AT.x + THROW_DISTANCE, 9), z: DROPPER_AT.z };
 
 /**
- * West (x 0 to 20), Middle (20 to 40), East (40 to 60), where a dreamer in West throws the magic
+ * West (x 0 to 20), Middle (20 to 40), East (40 to 60), where a dreamer in West throws the uncommon
  * cap east: `beside` stands within pickup reach of where it lands, `middle` sees West from Middle,
  * and `east` does not.
  */
 function dropInWest() {
   const { clock, space } = makeClockedSpace(makeWorld(makeSectorLine()));
-  const dropper = join(space, DROPPER_AT, 'dropper', carrying({ worn: [CUDGEL], bag: [MAGIC_CAP] }));
+  const dropper = join(space, DROPPER_AT, 'dropper', carrying({ worn: [CUDGEL], bag: [UNCOMMON_CAP] }));
   const beside = join(space, { x: 5.8, z: 10 }, 'beside');
   const middle = join(space, { x: 25, z: 10 }, 'middle');
   const east = join(space, { x: 45, z: 10 }, 'east');
-  space.handleDropItem(MAGIC_CAP.id, 90, dropper.entityId);
+  space.handleDropItem(UNCOMMON_CAP.id, 90, dropper.entityId);
   const walk = (entityId: string, toX: number) => walkTo(space, clock, entityId, toX);
   const lootId = payloads(dropper.sent, 'loot')[0]!.lootId;
   return { clock, space, dropper, beside, middle, east, walk, lootId };
@@ -341,14 +353,14 @@ describe('an item dropped to the ground', () => {
     });
     const wearing = join(space, { x: 5, z: 10 }, 'wearing', carrying({ worn: [MOONSTONE] }));
     const carrier = join(space, { x: 6, z: 10 }, 'carrier', carrying({ bag: [MOONSTONE] }));
-    const fallen = join(space, { x: 8, z: 10 }, 'fallen', carrying({ worn: [CUDGEL], bag: [MAGIC_CAP] }), wounded(0));
-    for (const itemId of [MOONSTONE.id, MAGIC_CAP.id]) space.handleDropItem(itemId, 90, wearing.entityId);
+    const fallen = join(space, { x: 8, z: 10 }, 'fallen', carrying({ worn: [CUDGEL], bag: [UNCOMMON_CAP] }), wounded(0));
+    for (const itemId of [MOONSTONE.id, UNCOMMON_CAP.id]) space.handleDropItem(itemId, 90, wearing.entityId);
     space.handleDropItem(MOONSTONE.id, 90, carrier.entityId);
-    for (const itemId of [CUDGEL.id, MAGIC_CAP.id]) space.handleDropItem(itemId, 90, fallen.entityId);
+    for (const itemId of [CUDGEL.id, UNCOMMON_CAP.id]) space.handleDropItem(itemId, 90, fallen.entityId);
     for (const dreamer of [wearing, carrier, fallen]) expect([payloads(dreamer.sent, 'loot'), dropped(dreamer)]).toEqual([[], []]);
     expect(space.snapshotForPlayer(wearing.entityId)!.inventory).toEqual(carrying({ worn: [MOONSTONE] }));
     expect(space.snapshotForPlayer(carrier.entityId)!.inventory).toEqual(carrying({ bag: [MOONSTONE] }));
-    expect(space.snapshotForPlayer(fallen.entityId)!.inventory).toEqual(carrying({ worn: [CUDGEL], bag: [MAGIC_CAP] }));
+    expect(space.snapshotForPlayer(fallen.entityId)!.inventory).toEqual(carrying({ worn: [CUDGEL], bag: [UNCOMMON_CAP] }));
     expect(persisted).toEqual([]);
   });
 
@@ -360,11 +372,11 @@ describe('an item dropped to the ground', () => {
         persisted.push(checkpoint);
       },
     });
-    const dropper = join(space, DROPPER_AT, 'dropper', carrying({ worn: [CUDGEL], bag: [MAGIC_CAP] }));
+    const dropper = join(space, DROPPER_AT, 'dropper', carrying({ worn: [CUDGEL], bag: [UNCOMMON_CAP] }));
     const beside = join(space, { x: 5.8, z: 10 }, 'beside');
     const before = space.snapshotForCheckpoint().find(({ character }) => character.id === dropper.entityId)!;
 
-    space.handleDropItem(MAGIC_CAP.id, 90, dropper.entityId);
+    space.handleDropItem(UNCOMMON_CAP.id, 90, dropper.entityId);
     expect(persisted.map(({ character, inventory }) => [character.id, inventory])).toEqual([[dropper.entityId, carrying({ worn: [CUDGEL] })]]);
     expect(persisted[0]!.character.lastSeen.getTime()).toBeGreaterThan(before.character.lastSeen.getTime());
 
@@ -392,8 +404,8 @@ describe('an item dropped to the ground', () => {
 
   it('is picked up by no fallen dreamer, neither their own drop nor one dropped for anyone, though both lie within reach', () => {
     const { space, striker, lootOf } = driveOff();
-    const thrower = join(space, { x: 10, z: 7.6 }, 'thrower', carrying({ bag: [MAGIC_CAP] }));
-    space.handleDropItem(MAGIC_CAP.id, 0, thrower.entityId);
+    const thrower = join(space, { x: 10, z: 7.6 }, 'thrower', carrying({ bag: [UNCOMMON_CAP] }));
+    space.handleDropItem(UNCOMMON_CAP.id, 0, thrower.entityId);
     const shared = payloads(thrower.sent, 'loot')[0]!;
     const { checkpoint } = space.handOver(striker.entityId, false)!;
     const fallen = recordingOutbox();
@@ -408,7 +420,7 @@ describe('an item dropped to the ground', () => {
 
   it('takes a worn item off and throws it in one step with the bag full, shown thrown from the hand it left before that hand is shown empty, the inventory after', () => {
     const { space } = makeClockedSpace(makeWorld(makeSectorLine()));
-    const dropper = join(space, DROPPER_AT, 'dropper', carrying({ worn: [CUDGEL, MAGIC_CAP], bag: FULL_BAG }));
+    const dropper = join(space, DROPPER_AT, 'dropper', carrying({ worn: [CUDGEL, UNCOMMON_CAP, HEALER_GLOVES], bag: FULL_BAG }));
     const beside = join(space, { x: 5.8, z: 10 }, 'beside');
     const order = (dreamer: { sent: SomnioMessage[] }, from: number) =>
       dreamer.sent.slice(from).flatMap(({ tag }) => (tag === 'loot' || tag === 'outfit' || tag === 'inventory' ? [tag] : []));
@@ -419,21 +431,27 @@ describe('an item dropped to the ground', () => {
       ['loot', 'inventory', 'outfit'],
       ['loot', 'outfit'],
     ]);
-    const cudgel = { kind: 'item', baseId: 'cudgel', tier: 1, rarity: 'plain' } as const;
+    const cudgel = { kind: 'item', baseId: 'cudgel', tier: 1, rarity: 'common' } as const;
     expect(payloads(beside.sent, 'loot').map(({ contents, from }) => [contents, from])).toEqual([
       [cudgel, { ...DROPPER_AT, entityId: dropper.entityId, hand: 'mainHand' }],
     ]);
-    expect(payloads(beside.sent, 'outfit').at(-1)).toEqual({ entityId: dropper.entityId, outfit: [{ slot: 'head', baseId: 'cap', tier: 3 }] });
+    expect(payloads(beside.sent, 'outfit').at(-1)).toEqual({
+      entityId: dropper.entityId,
+      outfit: [
+        { slot: 'head', baseId: 'cap', tier: 3 },
+        { slot: 'hands', baseId: 'gloves', tier: 3, line: 'healer' },
+      ],
+    });
     expect(dropped(dropper)).toEqual([cudgel]);
 
     const thrown = [dropper.sent.length, beside.sent.length] as const;
-    space.handleDropItem(MAGIC_CAP.id, 90, dropper.entityId);
+    space.handleDropItem(UNCOMMON_CAP.id, 90, dropper.entityId);
     expect([order(dropper, thrown[0]), order(beside, thrown[1])]).toEqual([
       ['loot', 'inventory', 'outfit'],
       ['loot', 'outfit'],
     ]);
     expect(payloads(beside.sent, 'loot').at(-1)!.from).toEqual({ ...DROPPER_AT, entityId: dropper.entityId });
-    expect(space.snapshotForPlayer(dropper.entityId)!.inventory).toEqual(carrying({ bag: FULL_BAG }));
+    expect(space.snapshotForPlayer(dropper.entityId)!.inventory).toEqual(carrying({ worn: [HEALER_GLOVES], bag: FULL_BAG }));
   });
 
   it('leaves the bag at once and lands a throw away along the heading, thrown from the dreamer for everyone who sees its sector, and no one else', () => {
@@ -453,8 +471,8 @@ describe('an item dropped to the ground', () => {
   it('lands short of a wall in the way, on the side it was thrown from', () => {
     const wall = { id: 'wall', x: 5.6, z: 0, width: 0.2, depth: 20 };
     const { space } = makeClockedSpace(makeWorld(makeSectorLine({ west: { blockers: [wall] } })));
-    const dropper = join(space, DROPPER_AT, 'dropper', carrying({ bag: [MAGIC_CAP] }));
-    space.handleDropItem(MAGIC_CAP.id, 90, dropper.entityId);
+    const dropper = join(space, DROPPER_AT, 'dropper', carrying({ bag: [UNCOMMON_CAP] }));
+    space.handleDropItem(UNCOMMON_CAP.id, 90, dropper.entityId);
     const [landed] = payloads(dropper.sent, 'loot');
     expect(landed!.z).toBe(DROPPER_AT.z);
     expect(landed!.x).toBeGreaterThan(DROPPER_AT.x);
@@ -478,10 +496,24 @@ describe('an item dropped to the ground', () => {
     space.handlePickUp(lootId, dropper.entityId);
     expect([pickedUp(beside), pickedUp(dropper)]).toEqual([[CAP_DROP], []]);
     const taken = space.snapshotForPlayer(beside.entityId)!.inventory.bag[0]?.item;
-    expect(taken).toEqual({ ...MAGIC_CAP, id: expect.any(String) });
-    expect(taken!.id).not.toBe(MAGIC_CAP.id);
+    expect(taken).toEqual({ ...UNCOMMON_CAP, id: expect.any(String) });
+    expect(taken!.id).not.toBe(UNCOMMON_CAP.id);
     for (const dreamer of [dropper, beside, middle]) expect(gone(dreamer)).toEqual([{ lootId, taken: true }]);
     expect(gone(east)).toEqual([]);
+  });
+
+  it("keeps a set piece's line from the hand that threw it to the bag of whoever picks it up", () => {
+    const { space } = makeClockedSpace(makeWorld(makeSectorLine()));
+    const dropper = join(space, DROPPER_AT, 'dropper', carrying({ worn: [HEALER_GLOVES] }));
+    const beside = join(space, { x: 5.8, z: 10 }, 'beside');
+    space.handleDropItem(HEALER_GLOVES.id, 90, dropper.entityId);
+    const gloves = { kind: 'item', baseId: 'gloves', tier: 3, rarity: 'epic', line: 'healer' } as const;
+    expect(dropped(dropper)).toEqual([gloves]);
+    const [lying] = payloads(beside.sent, 'loot');
+    expect(lying!.contents).toEqual(gloves);
+    space.handlePickUp(lying!.lootId, beside.entityId);
+    expect(pickedUp(beside)).toEqual([gloves]);
+    expect(space.snapshotForPlayer(beside.entityId)!.inventory.bag[0]?.item).toEqual({ ...HEALER_GLOVES, id: expect.any(String) });
   });
 
   it('is gone for everyone who sees it once it has lain on the ground for its time', () => {
@@ -497,7 +529,7 @@ describe('an item dropped to the ground', () => {
   it('is held by one dreamer alone in every checkpoint, and stays on the ground when its dropper leaves', () => {
     const { space, dropper, beside, lootId } = dropInWest();
     const holders = () =>
-      space.snapshotForCheckpoint().filter(({ inventory }) => inventory.bag.some(({ item }) => item.baseId === 'cap' && item.rarity === 'magic'));
+      space.snapshotForCheckpoint().filter(({ inventory }) => inventory.bag.some(({ item }) => item.baseId === 'cap' && item.rarity === 'uncommon'));
     expect(holders()).toEqual([]);
 
     const left = space.handOver(dropper.entityId, true)!;

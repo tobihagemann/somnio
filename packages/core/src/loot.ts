@@ -1,6 +1,5 @@
-import { RARITIES } from '@somnio/protocol';
 import type { NightmareRank, Role } from '@somnio/protocol';
-import { rollItem } from './affixes.ts';
+import { rollItem, rollSetPiece } from './affixes.ts';
 import { MOVE_SUBSTEP, isClear, isLegalMove } from './collision.ts';
 import type { Body, SpaceCollision } from './collision.ts';
 import { handAllows } from './combat.ts';
@@ -11,9 +10,10 @@ import { EDGE_TOLERANCE, distance } from './geometry.ts';
 import type { Point } from './geometry.ts';
 import { headingRadians } from './heading.ts';
 import type { Heading } from './heading.ts';
-import { BASE_ITEMS, baseItem, plainItem } from './items.ts';
-import type { BaseItemId, Item, ItemInstance, Rarity, Tier } from './items.ts';
+import { BASE_ITEMS, NEUTRAL_RARITIES, baseItem, isWardrobeBase, commonItem } from './items.ts';
+import type { BaseItemId, Item, ItemInstance, NeutralRarity, Tier } from './items.ts';
 import { TRIAL_REWARDS } from './lucidity.ts';
+import type { QuestReward } from './quests.ts';
 
 /**
  * How far from a dreamer's centre a drop lies at most for them to pick it up. It is wider than the
@@ -102,7 +102,7 @@ interface DropOdds {
   rolls: number;
   chance: number;
   openShare: number;
-  rarities: Readonly<Record<Rarity, number>>;
+  rarities: Readonly<Record<NeutralRarity, number>>;
 }
 
 /**
@@ -112,9 +112,9 @@ interface DropOdds {
  * `COMBAT`'s numbers are.
  */
 export const DROP_ODDS = {
-  nightmare: { rolls: 1, chance: 0.3, openShare: 0.2, rarities: { plain: 60, magic: 30, rare: 10 } },
-  elite: { rolls: 2, chance: 0.5, openShare: 0.2, rarities: { plain: 40, magic: 40, rare: 20 } },
-  boss: { rolls: 4, chance: 0.9, openShare: 0.2, rarities: { plain: 10, magic: 50, rare: 40 } },
+  nightmare: { rolls: 1, chance: 0.3, openShare: 0.2, rarities: { common: 60, uncommon: 30, rare: 10 } },
+  elite: { rolls: 2, chance: 0.5, openShare: 0.2, rarities: { common: 40, uncommon: 40, rare: 20 } },
+  boss: { rolls: 4, chance: 0.9, openShare: 0.2, rarities: { common: 10, uncommon: 50, rare: 40 } },
 } as const satisfies Record<'nightmare' | NightmareRank, DropOdds>;
 export type DropRank = keyof typeof DROP_ODDS;
 
@@ -132,7 +132,7 @@ const OFF_HAND_NEEDS = ['moonstone', 'focus'] as const satisfies readonly HandNe
 
 /** What an item of the base serves in the off hand: the kit need it meets there, if any, as `handAllows` judges it. */
 function offHandNeed(baseId: BaseItemId): HandNeed | undefined {
-  return OFF_HAND_NEEDS.find((need) => handAllows(need, { offHand: plainItem(baseId) }));
+  return OFF_HAND_NEEDS.find((need) => handAllows(need, { offHand: commonItem(baseId) }));
 }
 
 /**
@@ -148,11 +148,16 @@ export function usableBy(baseId: BaseItemId, role: Role | undefined): boolean {
   return offHandNeed(baseId) === (reward === undefined ? undefined : offHandNeed(reward));
 }
 
+/** The chance that a boss's drop of armour or jewellery for a dreamer with a role is a piece of that role's set. */
+export const SET_PIECE_CHANCE = 0.5;
+
 /**
  * What one dreamer of the role finds after a foe of the tier and rank is driven off, rolled apart
  * from every other dreamer's: for each of the rank's rolls, by its chance, an item rolled at the
  * tier, at a rarity by the weights, of a droppable base the role can use, or by the open share of
- * any droppable base, each base as likely as any other. `random` gives rolls in `[0, 1)`.
+ * any droppable base, each base as likely as any other. A boss's drop of armour or jewellery for a
+ * dreamer with a role is, by `SET_PIECE_CHANCE`, a piece of the role's set instead
+ * (`rollSetPiece`). `random` gives rolls in `[0, 1)`.
  */
 export function rollDrops(tier: Tier, rank: DropRank, role: Role | undefined, random: () => number): Item[] {
   const odds: DropOdds = DROP_ODDS[rank];
@@ -163,22 +168,32 @@ export function rollDrops(tier: Tier, rank: DropRank, role: Role | undefined, ra
     if (random() >= odds.chance) continue;
     const from = random() < odds.openShare ? bases : usable;
     const baseId = from[Math.floor(random() * from.length)]!;
-    drops.push(rollItem(baseId, tier, rarityBy(odds.rarities, random()), random));
+    if (rank === 'boss' && role !== undefined && isWardrobeBase(baseId) && random() < SET_PIECE_CHANCE) {
+      drops.push(rollSetPiece(baseId, tier, role, random));
+    } else {
+      drops.push(rollItem(baseId, tier, rarityBy(odds.rarities, random()), random));
+    }
   }
   return drops;
 }
 
-/** The rarities a quest's gear reward rolls at, by weight: never plain, since it is paid for a quest done. */
-export const QUEST_GEAR_RARITIES = { plain: 0, magic: 70, rare: 30 } as const satisfies Record<Rarity, number>;
+/** The rarities a quest's gear reward rolls at, by weight: never common, since it is paid for a quest done. */
+export const QUEST_GEAR_RARITIES = { common: 0, uncommon: 70, rare: 30 } as const satisfies Record<NeutralRarity, number>;
 
 /**
  * The item a quest's gear reward gives a dreamer of the role: one rolled at the tier, of a droppable
- * base the role can use, at `rarity` when given, else by `QUEST_GEAR_RARITIES`. `random` gives rolls in `[0, 1)`.
+ * base the role can use, at the reward's `gearRarity` when given, else by `QUEST_GEAR_RARITIES`. A
+ * `setPiece` reward to a dreamer with a role is a piece of the role's set instead, of a droppable
+ * armour or jewellery base (`rollSetPiece`). `random` gives rolls in `[0, 1)`.
  */
-export function rollQuestGear(tier: Tier, role: Role | undefined, random: () => number, rarity?: Rarity): Item {
+export function rollQuestGear(tier: Tier, role: Role | undefined, random: () => number, reward: Pick<QuestReward, 'gearRarity' | 'setPiece'> = {}): Item {
+  if (reward.setPiece === true && role !== undefined) {
+    const wardrobe = droppableBases(tier).filter(isWardrobeBase);
+    return rollSetPiece(wardrobe[Math.floor(random() * wardrobe.length)]!, tier, role, random);
+  }
   const usable = droppableBases(tier).filter((baseId) => usableBy(baseId, role));
   const baseId = usable[Math.floor(random() * usable.length)]!;
-  return rollItem(baseId, tier, rarity ?? rarityBy(QUEST_GEAR_RARITIES, random()), random);
+  return rollItem(baseId, tier, reward.gearRarity ?? rarityBy(QUEST_GEAR_RARITIES, random()), random);
 }
 
 /** The item a dreamer can drop to the ground, by its id: anything they carry or wear but the Moonstone. */
@@ -187,13 +202,13 @@ export function droppableItem(inventory: Inventory, itemId: string): ItemInstanc
   return item === undefined || baseItem(item.baseId).trialOnly === true ? undefined : item;
 }
 
-/** The rarity a roll in `[0, 1)` lands on, each taking its weight's share of the range in `RARITIES` order. */
-function rarityBy(weights: Readonly<Record<Rarity, number>>, roll: number): Rarity {
-  const total = RARITIES.reduce((sum, rarity) => sum + weights[rarity], 0);
+/** The rarity a roll in `[0, 1)` lands on, each taking its weight's share of the range in `NEUTRAL_RARITIES` order. */
+function rarityBy(weights: Readonly<Record<NeutralRarity, number>>, roll: number): NeutralRarity {
+  const total = NEUTRAL_RARITIES.reduce((sum, rarity) => sum + weights[rarity], 0);
   let left = roll * total;
-  for (const rarity of RARITIES) {
+  for (const rarity of NEUTRAL_RARITIES) {
     left -= weights[rarity];
     if (left < 0) return rarity;
   }
-  return RARITIES.at(-1)!;
+  return NEUTRAL_RARITIES.at(-1)!;
 }

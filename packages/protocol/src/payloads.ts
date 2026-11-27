@@ -52,8 +52,8 @@ export type EquipSlot = (typeof EQUIP_SLOTS)[number];
 export const HANDS = ['mainHand', 'offHand'] as const satisfies readonly EquipSlot[];
 export type Hand = (typeof HANDS)[number];
 
-/** How many stat lines an item rolls beyond its base: plain none, magic one or two, rare three or four. */
-export const RARITIES = ['plain', 'magic', 'rare'] as const;
+/** How many stat lines an item rolls beyond its base: common none, uncommon one or two, rare three or four, epic four. */
+export const RARITIES = ['common', 'uncommon', 'rare', 'epic'] as const;
 export type Rarity = (typeof RARITIES)[number];
 
 export const LOGIN_RESULTS = ['ok', 'badCredentials', 'alreadyLoggedIn', 'throttled'] as const;
@@ -252,7 +252,7 @@ export interface StudyMessage {
   teachingId: string;
 }
 
-/** Asks the shopkeeper to sell a plain one of a ware, into a bag with room. */
+/** Asks the shopkeeper to sell a common one of a ware, into a bag with room. */
 export interface BuyMessage {
   carrierId: string;
   baseId: string;
@@ -360,19 +360,26 @@ export interface EntityMessage {
   summonedBy?: string;
 }
 
-/** An item a dreamer wears or holds: its slot, its base, and the tier it rolled, which is what anyone else is shown of it. */
+/** An item a dreamer wears or holds: its slot, its base, the tier it rolled, and its line, which is what anyone else is shown of it. */
 export interface OutfitPiece {
   slot: EquipSlot;
   baseId: string;
   tier: number;
+  /** Present on a role's set piece alone. */
+  line?: Role;
 }
 
 /** Everything a dreamer wears and holds, in `EQUIP_SLOTS` order, one slot at most once. A slot left out is empty. */
 export type Outfit = OutfitPiece[];
 
-/** Whether two outfits match slot by slot, base by base, and tier by tier. Both must be in `EQUIP_SLOTS` order. */
+/** Whether two outfits match slot by slot, base by base, tier by tier, and line by line. Both must be in `EQUIP_SLOTS` order. */
 export function sameOutfit(a: readonly OutfitPiece[], b: readonly OutfitPiece[]): boolean {
-  return a.length === b.length && a.every(({ slot, baseId, tier }, index) => slot === b[index]!.slot && baseId === b[index]!.baseId && tier === b[index]!.tier);
+  return (
+    a.length === b.length &&
+    a.every(
+      ({ slot, baseId, tier, line }, index) => slot === b[index]!.slot && baseId === b[index]!.baseId && tier === b[index]!.tier && line === b[index]!.line,
+    )
+  );
 }
 
 export interface EntityMove {
@@ -432,14 +439,16 @@ export interface ItemMessage {
   baseId: string;
   tier: number;
   rarity: Rarity;
+  /** The role whose set the item belongs to, present exactly when it is Epic. */
+  line?: Role;
   affixes: AffixMessage[];
 }
 
 /**
- * What a drop is, as its owner sees it before picking it up: an item of a base at a tier and a rarity,
+ * What a drop is, as its owner sees it before picking it up: an item of a base at a tier and a rarity, with its line when it is Epic,
  * whose stat lines the server keeps until it is picked up, or the trophy of a nightmare kind.
  */
-export type LootContentsMessage = { kind: 'item'; baseId: string; tier: number; rarity: Rarity } | { kind: 'trophy'; monsterKind: string };
+export type LootContentsMessage = { kind: 'item'; baseId: string; tier: number; rarity: Rarity; line?: Role } | { kind: 'trophy'; monsterKind: string };
 
 export interface EquippedItemMessage {
   slot: EquipSlot;
@@ -458,6 +467,8 @@ export interface TradeMessage {
   baseId: string;
   tier: number;
   rarity: Rarity;
+  /** The role whose set the item belongs to, present exactly when it is Epic. */
+  line?: Role;
   coins: number;
 }
 
@@ -1044,6 +1055,7 @@ function decodeOutfitPiece(container: Record<string, unknown>, path: string): Ou
     slot: requireStringEnum(container, 'slot', path, EQUIP_SLOTS),
     baseId: requireId(container, 'baseId', path),
     tier: requireTier(container, 'tier', path),
+    ...(isAbsent(container, 'line') ? {} : { line: requireStringEnum(container, 'line', path, ROLES) }),
   };
 }
 
@@ -1117,9 +1129,21 @@ function decodeItemMessage(container: Record<string, unknown>, path: string): It
     id: requireId(container, 'id', path),
     baseId: requireId(container, 'baseId', path),
     tier,
-    rarity: requireStringEnum(container, 'rarity', path, RARITIES),
+    ...decodeRarityAndLine(container, path),
     affixes: mapArray(container, 'affixes', path, SOMNIO_PROTOCOL_CONSTANTS.maxItemAffixes, decodeAffixMessage),
   };
+}
+
+/** An item has a line exactly when it is Epic, so either without the other is refused. */
+function decodeRarityAndLine(container: Record<string, unknown>, path: string): { rarity: Rarity; line?: Role } {
+  const rarity = requireStringEnum(container, 'rarity', path, RARITIES);
+  if (isAbsent(container, 'line')) {
+    if (rarity === 'epic') throw new WireDecodingError(`${path}.line`, 'expected the line of an epic item, got nothing');
+    return { rarity };
+  }
+  const line = requireStringEnum(container, 'line', path, ROLES);
+  if (rarity !== 'epic') throw new WireDecodingError(`${path}.line`, `expected no line on an item of rarity "${rarity}", got "${line}"`);
+  return { rarity, line };
 }
 
 function decodeEquippedItemMessage(container: Record<string, unknown>, path: string): EquippedItemMessage {
@@ -1150,7 +1174,7 @@ function decodeTradeMessage(container: Record<string, unknown>, path: string): T
     kind: requireStringEnum(container, 'kind', path, TRADE_KINDS),
     baseId: requireId(container, 'baseId', path),
     tier: requireTier(container, 'tier', path),
-    rarity: requireStringEnum(container, 'rarity', path, RARITIES),
+    ...decodeRarityAndLine(container, path),
     coins: requireNonNegative(requireInt32(container, 'coins', path), `${path}.coins`),
   };
 }
@@ -1209,7 +1233,7 @@ function decodeLootContentsMessage(container: Record<string, unknown>, path: str
         kind,
         baseId: requireId(container, 'baseId', path),
         tier: requireTier(container, 'tier', path),
-        rarity: requireStringEnum(container, 'rarity', path, RARITIES),
+        ...decodeRarityAndLine(container, path),
       };
     case 'trophy':
       return { kind, monsterKind: requireId(container, 'monsterKind', path) };

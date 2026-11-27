@@ -3,7 +3,7 @@ import { EDGE_TOLERANCE, SOMNIO_CONSTANTS, ability, boltFlightSeconds, monsterKi
 import type { Character, ItemInstance, Point, TeachingRank } from '@somnio/core';
 import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { Condition, SomnioMessage } from '@somnio/protocol';
-import { plain } from '../../core/test/support/items.ts';
+import { common } from '../../core/test/support/items.ts';
 import type { SpaceActor } from '../src/world/spaceActor.ts';
 import {
   BESIDE_GHOST,
@@ -24,6 +24,7 @@ import {
   face,
   lucidity,
   payloads,
+  setWorn,
   strikeAndLeave,
   wearing,
   wounded,
@@ -90,17 +91,32 @@ describe('Ward', () => {
   /** The Ghost's first hit, 9, comes as the ward goes up, and leaves 3 of a plain one's 12. */
   it('puts up a shield stronger by the ward strength of everything the Mystic wears', () => {
     const { space, steps } = arena();
-    const wand: ItemInstance = { ...WAND, rarity: 'magic', affixes: [{ affixId: 'ward-strength', value: 15 }] };
+    const wand: ItemInstance = { ...WAND, rarity: 'uncommon', affixes: [{ affixId: 'ward-strength', value: 15 }] };
     const amulet: ItemInstance = {
       id: '00000000-0000-7000-8000-000000000021',
-      ...plain('amulet'),
-      rarity: 'magic',
+      ...common('amulet'),
+      rarity: 'uncommon',
       affixes: [{ affixId: 'ward-strength', value: 10 }],
     };
     const alice = attachPlayer(space, BESIDE_GHOST, 'alice', { character: MYSTIC, inventory: wearing(wand, amulet) });
     space.handleUseAbility('ward', alice.entityId);
     steps(1);
     expect(space.handOver(alice.entityId, false)!.transient.effects).toMatchObject([{ effectId: 'warded', shield: 6 }]);
+  });
+
+  it.each([
+    ['no set nor ward strength', undefined, 0, 12],
+    // A quarter more.
+    ['two pieces of the set', 'mystic', 0, 15],
+    ['ward strength of 25', undefined, 25, 15],
+    // Both, multiplied.
+    ['two pieces and ward strength of 25', 'mystic', 25, 18.75],
+  ] as const)('puts up a shield as strong as the set and the ward strength worn make it: %s', (_label, line, wardStrength, shield) => {
+    const { space } = arena();
+    const wand: ItemInstance = wardStrength === 0 ? WAND : { ...WAND, rarity: 'uncommon', affixes: [{ affixId: 'ward-strength', value: wardStrength }] };
+    const alice = attachPlayer(space, BESIDE_GHOST, 'alice', { character: MYSTIC, inventory: wearing(wand, ...setWorn(2, line)) });
+    space.handleUseAbility('ward', alice.entityId);
+    expect(space.handOver(alice.entityId, false)!.transient.effects).toMatchObject([{ effectId: 'warded', shield }]);
   });
 
   it('lands on the dreamer the Mystic targets', () => {
@@ -264,6 +280,75 @@ describe('Bind', () => {
     expect(rectContains(GROUND_4, await ghostNow(field.space), EDGE_TOLERANCE)).toBe(true);
   });
 
+  it.each([
+    ['no set', undefined, [{ effectId: 'bound', seconds: 3 }]],
+    [
+      'six pieces',
+      'mystic',
+      [
+        { effectId: 'bound', seconds: 3 },
+        { effectId: 'weakened', seconds: 8 },
+      ],
+    ],
+  ] as const)('puts its effects on the nightmare by the set its Mystic wears: %s', async (_label, line, effects) => {
+    const { space } = arena();
+    const alice = attachPlayer(space, FIVE_OFF, 'alice', { character: MYSTIC, inventory: wearing(WAND, ...setWorn(6, line)) });
+    space.handleTarget(GHOST, alice.entityId);
+    space.handleUseAbility('bind', alice.entityId);
+    expect(payloads(await collectMessages(alice.outbox), 'effects').at(-1)).toEqual({ entityId: GHOST, effects });
+  });
+
+  it('with six pieces of the set leaves a longer Weaken the nightmare holds as it is', async () => {
+    const { space, steps } = arena();
+    const character = { lucidity: lucidity('mystic', { weaken: 3, bind: 1 }) };
+    const alice = attachPlayer(space, FIVE_OFF, 'alice', { character, inventory: wearing(WAND, ...setWorn(6, 'mystic')) });
+    space.handleTarget(GHOST, alice.entityId);
+    space.handleUseAbility('weaken', alice.entityId);
+    steps(2 * 20);
+    space.handleUseAbility('bind', alice.entityId);
+    const shown = payloads(await collectMessages(alice.outbox), 'effects').map(({ effects }) => effects);
+    // The rank-3 Weaken's 12 s, 2 s spent, outlast the 8 s a rank-1 Bind's would give.
+    expect(shown.at(-2)).toEqual([{ effectId: 'weakened', seconds: 12 }]);
+    expect(shown.at(-1)).toEqual([
+      { effectId: 'weakened', seconds: 10 },
+      { effectId: 'bound', seconds: 3 },
+    ]);
+  });
+
+  it('with six pieces of the set puts a Weaken on afresh over a shorter one the nightmare holds', async () => {
+    const { space, steps } = arena();
+    const character = { lucidity: lucidity('mystic', { weaken: 1, bind: 1 }) };
+    const alice = attachPlayer(space, FIVE_OFF, 'alice', { character, inventory: wearing(WAND, ...setWorn(6, 'mystic')) });
+    space.handleTarget(GHOST, alice.entityId);
+    space.handleUseAbility('weaken', alice.entityId);
+    steps(5 * 20);
+    space.handleUseAbility('bind', alice.entityId);
+    const shown = payloads(await collectMessages(alice.outbox), 'effects').map(({ effects }) => effects);
+    // The rank-1 Weaken's 8 s, 5 s spent, fall short of the 8 s the Bind's would give.
+    expect(shown.at(-1)).toEqual([
+      { effectId: 'bound', seconds: 3 },
+      { effectId: 'weakened', seconds: 8 },
+    ]);
+  });
+
+  it('with six pieces of the set Weakens an elite too, whose trait lasts as long as it stands', async () => {
+    const { space } = arena({}, { elite: 'stony' });
+    const alice = attachPlayer(space, FIVE_OFF, 'alice', { character: MYSTIC, inventory: wearing(WAND, ...setWorn(6, 'mystic')) });
+    space.handleTarget(GHOST, alice.entityId);
+    space.handleUseAbility('bind', alice.entityId);
+    const last = payloads(await collectMessages(alice.outbox), 'effects').at(-1)!.effects;
+    expect(last.map(({ effectId }) => effectId).sort()).toEqual(['bound', 'stony', 'weakened']);
+  });
+
+  it('with six pieces of the set is evaded whole by a nightmare giving up, Weaken included', async () => {
+    const { space, steps } = arena();
+    strikeAndLeave(space, steps);
+    const alice = attachPlayer(space, FIVE_OFF, 'alice', { character: MYSTIC, inventory: wearing(WAND, ...setWorn(6, 'mystic')) });
+    space.handleTarget(GHOST, alice.entityId);
+    space.handleUseAbility('bind', alice.entityId);
+    expect(payloads(await collectMessages(alice.outbox), 'effects')).toEqual([{ entityId: GHOST, effects: [] }]);
+  });
+
   it('leaves it striking whoever stands in its reach', () => {
     const { space, steps } = arena();
     const alice = attachPlayer(space, { x: 10, z: 13 }, 'alice', { character: MYSTIC, inventory: wearing(WAND) });
@@ -319,6 +404,20 @@ describe('Dream-bolt', () => {
     space.handleUseAbility('dream-bolt', alice.entityId);
     steps(flightSteps(5));
     expect(payloads(await collectMessages(alice.outbox), 'vitals').at(-1)).toEqual({ entityId: GHOST, health: share });
+  });
+
+  it.each([
+    // Its 12 harm whole on the Ghost's 60.
+    ['no set', undefined, 0.8],
+    // A fifth more, 14.4, taken whole as 14.
+    ['four pieces', 'mystic', 0.77],
+  ] as const)('harms by the set its Mystic wears: %s', async (_label, line, health) => {
+    const { space, steps } = arena({}, { ground: 9 });
+    const alice = attachPlayer(space, { x: 10, z: 15 }, 'alice', { character: MYSTIC, inventory: wearing(WAND, ...setWorn(4, line)) });
+    space.handleTarget(GHOST, alice.entityId);
+    space.handleUseAbility('dream-bolt', alice.entityId);
+    steps(flightSteps(5));
+    expect(payloads(await collectMessages(alice.outbox), 'vitals').at(-1)).toEqual({ entityId: GHOST, health });
   });
 
   it('lands its harm as the bolt arrives, the flight after the use, and not before', async () => {

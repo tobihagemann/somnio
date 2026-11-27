@@ -1,5 +1,5 @@
 import { EQUIP_SLOTS, RARITIES } from '@somnio/protocol';
-import type { EquipSlot, Hand, Rarity } from '@somnio/protocol';
+import type { EquipSlot, Hand, Rarity, Role } from '@somnio/protocol';
 import type { AffixId } from './affixes.ts';
 
 export type { EquipSlot, Rarity };
@@ -12,12 +12,23 @@ export function isRarity(value: string): value is Rarity {
   return (RARITIES as readonly string[]).includes(value);
 }
 
+/** The rarities an ordinary roll gives: every one but epic, which only a set piece is. */
+export const NEUTRAL_RARITIES = ['common', 'uncommon', 'rare'] as const satisfies readonly Rarity[];
+export type NeutralRarity = (typeof NEUTRAL_RARITIES)[number];
+
 /** How far from Edaria an item comes from, the bestiary's rings: a further ring rolls higher. */
 export const TIERS = [1, 2, 3, 4, 5] as const;
 export type Tier = (typeof TIERS)[number];
 
 export function isTier(value: number): value is Tier {
   return (TIERS as readonly number[]).includes(value);
+}
+
+/** The tiers a role's set pieces are made at. */
+export const SET_TIERS = [3] as const satisfies readonly Tier[];
+
+export function isSetTier(tier: Tier): boolean {
+  return (SET_TIERS as readonly Tier[]).includes(tier);
 }
 
 /**
@@ -77,10 +88,17 @@ export type SlotKind = Exclude<EquipSlot, BraceletSlot> | 'bracelet';
 
 /**
  * Where the base is worn and how the catalog names it: a held item by one name whatever its tier, and
- * armour and jewellery, worn anywhere but in a hand, after their design at each tier.
+ * armour and jewellery, worn anywhere but in a hand, after their design at each tier, a role's set
+ * piece after its line's design at each tier the line has one.
  */
 type BaseItemName =
-  { slot: Hand; labelKey: string; tierLabelKeys?: never } | { slot: Exclude<SlotKind, Hand>; tierLabelKeys: Readonly<Record<Tier, string>>; labelKey?: never };
+  | { slot: Hand; labelKey: string; tierLabelKeys?: never; lineLabelKeys?: never }
+  | {
+      slot: Exclude<SlotKind, Hand>;
+      tierLabelKeys: Readonly<Record<Tier, string>>;
+      lineLabelKeys: Readonly<Record<Role, Partial<Record<Tier, string>>>>;
+      labelKey?: never;
+    };
 
 type BaseItem = BaseItemName & {
   tier: Tier;
@@ -118,6 +136,7 @@ export const BASE_ITEMS = {
   'skull-staff': { labelKey: 'Skull staff', slot: 'offHand', tier: 3, value: 200, focus: true, implicit: { spiritMax: 10 } },
   cap: {
     tierLabelKeys: { 1: 'Courier straw hat', 2: "Forester's feather band", 3: 'Tarred reed brim', 4: "Trapper's hide band", 5: 'Oiled storm brim' },
+    lineLabelKeys: { fighter: { 3: 'Grave iron kettle helm' }, healer: { 3: 'Linen wimple' }, mystic: { 3: 'Marsh witch hat' } },
     slot: 'head',
     tier: 1,
     value: 25,
@@ -125,6 +144,7 @@ export const BASE_ITEMS = {
   },
   shoulders: {
     tierLabelKeys: { 1: 'Courier shoulders', 2: 'Leaf shoulder', 3: 'Ferry guards', 4: 'Pelt guards', 5: "Navigator's epaulettes" },
+    lineLabelKeys: { fighter: { 3: 'Crypt pauldrons' }, healer: { 3: 'Vigil shoulders' }, mystic: { 3: 'Marsh shoulders' } },
     slot: 'shoulders',
     tier: 1,
     value: 40,
@@ -132,6 +152,7 @@ export const BASE_ITEMS = {
   },
   tunic: {
     tierLabelKeys: { 1: 'Courier tunic', 2: 'Trail cape', 3: "Ferryman's raincoat", 4: "Trapper's baldric", 5: 'Shore coat' },
+    lineLabelKeys: { fighter: { 3: 'Burial hauberk' }, healer: { 3: 'Vigil stole' }, mystic: { 3: 'Marsh veil' } },
     slot: 'chest',
     tier: 1,
     value: 50,
@@ -139,6 +160,7 @@ export const BASE_ITEMS = {
   },
   gloves: {
     tierLabelKeys: { 1: 'Dispatch gloves', 2: 'Bark-grip gloves', 3: 'Reedwork gloves', 4: 'Hide mitts', 5: "Sailmaker's gloves" },
+    lineLabelKeys: { fighter: { 3: 'Crypt gauntlets' }, healer: { 3: 'Votive gloves' }, mystic: { 3: 'Candle gloves' } },
     slot: 'hands',
     tier: 1,
     value: 25,
@@ -146,6 +168,7 @@ export const BASE_ITEMS = {
   },
   trousers: {
     tierLabelKeys: { 1: 'Field trousers', 2: 'Brush trousers', 3: 'Wader trousers', 4: 'Trail leathers', 5: 'Storm trousers' },
+    lineLabelKeys: { fighter: { 3: 'Crypt chausses' }, healer: { 3: 'Vigil trousers' }, mystic: { 3: 'Marsh trousers' } },
     slot: 'legs',
     tier: 1,
     value: 40,
@@ -153,6 +176,7 @@ export const BASE_ITEMS = {
   },
   boots: {
     tierLabelKeys: { 1: 'Trail boots', 2: 'Leaf gaiters', 3: 'Fen boots', 4: 'Climbing boots', 5: 'Deck boots' },
+    lineLabelKeys: { fighter: { 3: 'Crypt sabatons' }, healer: { 3: 'Chapel boots' }, mystic: { 3: 'Marsh boots' } },
     slot: 'feet',
     tier: 1,
     value: 25,
@@ -160,6 +184,7 @@ export const BASE_ITEMS = {
   },
   amulet: {
     tierLabelKeys: { 1: 'Wheat-ear pendant', 2: 'Beech leaf', 3: 'Lantern cage', 4: 'Bear claw', 5: 'Compass rose' },
+    lineLabelKeys: { fighter: { 3: 'Portcullis' }, healer: { 3: 'Votive candle' }, mystic: { 3: 'Marsh eye' } },
     slot: 'neck',
     tier: 1,
     value: 70,
@@ -167,6 +192,7 @@ export const BASE_ITEMS = {
   },
   bracelet: {
     tierLabelKeys: { 1: 'Dispatch wristband', 2: 'Maple twig', 3: 'Reed knot', 4: 'Antler tine', 5: 'Sounding weight' },
+    lineLabelKeys: { fighter: { 3: 'Crypt grille' }, healer: { 3: 'Wax taper' }, mystic: { 3: 'Reed eye' } },
     slot: 'bracelet',
     tier: 1,
     value: 50,
@@ -208,6 +234,8 @@ export interface Item {
   tier: Tier;
   rarity: Rarity;
   affixes: readonly RolledAffix[];
+  /** The role whose set the item is a piece of, present exactly when it is epic. */
+  line?: Role;
 }
 
 /** An item a dreamer has, named by an id of its own while they keep it. */
@@ -232,14 +260,14 @@ export function newItemId(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-/** A plain item of the base, at the base's tier: what Mercus sells and a trial gives. */
-export function plainItem(baseId: BaseItemId): Item {
-  return { baseId, tier: baseItem(baseId).tier, rarity: 'plain', affixes: [] };
+/** A common item of the base, at the base's tier: what Mercus sells and a trial gives. */
+export function commonItem(baseId: BaseItemId): Item {
+  return { baseId, tier: baseItem(baseId).tier, rarity: 'common', affixes: [] };
 }
 
-/** A plain item of the base, at the base's tier, under a new id. */
-export function plainInstance(baseId: BaseItemId): ItemInstance {
-  return { id: newItemId(), ...plainItem(baseId) };
+/** A common item of the base, at the base's tier, under a new id. */
+export function commonInstance(baseId: BaseItemId): ItemInstance {
+  return { id: newItemId(), ...commonItem(baseId) };
 }
 
 /** What a dreamer wears, by slot. */
@@ -257,14 +285,17 @@ export type Hands = Pick<Equipment, 'mainHand' | 'offHand'>;
 /**
  * The catalog key of the display name of an item of the base at the tier it rolled at, which the
  * consumer resolves in its locale: the base's own name, or the design armour and jewellery are made
- * in at that tier. An unknown id, or a tier outside 1 to 5 for armour and jewellery, resolves to
- * `undefined` so a missing entry surfaces rather than rendering a wrong label.
+ * in at that tier, a set piece's in its line's. An unknown id, a tier outside 1 to 5 for armour and
+ * jewellery, or a line at a tier with no design of it resolves to `undefined` so a missing entry
+ * surfaces rather than rendering a wrong label. The typed overload returns a string because every
+ * item past `knownItem` and the item repository carries a line only at a tier of `SET_TIERS`.
  */
-export function itemLabelKey(baseId: BaseItemId, tier: Tier): string;
-export function itemLabelKey(baseId: string, tier: number): string | undefined;
-export function itemLabelKey(baseId: string, tier: number): string | undefined {
+export function itemLabelKey(baseId: BaseItemId, tier: Tier, line?: Role): string;
+export function itemLabelKey(baseId: string, tier: number, line?: Role): string | undefined;
+export function itemLabelKey(baseId: string, tier: number, line?: Role): string | undefined {
   if (!isBaseItemId(baseId)) return undefined;
   const base = baseItem(baseId);
   if (base.tierLabelKeys === undefined) return base.labelKey;
-  return isTier(tier) ? base.tierLabelKeys[tier] : undefined;
+  if (!isTier(tier)) return undefined;
+  return line === undefined ? base.tierLabelKeys[tier] : base.lineLabelKeys[line][tier];
 }

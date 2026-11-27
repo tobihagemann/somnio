@@ -7,11 +7,14 @@ import {
   MONSTER_KINDS,
   PEOPLES,
   QUESTS,
+  SET_BONUSES,
+  SET_TITLE_KEYS,
   TEACHINGS,
   TROPHIES,
   peopleLabelKey,
   roleLabelKey,
 } from '@somnio/core';
+import type { Tier } from '@somnio/core';
 import { ROLES } from '@somnio/protocol';
 import { coreCatalog, lookupIn, mergeCatalogs, readCatalog } from '@somnio/core/catalog';
 import type { CatalogLocale, CatalogTables } from '@somnio/core/catalog';
@@ -89,7 +92,11 @@ export function translate(locale: CatalogLocale, key: string, ...args: string[])
 export const CORE_LABEL_KEYS: readonly string[] = [
   // Each role's Spirit deepening is its own teaching under one label.
   ...new Set([
-    ...Object.values(BASE_ITEMS).flatMap((item) => ('tierLabelKeys' in item ? Object.values(item.tierLabelKeys) : [item.labelKey])),
+    ...Object.values(BASE_ITEMS).flatMap((item) =>
+      'tierLabelKeys' in item
+        ? [...Object.values(item.tierLabelKeys), ...Object.values(item.lineLabelKeys).flatMap((tiers: Partial<Record<Tier, string>>) => Object.values(tiers))]
+        : [item.labelKey],
+    ),
     ...Object.values(AFFIXES).map((line) => line.nameKey),
     ...PEOPLES.map(peopleLabelKey),
     ...ROLES.map(roleLabelKey),
@@ -100,6 +107,8 @@ export const CORE_LABEL_KEYS: readonly string[] = [
     BOUNTY_LABEL_KEY,
     ...Object.values(BOUNTY_KINDS).flatMap((lines) => Object.values(lines)),
     ...Object.values(TROPHIES),
+    ...Object.values(SET_TITLE_KEYS),
+    ...Object.values(SET_BONUSES).flatMap((steps) => steps.map((step) => step.textKey)),
   ]),
 ];
 
@@ -234,6 +243,13 @@ export const RENDERED_KEYS: readonly string[] = [
   'Right-click or double-click to unequip.',
   '%@ only',
   'Fits only the %@ slot.',
+  'Fighters only',
+  'Healers only',
+  'Mystics only',
+  'Only Fighters can wear this.',
+  'Only Healers can wear this.',
+  'Only Mystics can wear this.',
+  '(%1$@) %2$@',
   'Stays with you',
   'Bag full',
   'This stays with you.',
@@ -262,9 +278,10 @@ export const RENDERED_KEYS: readonly string[] = [
   '%@ s',
   '%@%%',
   '%1$@: %2$@',
-  'Plain',
-  'Magic',
+  'Common',
+  'Uncommon',
   'Rare',
+  'Epic',
   'Main hand',
   'Off hand',
   'Head',
@@ -425,7 +442,8 @@ export const RENDERED_KEYS: readonly string[] = [
   '%@ practice',
   '%1$@ practice toward %2$@',
   'a piece of gear',
-  'a magic item',
+  "a piece of your role's set",
+  'an uncommon item',
 
   // The bounty board
   'Bounty board',
@@ -479,7 +497,7 @@ export const RENDERED_KEYS: readonly string[] = [
   'Shopkeeper',
   'Your purse',
   '%@c',
-  '%@ sells plain gear and buys what you find.',
+  '%@ sells common gear and buys what you find.',
   'Sell from bag',
   'For sale',
   'Buy back',

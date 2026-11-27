@@ -4,6 +4,7 @@ import { button, element, iconButton, setHidden } from './dom';
 import { HUD_ICONS, glyph } from './hudIcons';
 import { placeBeside, setTip, tipNodes } from './hudTooltip';
 import { itemTip, itemTitle } from './itemText';
+import type { ItemReader } from './itemText';
 
 /**
  * The windows the HUD's menu opens: Players, Character, and the Quest log. Each is a titled panel
@@ -100,6 +101,8 @@ export interface ItemAction {
  */
 export class ItemCard {
   readonly root: HTMLElement;
+  /** What the card says, which scrolls in a short window while its buttons stay in view. */
+  private readonly lines: HTMLElement;
   private readonly onClose: () => void;
   private shown: { itemId: string; anchor: HTMLElement } | undefined;
 
@@ -110,6 +113,7 @@ export class ItemCard {
       className: 'fantasy-panel fantasy-panel--opaque hud-tip hud-item-card hidden',
       attributes: { role: 'dialog', tabindex: -1 },
     });
+    this.lines = element('div', { className: 'hud-item-card__lines' });
     // Ahead of whatever the press lands on. A press on the item itself closes the card through its click.
     document.addEventListener(
       'pointerdown',
@@ -135,8 +139,14 @@ export class ItemCard {
     return this.shown?.itemId;
   }
 
-  /** Opens the item's card beside `anchor`, the part it was pressed on, and gives its button the keyboard when `focus` says so. */
-  open(anchor: HTMLElement, item: ItemInstance, action: ItemAction, focus: boolean): void {
+  /**
+   * Opens the item's card beside `anchor`, the part it was pressed on, as `reader` reads it, and gives
+   * its button the keyboard when `focus` says so. Opened again on the same item, its lines keep
+   * where they were scrolled to.
+   */
+  open(anchor: HTMLElement, item: ItemInstance, action: ItemAction, focus: boolean, reader: ItemReader): void {
+    // Read before the close hides it, since a hidden element scrolls nowhere.
+    const scrolled = this.shown?.itemId === item.id ? this.lines.scrollTop : 0;
     this.close();
     const { drop, sell } = action;
     const cardButton = (label: string, run: (() => void) | undefined): HTMLButtonElement => {
@@ -155,11 +165,10 @@ export class ItemCard {
       buttons.push(sale);
     }
     this.root.setAttribute('aria-label', itemTitle(item));
-    this.root.replaceChildren(
-      ...tipNodes(itemTip(item, action.warning === undefined ? {} : { warning: action.warning })),
-      element('div', { className: 'hud-item-card__action', children: buttons }),
-    );
+    this.lines.replaceChildren(...tipNodes(itemTip(item, action.warning === undefined ? {} : { warning: action.warning }, reader)));
+    this.root.replaceChildren(this.lines, element('div', { className: 'hud-item-card__action', children: buttons }));
     setHidden(this.root, false);
+    this.lines.scrollTop = scrolled;
     placeBeside(this.root, anchor, this.root.parentElement ?? this.root);
     anchor.setAttribute('aria-expanded', 'true');
     this.shown = { itemId: item.id, anchor };

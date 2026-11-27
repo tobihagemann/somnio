@@ -94,6 +94,6 @@
     "turnIn": "npc:Graveyard/memor",
     "needs": { "quest": "cracked-skulls" },
     "objectives": [{ "kind": "driveOff", "monsterKind": "necromancer", "count": 1, "labelKey": "Drive off the Necromancer in the burial chamber." }],
-    "reward": { "coins": 250, "practice": 60, "gear": 3 }
+    "reward": { "coins": 250, "practice": 60, "gear": 3, "setPiece": true }
   }
 }
