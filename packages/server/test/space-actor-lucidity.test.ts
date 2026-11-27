@@ -36,9 +36,9 @@ import {
   energy,
   energyOf,
   engage,
-  face,
   lucidity,
   payloads,
+  strike,
   wearing,
 } from './support/combat.ts';
 import { collectMessages, recordingOutbox } from './support/frames.ts';
@@ -166,18 +166,6 @@ function walkStraight(world: Town, entityId: string, to: Point): void {
 /** Drives the named Ghost, standing where the first one did, off with three cudgel swings. */
 function driveOff(world: Town, entityId: string, ghost: string): void {
   strike(world, ghost, 3, entityId);
-}
-
-/** Each striker, standing in reach of `GHOST_AT`, swings at the nightmare standing there once a second, `swings` times. */
-function strike(world: Town, nightmare: string, swings: number, ...strikers: string[]): void {
-  for (const striker of strikers) {
-    face(world.space, striker, GHOST_AT);
-    engage(world.space, nightmare, striker);
-  }
-  for (let swing = 0; swing < swings; swing += 1) {
-    world.space.step(0);
-    world.clock.ms += 1000;
-  }
 }
 
 /** A bag with no room left, of caps. */

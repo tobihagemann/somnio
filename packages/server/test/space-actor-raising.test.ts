@@ -1,11 +1,29 @@
 import { describe, expect, it } from 'vitest';
-import { COMBAT, PRACTICE } from '@somnio/core';
+import { COMBAT, PRACTICE, monsterKind } from '@somnio/core';
 import type { Character, Inventory, ItemInstance, Point } from '@somnio/core';
 import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { Energy, SomnioMessage } from '@somnio/protocol';
 import { common } from '../../core/test/support/items.ts';
 import { ConnectionOutbox } from '../src/connection/outbox.ts';
-import { BESIDE_GHOST, GHOST, MOONSTONE, arena, carrying, characterOf, energy, energyOf, engage, lucidity, payloads, wearing } from './support/combat.ts';
+import {
+  BESIDE_GHOST,
+  CUDGEL,
+  GHOST,
+  MOONSTONE,
+  STRIKER,
+  arena,
+  attackGhost,
+  carrying,
+  characterOf,
+  coinsOf,
+  energy,
+  energyOf,
+  engage,
+  lucidity,
+  payloads,
+  runSwings,
+  wearing,
+} from './support/combat.ts';
 import { collectMessages, recordingOutbox } from './support/frames.ts';
 import { attachPlayer, makeSectorLine } from './support/sectorFactory.ts';
 
@@ -474,6 +492,24 @@ describe('raising', () => {
     space.handleEngage(false, other.entityId);
     steps(1);
     expect(spiritCharged(await collectMessages(other.outbox))).toBe(charged);
+  });
+
+  it('counts a Healer who takes hold among those who fought each nightmare the fallen dreamer fought, so they share it from beyond the share radius', () => {
+    const { clock, space, steps } = arena();
+    const dreamer = attachPlayer(space, BESIDE_GHOST, 'dreamer');
+    // The Ghost notices the dreamer beside it, and counts them among those who fight it.
+    steps(1);
+    const striker = attachPlayer(space, { x: 10, z: 9.3 }, 'striker', { character: STRIKER, inventory: wearing(CUDGEL) });
+    attackGhost(space, striker.entityId);
+    runSwings({ space, clock }, 1);
+    space.handOver(dreamer.entityId, false);
+    // Back fallen 7 m from the Ghost, beyond its notice and the share radius, as is the Healer who kneels by them.
+    space.attach({ ...dreamer.character, ...FALLEN, position: { x: 10, z: 17 } }, wearing(), new ConnectionOutbox(4096), 0, 'en');
+    const healer = addHealer(space, { x: 10, z: 17.7 }, 'healer');
+    engage(space, dreamer.entityId, healer.entityId);
+    runSwings({ space, clock }, 2);
+    // Split among the striker, the fallen dreamer, and the Healer.
+    expect(coinsOf(space, healer.entityId)).toBe(Math.floor(monsterKind('ghost').bounty / 3));
   });
 
   it('lets go of a Healer who leaves, though they are back under the same id before the next step', async () => {

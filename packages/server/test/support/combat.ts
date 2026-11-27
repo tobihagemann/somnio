@@ -1,4 +1,4 @@
-import { ELITE_TRAIT_IDS, NO_LUCIDITY, NO_STATS, OUTDOOR_SPACE_ID, fullPools, headingFromVector, monsterKind } from '@somnio/core';
+import { COMBAT, ELITE_TRAIT_IDS, NO_LUCIDITY, NO_STATS, OUTDOOR_SPACE_ID, fullPools, headingFromVector, monsterKind } from '@somnio/core';
 import type { Character, EliteTraitId, Inventory, ItemInstance, Lucidity, Point, Sector, TeachingId } from '@somnio/core';
 import type { Energy, Role, SomnioMessage } from '@somnio/protocol';
 import { carrying, common } from '../../../core/test/support/items.ts';
@@ -123,6 +123,23 @@ function traitRoll(trait: EliteTraitId): { nextUInt32: () => number } {
 export function face(space: SpaceActor, entityId: string, point: Point): void {
   const at = characterOf(space, entityId).position;
   space.handleMove({ x: at.x, z: at.z, facing: headingFromVector(point.x - at.x, point.z - at.z), gait: 'walk' }, entityId);
+}
+
+/** Steps the space `count` times a swing apart, so an engaged striker whose next swing is due now swings `count` times. */
+export function runSwings(world: { space: SpaceActor; clock: { ms: number } }, count: number): void {
+  for (let swing = 0; swing < count; swing += 1) {
+    world.space.step(0);
+    world.clock.ms += COMBAT.swingSeconds * 1000;
+  }
+}
+
+/** Each striker, standing in reach of `GHOST_AT`, swings at the nightmare standing there once a second, `swings` times. */
+export function strike(world: { space: SpaceActor; clock: { ms: number } }, nightmare: string, swings: number, ...strikers: string[]): void {
+  for (const striker of strikers) {
+    face(world.space, striker, GHOST_AT);
+    engage(world.space, nightmare, striker);
+  }
+  runSwings(world, swings);
 }
 
 /** Turns the dreamer toward the Ghost, targets it, and switches Attack on, as their client would. */

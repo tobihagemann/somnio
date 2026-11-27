@@ -26,9 +26,9 @@ import {
   arena,
   attackGhost,
   carrying,
-  engage,
-  face,
   payloads,
+  runSwings,
+  strike,
   wounded,
 } from './support/combat.ts';
 import { recordingOutbox } from './support/frames.ts';
@@ -64,10 +64,7 @@ function driveOff(strikerInventory: Inventory = carrying({ worn: [CUDGEL] })) {
   const { entityId } = attachPlayer(space, BESIDE_GHOST, 'striker', { outbox, character: STRIKER, inventory: strikerInventory });
   const striker = { entityId, sent };
   attackGhost(space, entityId);
-  for (let swing = 0; swing < 3; swing += 1) {
-    space.step(0);
-    clock.ms += 1000;
-  }
+  runSwings({ space, clock }, 3);
   const lootOf = (dreamer: { sent: SomnioMessage[] }) => payloads(dreamer.sent, 'loot')[0]!.lootId;
   return { ...fight, striker, near, far, lootOf };
 }
@@ -151,10 +148,7 @@ describe('a drop', () => {
     const striker = join(space, BESIDE_GHOST, 'striker', carrying({ worn: [CUDGEL] }), STRIKER);
     const east = join(space, { x: 45, z: 10 }, 'east');
     attackGhost(space, striker.entityId);
-    for (let swing = 0; swing < 3; swing += 1) {
-      space.step(0);
-      clock.ms += 1000;
-    }
+    runSwings({ space, clock }, 3);
     const [drop] = payloads(striker.sent, 'loot');
     expect(drop?.contents).toEqual(DAGGER_DROP);
 
@@ -208,12 +202,7 @@ function twoArenas() {
     space.step(RESPAWN_MS / 1000);
     const number = ghostsDriven.get(space)! + 1;
     ghostsDriven.set(space, number);
-    face(space, entityId, GHOST_AT);
-    engage(space, `monster:${number}`, entityId);
-    for (let swing = 0; swing < 3; swing += 1) {
-      space.step(0);
-      clock.ms += 1000;
-    }
+    strike({ space, clock }, `monster:${number}`, 3, entityId);
   };
   const moveTo = (space: SpaceActor) => {
     const { checkpoint, transient } = current.handOver(entityId, false)!;

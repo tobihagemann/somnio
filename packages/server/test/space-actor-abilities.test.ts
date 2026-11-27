@@ -16,6 +16,7 @@ import {
   face,
   lucidity,
   payloads,
+  runSwings,
   setWorn,
   strikeAndLeave,
   wearing,
@@ -239,10 +240,8 @@ describe('Rally', () => {
     attackGhost(space, bob.entityId);
     space.step(0);
     space.handleUseAbility('rally', alice.entityId);
-    for (let swing = 0; swing < 2; swing += 1) {
-      clock.ms += 1000;
-      space.step(0);
-    }
+    clock.ms += 1000;
+    runSwings({ space, clock }, 2);
     expect(coinsOf(space, alice.entityId)).toBe(monsterKind('ghost').bounty / 2);
   });
 });

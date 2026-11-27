@@ -18,9 +18,9 @@ import {
   characterOf,
   energy,
   engage,
-  face,
   lucidity,
   payloads,
+  strike,
   wearing,
 } from './support/combat.ts';
 import { recordingOutbox } from './support/frames.ts';
@@ -383,9 +383,9 @@ describe('a quest offer', () => {
     world.space.handleShareQuest(questId, alice.entityId);
     world.space.handleAnswerQuestOffer(offerIdOf(bob), true, bob.entityId);
     // A Skeleton's 70 health takes a fourth cudgel swing; Bob stands within the share radius of each.
-    strike(world, GHOST, alice.entityId);
+    strike(world, GHOST, 4, alice.entityId);
     world.steps(Math.ceil(45 / 0.05) + 1);
-    strike(world, 'monster:2', alice.entityId);
+    strike(world, 'monster:2', 4, alice.entityId);
     expect([alice, bob].map((holder) => questsOf(world.space, holder).active[0]!.progress)).toEqual([[bounty.count], [bounty.count]]);
 
     world.clock.ms += 2000;
@@ -401,13 +401,3 @@ describe('a quest offer', () => {
     });
   });
 });
-
-/** The striker, standing in reach of `GHOST_AT`, swings at the nightmare standing there once a second, four times. */
-function strike(world: ReturnType<typeof graveyard>, nightmare: string, striker: string): void {
-  face(world.space, striker, GHOST_AT);
-  engage(world.space, nightmare, striker);
-  for (let swing = 0; swing < 4; swing += 1) {
-    world.space.step(0);
-    world.clock.ms += 1000;
-  }
-}

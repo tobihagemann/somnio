@@ -24,6 +24,7 @@ import {
   face,
   lucidity,
   payloads,
+  runSwings,
   setWorn,
   strikeAndLeave,
   wearing,
@@ -64,10 +65,8 @@ describe('Ward', () => {
     space.step(0);
     space.handleTarget(bob.entityId, alice.entityId);
     space.handleUseAbility('ward', alice.entityId);
-    for (let swing = 0; swing < 2; swing += 1) {
-      clock.ms += 1000;
-      space.step(0);
-    }
+    clock.ms += 1000;
+    runSwings({ space, clock }, 2);
     expect(coinsOf(space, alice.entityId)).toBe(COINS + monsterKind('ghost').bounty / 2);
   });
 
@@ -203,10 +202,8 @@ describe('an effect on a nightmare', () => {
     space.step(0);
     const bob = attachPlayer(space, BESIDE_GHOST, 'bob', { character: STRIKER, inventory: wearing(CUDGEL) });
     attackGhost(space, bob.entityId);
-    for (let swing = 0; swing < 3; swing += 1) {
-      clock.ms += 1000;
-      space.step(0);
-    }
+    clock.ms += 1000;
+    runSwings({ space, clock }, 3);
     expect([alice, bob].map((player) => coinsOf(space, player.entityId))).toEqual([COINS, monsterKind('ghost').bounty]);
   });
 });
@@ -367,10 +364,7 @@ describe('Bind', () => {
     space.handleTarget(GHOST, alice.entityId);
     space.handleUseAbility('bind', alice.entityId);
     attackGhost(space, bob.entityId);
-    for (let swing = 0; swing < 3; swing += 1) {
-      space.step(0);
-      clock.ms += 1000;
-    }
+    runSwings({ space, clock }, 3);
     expect(coinsOf(space, alice.entityId)).toBe(COINS + monsterKind('ghost').bounty / 2);
   });
 });
@@ -672,10 +666,7 @@ describe('Sense the fallen', () => {
     attachPlayer(space, { x: 5, z: 5 }, 'bob', { character: wounded(0) });
     const carol = attachPlayer(space, BESIDE_GHOST, 'carol', { character: STRIKER, inventory: wearing(CUDGEL) });
     attackGhost(space, carol.entityId);
-    for (let swing = 0; swing < 3; swing += 1) {
-      space.step(0);
-      clock.ms += 1000;
-    }
+    runSwings({ space, clock }, 3);
     expect(sensed(await collectMessages(alice.outbox))).toEqual([[{ name: 'bob', x: 5, z: 5 }]]);
   });
 });

@@ -40,6 +40,7 @@ import {
   face,
   lucidity,
   payloads,
+  runSwings,
   strikeAndLeave,
   wearing,
 } from './support/combat.ts';
@@ -178,10 +179,7 @@ describe('attacking a nightmare', () => {
       const watcher = attachPlayer(space, { x: 15, z: 15 }, 'watcher');
       face(space, alice.entityId, TARGET_AT);
       engage(space, GHOST, alice.entityId);
-      for (let swing = 0; swing < 3; swing += 1) {
-        space.step(0);
-        clock.ms += 1000;
-      }
+      runSwings({ space, clock }, 3);
       const messages = await collectMessages(watcher.outbox);
       expect(blowsBy(messages, alice.entityId).map((blow) => blow.targetId)).toEqual([GHOST, GHOST, GHOST]);
       expect(payloads(messages, 'condition').filter((sent) => sent.entityId === NEARER)).toEqual([]);
@@ -194,10 +192,7 @@ describe('attacking a nightmare', () => {
       const alice = attachPlayer(space, { x: NEARER_AT.x, z: NEARER_AT.z + 0.65 }, 'alice');
       face(space, alice.entityId, NEARER_AT);
       engage(space, GHOST, alice.entityId);
-      for (let swing = 0; swing < 3; swing += 1) {
-        space.step(0);
-        clock.ms += 1000;
-      }
+      runSwings({ space, clock }, 3);
       expect(energyOf(space, alice.entityId).balanceCurrent).toBe(100);
       expect(blowsBy(await collectMessages(alice.outbox), alice.entityId)).toEqual([]);
     });
@@ -234,10 +229,7 @@ describe('attacking a nightmare', () => {
     const { clock, space, steps } = arena();
     const alice = attachPlayer(space, BESIDE_GHOST, 'alice', { character: STRIKER, inventory: wearing(CUDGEL) });
     attackGhost(space, alice.entityId);
-    for (let swing = 0; swing < 3; swing += 1) {
-      space.step(0);
-      clock.ms += 1000;
-    }
+    runSwings({ space, clock }, 3);
     clock.ms += RESPAWN_MS;
     space.step(0);
     steps(60);
@@ -279,10 +271,7 @@ describe('attacking a nightmare', () => {
     const ghostConditions = async (watcher: { outbox: ConnectionOutbox }) =>
       payloads(await collectMessages(watcher.outbox), 'condition').filter((sent) => sent.entityId === GHOST);
     attackGhost(space, alice.entityId);
-    for (let swing = 1; swing < hitsToWound; swing += 1) {
-      space.step(0);
-      clock.ms += 1000;
-    }
+    runSwings({ space, clock }, hitsToWound - 1);
     expect(await ghostConditions(before)).toEqual([{ entityId: GHOST, condition: 'grazed' }]);
     space.step(0);
     expect(await ghostConditions(after)).toEqual([
@@ -327,10 +316,7 @@ describe('attacking a nightmare', () => {
       inventory: carrying({ coins: COINS }),
     });
     attackGhost(space, striker.entityId);
-    for (let swing = 0; swing < 3; swing += 1) {
-      space.step(0);
-      clock.ms += 1000;
-    }
+    runSwings({ space, clock }, 3);
     const practice = (entityId: string) => characterOf(space, entityId).lucidity.ranks.find((held) => held.teachingId === 'toughening')?.practice;
     expect([striker, near, far, fallen].map((player) => coinsOf(space, player.entityId))).toEqual([106, 106, 100, 100]);
     expect([striker, near, far, fallen].map((player) => practice(player.entityId))).toEqual([10, 10, undefined, undefined]);
@@ -357,10 +343,7 @@ describe('attacking a nightmare', () => {
     // Within the share radius and out of the Ghost's reach, so nothing takes her health.
     const bob = attachPlayer(space, { x: 10, z: 13 }, 'bob', { character: { lucidity: almost } });
     attackGhost(space, alice.entityId);
-    for (let swing = 0; swing < 3; swing += 1) {
-      space.step(0);
-      clock.ms += 1000;
-    }
+    runSwings({ space, clock }, 3);
     expect(characterOf(space, bob.entityId).lucidity.ranks).toContainEqual({ teachingId: 'toughening', rank: 1, practice: 5 });
     expect(energyOf(space, bob.entityId)).toMatchObject({ healthCurrent: 100, healthMax: 110 });
     steps(50);
