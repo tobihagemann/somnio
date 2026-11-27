@@ -56,8 +56,8 @@ To make a character, send `{"tag":"login","payload":{"email":"...","password":".
 agent-browser open 'http://localhost:17669/'
 agent-browser wait --fn 'document.querySelector(".blocking-notice:not(.hidden)") === null && window.somnio?.overlay() === "login"'
 agent-browser snapshot -i          # email, password, Remember password, and Log In refs
-agent-browser type <email-ref> '<email>'
-agent-browser type <password-ref> '<password>'
+agent-browser fill <email-ref> '<email>'
+agent-browser fill <password-ref> '<password>'
 agent-browser click <log-in-ref>
 agent-browser wait --fn 'window.somnio.overlay() === "characters"'
 agent-browser snapshot -i          # the card: a Play and a Delete per dreamer, Log Out, New Dreamer
@@ -71,7 +71,7 @@ A password login always lands on the character card ("Your Dreamers"), whose `co
 agent-browser click <new-dreamer-ref>
 agent-browser wait --fn 'window.somnio.overlay() === "newCharacter"'
 agent-browser snapshot -i          # Name, People, Cancel, Create
-agent-browser type <name-ref> '<character>'
+agent-browser fill <name-ref> '<character>'
 agent-browser select <people-ref> vigils   # vigils, sopors, umbrae, or lumina
 agent-browser click <create-ref>
 agent-browser wait --fn 'window.somnio.overlay() === "characters"'
@@ -90,11 +90,11 @@ A new character starts at the starter spawn in `EdariaLibrary`. Delete in a row 
 
 `attached` is reached on the `enterSpace` frame, the first frame of every join, which promotes the session and starts the gameplay tick. That is a little before the world is on screen. The splash veil and the wordmark go once the player's own body is placed, which is what the last wait checks. The HUD appears then too, unless the models are still loading, as on a resume. A join whose worn pieces are not all loaded yet, a cold login or resume above all, then shows the loading cover (`.loading-cover`) over the world and the HUD until the player's body is dressed, holding every world press and key meanwhile. After 3 s it says "Your gear is still loading." with a Try Again button. Before pressing anything in the world, wait for `document.querySelector('.loading-cover:not(.hidden)') === null` as well.
 
-Checking "Remember password" stores a session token in `localStorage`, so a reload resumes without re-entering credentials. A resume skips the card and joins the dreamer played last; it shows the card only when none of the account's dreamers has been played yet, or joining the last one fails. The resume opens its socket at page load, before any `eval` runs, so to watch it start the observing session with `agent-browser --session <name> --init-script <file>`. The script is registered before the first navigation, and only when that session's browser launches. Read the `somnio.sessionToken` value from the session that issued it and set it in the observing one. Then close the issuing session with `agent-browser --session <issuer> close`, not Leave Game, which revokes the token. Give the server a few seconds to unregister the account before reloading the observing session; otherwise the resume retries and ends in "Du bist bereits angemeldet." / "Already logged in."
+Checking "Remember password" stores a session token in `localStorage`, so a reload resumes without re-entering credentials. A resume skips the card and joins the dreamer played last; it shows the card only when none of the account's dreamers has been played yet, or joining the last one fails. The resume opens its socket at page load, before any `eval` runs, so to watch it start the observing session with `agent-browser --session <name> --init-script <file>`. The script is registered before the first navigation, and only when that session's browser launches. Read the `somnio.sessionToken` value from the session that issued it with `agent-browser --session <issuer> storage local`, and set it in the observing one with `agent-browser --session <name> storage local set somnio.sessionToken '<value>'`, which needs a page of the origin open there. Then close the issuing session with `agent-browser --session <issuer> close`, not Leave Game, which revokes the token. Give the server a few seconds to unregister the account before reloading the observing session; otherwise the resume retries and ends in "Du bist bereits angemeldet." / "Already logged in."
 
 To test that retry itself, keep the issuing session connected while the observing one resumes. The retry is bounded at three retries 250 ms apart, so "Verbindung wird wiederhergestellt..." / "Reconnecting..." shows under the wordmark for under a second before the login card returns. A later `eval` finds only the card, so have the init script record `.splash-wordmark__status` as it changes and read that record afterwards. The element does not exist yet when the script runs, so poll for it or observe the whole document.
 
-`agent-browser type` **appends** to a pre-filled field. The overlays keep field values for the page lifetime, and Step 3's sign-up handoff deliberately pre-fills the login form — so registering and then running the login block verbatim produces doubled text and "Falsche Zugangsdaten." / "Bad credentials." on the login card, under the form. Clear the fields first (`agent-browser eval 'document.querySelectorAll("input").forEach(i => { i.value = "" })'`) or open a fresh page before typing.
+The blocks above use `fill`, which replaces a field's value, because the overlays keep field values for the page lifetime and Step 3's sign-up handoff pre-fills the login form. `agent-browser type` appends instead, which there produces doubled text and "Falsche Zugangsdaten." / "Bad credentials." on the login card.
 
 ## Debug API
 
