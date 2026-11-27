@@ -1,6 +1,14 @@
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import * as THREE from 'three';
-import { WorldScene, configureWorldRenderer, sizeWorldRenderer, watchViewport } from '@/scene/worldScene';
+import {
+  SECTOR_BUDGET_MS,
+  SECTOR_DISPOSAL_WAIT_FRAMES,
+  SECTOR_STEP_MS,
+  WorldScene,
+  configureWorldRenderer,
+  sizeWorldRenderer,
+  watchViewport,
+} from '@/scene/worldScene';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { HttpModelAssets, prototypeMeshesOf } from '@/scene/modelAssets';
 import type { ModelAssets } from '@/scene/modelAssets';
@@ -8,9 +16,9 @@ import { ORTHO_RIG, PLAYER_ZOOM, cameraPosition, frustumBounds, offsetDirection,
 import { SUN_SHADOW, doorLightState, sunState } from '@/scene/dayNightSun';
 import { PROP_LIGHT_POOL_SIZE, PROP_LIGHT_PRESETS } from '@/scene/propLights';
 import { CLIP_TRANSITION_DURATION, MAX_TICK_DELTA } from '@/scene/animation';
-import { STRIKE_AT } from '@/scene/combatEffects';
+import { MAX_SHAKE_METRES, STRIKE_AT } from '@/scene/combatEffects';
 import { ELITE_AURA_NAME, ELITE_AURA_POOL_SIZE, ELITE_TRAIT_COLORS } from '@/scene/eliteAuras';
-import { QUEST_MARKER_NAME, QUEST_MARKER_POOL_SIZE } from '@/scene/questMarkers';
+import { QUEST_MARKER_NAME, QUEST_MARKER_POOL_SIZE, QuestMarkers } from '@/scene/questMarkers';
 import { PORTRAIT_LAYERS } from '@/scene/portraits';
 import { LOOT_BEAM_NAME, LOOT_FADE_SECONDS, LOOT_GLOW_NAME, LOOT_MARKERS_NAME, LOOT_MARKER_POOL_SIZE, LootMarkers, RARITY_COLORS } from '@/scene/lootMarkers';
 import { CHARACTER_SCALE, PLACEHOLDER_HEIGHT } from '@/scene/placement';
@@ -431,6 +439,512 @@ describe('sectors', () => {
     expect(groundMeshes(scene)).toHaveLength(1);
     expect(scene._placeholderObjectCount()).toBe(1);
     expect(scene.placementNode('EdariaSquare', 'box-1')!.position.x).toBe(9);
+  });
+});
+
+describe('sectors entering and leaving in play', () => {
+  /** How many steps of the sectors' work a tick takes, each placement built charging its worst case to the clock. */
+  const STEPS_PER_TICK = Math.max(1, Math.floor(SECTOR_BUDGET_MS / SECTOR_STEP_MS.build));
+  const PITCH = THREE.MathUtils.degToRad(ORTHO_RIG.pitchDegrees);
+  /** How far across the ground the view reaches from a focus on the floor, at the default zoom in a square window, the shake included. */
+  const FLAT_REACH = (() => {
+    const bounds = frustumBounds(ORTHO_RIG.defaultScale, 1);
+    return Math.hypot(bounds.right, bounds.top / Math.sin(PITCH)) + (MAX_SHAKE_METRES * Math.SQRT2) / Math.sin(PITCH);
+  })();
+
+  /**
+   * The game's scene with the local player standing at (10, 10). With `standing`, its sector is
+   * entered first and the player stands where it says. The clock moves on only by each placement built
+   * (`buildMs`, by default `SECTOR_STEP_MS.build`) and each charged disposal. A box is `boxHeight` metres tall and a metre
+   * across, measured as soon as asked; a rug never loads. No field is ever answered, so a ground mesh
+   * is only disposed as its sector is.
+   */
+  function spreadingScene(boxHeight = 3, standing?: { view: SectorView; at: Point }): { scene: WorldScene; clock: { ms: number; buildMs: number } } {
+    const clock = { ms: 0, buildMs: SECTOR_STEP_MS.build };
+    const box = (): THREE.BufferGeometry => new THREE.BoxGeometry(1, boxHeight, 1).translate(0, boxHeight / 2, 0);
+    const assets: ModelAssets = {
+      ...emptyAssets(),
+      object: (id) => {
+        clock.ms += clock.buildMs;
+        return id === 'box' ? new THREE.Mesh(box()) : undefined;
+      },
+      prototypeMeshes: (id) => (id === 'box' ? [{ geometry: box(), material: new THREE.MeshBasicMaterial(), matrix: new THREE.Matrix4() }] : undefined),
+    };
+    const scene = makeScene(assets, () => clock.ms, { rasterize: () => {} });
+    scene.spreadSectors = true;
+    if (standing !== undefined) {
+      const entered = world();
+      scene.enterSpace(entered);
+      entered.addSector(standing.view);
+      scene.addSector(standing.view);
+    }
+    scene.placeEntity(player(standing === undefined ? {} : { position: standing.at }));
+    return { scene, clock };
+  }
+
+  /** An outdoor sector at `origin` of `count` boxes, each standing at `at` within it. */
+  function meadow(name: string, origin: Point, count: number, at: Point = { x: 10, z: 10 }): SectorView {
+    return outdoorSector(name, origin, { placements: Array.from({ length: count }, (_, index) => placement(`tree-${index}`, 'box', at)) });
+  }
+
+  function built(scene: WorldScene, view: SectorView): number {
+    return view.placements.filter((each) => scene.placementNode(view.name, each.id) !== undefined).length;
+  }
+
+  /** Charges `ms`, by default a disposal's worst case, to the clock as the ground of the sector centred on (x, z) is disposed, and answers the spy. */
+  function chargeDisposal(scene: WorldScene, clock: { ms: number }, x: number, z: number, ms: number = SECTOR_STEP_MS.dispose) {
+    const texture = weightTextures(groundAt(scene, x, z)!)[0]!;
+    const dispose = texture.dispose.bind(texture);
+    return vi.spyOn(texture, 'dispose').mockImplementation(() => {
+      clock.ms += ms;
+      dispose();
+    });
+  }
+
+  /** 50 m east of the player: further than the view reaches, whatever its props or their shadows. */
+  const far = (count: number): SectorView => meadow('FarMeadow', { x: 60, z: 0 }, count);
+
+  it('queues an entering sector out of reach and builds as many placements a tick as the budget admits, leaving its view as it was', () => {
+    const { scene } = spreadingScene();
+    const view = far(5);
+    const recorded = structuredClone(view.placements);
+
+    scene.addSector(view);
+    expect(built(scene, view)).toBe(0);
+    expect(groundAt(scene, 70, 10)).toBeDefined();
+
+    const counts: number[] = [];
+    for (let tick = 0; tick < 3; tick++) {
+      scene.tick(MAX_TICK_DELTA);
+      counts.push(built(scene, view));
+    }
+    expect(counts).toEqual([STEPS_PER_TICK, 2 * STEPS_PER_TICK, 5].map((count) => Math.min(count, 5)));
+    expect(view.placements).toEqual(recorded);
+  });
+
+  it('takes one step a tick however long a step takes', () => {
+    const { scene, clock } = spreadingScene();
+    const view = far(2);
+    scene.addSector(view);
+    clock.buildMs = 10 * SECTOR_BUDGET_MS;
+
+    scene.tick(MAX_TICK_DELTA);
+    expect(built(scene, view)).toBe(1);
+    scene.tick(MAX_TICK_DELTA);
+    expect(built(scene, view)).toBe(2);
+  });
+
+  it('builds the queued sector nearer the player first', () => {
+    const { scene } = spreadingScene();
+    const further = meadow('FarMeadow', { x: 60, z: 0 }, 3);
+    const nearer = meadow('NearMeadow', { x: 40, z: 0 }, 3);
+    scene.addSector(further);
+    scene.addSector(nearer);
+
+    scene.tick(MAX_TICK_DELTA);
+
+    expect([built(scene, nearer), built(scene, further)]).toEqual([STEPS_PER_TICK, 0]);
+  });
+
+  it('builds a queued sector whole in the tick after the player comes within reach of it, whatever the clock reads', () => {
+    const { scene } = spreadingScene();
+    const view = far(5);
+    scene.addSector(view);
+
+    // As a hidden tab's walk moves the player with no tick of the scene.
+    scene.updatePosition('self', { x: 52, z: 10 }, 0, undefined);
+    scene.tick(MAX_TICK_DELTA);
+
+    expect(built(scene, view)).toBe(5);
+  });
+
+  it('builds a sector out of reach whose props throw a shadow into view under a low sun, and leaves it at noon', () => {
+    const towardLight = (hour: number): SectorView => {
+      const { x, z } = sunState(hour, undefined).direction;
+      const across = Math.hypot(x, z);
+      // Its middle 40 m from the player toward the light, so the shadows of its 6 m props fall back toward them.
+      return meadow('FarMeadow', { x: 10 + (x / across) * 40 - 10, z: 10 + (z / across) * 40 - 10 }, 5);
+    };
+    const early = spreadingScene(6);
+    early.scene.setClock(7 * 3600);
+    const lowSun = towardLight(7);
+    early.scene.addSector(lowSun);
+    early.scene.tick(MAX_TICK_DELTA);
+    expect(built(early.scene, lowSun)).toBe(5);
+
+    const noon = spreadingScene(6);
+    noon.scene.setClock(12 * 3600);
+    const highSun = towardLight(12);
+    noon.scene.addSector(highSun);
+    noon.scene.tick(MAX_TICK_DELTA);
+    expect(built(noon.scene, highSun)).toBe(STEPS_PER_TICK);
+
+    // The same sector as the morning's, part-built at noon, is built whole once the sun is that low.
+    const sinking = spreadingScene(6);
+    sinking.scene.setClock(12 * 3600);
+    const turned = towardLight(7);
+    sinking.scene.addSector(turned);
+    sinking.scene.tick(MAX_TICK_DELTA);
+    expect(built(sinking.scene, turned)).toBe(STEPS_PER_TICK);
+    sinking.scene.setClock(7 * 3600);
+    sinking.scene.tick(MAX_TICK_DELTA);
+    expect(built(sinking.scene, turned)).toBe(5);
+  });
+
+  it('reaches as much further past a focus raised on a walk surface as the camera looks down beyond it', () => {
+    // The hall's porch stands 1.03 m up at (11.9, 9.8), and the floor lies beyond it at (11.9, 20).
+    const hall = sector({ placements: [placement('hall-1', 'hall', { x: 10, z: 10 })] });
+    const builtFrom = (at: Point): number => {
+      const { scene } = spreadingScene(0.01, { view: hall, at });
+      // Its near edge half a metre past where the view reaches from a focus on the floor.
+      const view = meadow('FarMeadow', { x: at.x + FLAT_REACH + 0.5, z: 0 }, 5, { x: 20, z: 20 });
+      scene.addSector(view);
+      scene.tick(MAX_TICK_DELTA);
+      return built(scene, view);
+    };
+
+    expect(builtFrom({ x: 11.9, z: 9.8 })).toBe(5);
+    expect(builtFrom({ x: 11.9, z: 20 })).toBe(STEPS_PER_TICK);
+  });
+
+  it('builds a sector whose ground lies out of reach but which places a prop beyond its edge within reach', () => {
+    const { scene } = spreadingScene();
+    const view = outdoorSector('FarMeadow', { x: 60, z: 0 }, { placements: [...far(4).placements, placement('stray', 'box', { x: -48, z: 10 })] });
+    scene.addSector(view);
+
+    scene.tick(MAX_TICK_DELTA);
+
+    expect(built(scene, view)).toBe(5);
+  });
+
+  it('builds a sector at once that places a model not loaded yet', () => {
+    const { scene } = spreadingScene();
+    const view = outdoorSector('FarMeadow', { x: 60, z: 0 }, { placements: [...far(4).placements, placement('rug-1', 'rug')] });
+
+    scene.addSector(view);
+
+    expect(built(scene, view)).toBe(5);
+  });
+
+  it('leaves a sector 20 m off with 3 m props for its turn at midday, and builds one whose 9 m props reach into view', () => {
+    // Its nearest edge 20 m east of the player, its props standing on it.
+    const edge = (scene: WorldScene): SectorView => {
+      const view = meadow('EastMeadow', { x: 30, z: 0 }, 5, { x: 0.5, z: 10 });
+      scene.addSector(view);
+      scene.tick(MAX_TICK_DELTA);
+      return view;
+    };
+    const short = spreadingScene(3);
+    expect(built(short.scene, edge(short.scene))).toBe(STEPS_PER_TICK);
+    const tall = spreadingScene(9);
+    expect(built(tall.scene, edge(tall.scene))).toBe(5);
+  });
+
+  it('takes no step of its own past the budget in a tick that built a sector in reach', () => {
+    const { scene } = spreadingScene();
+    const nearby = meadow('NearMeadow', { x: 40, z: 0 }, 3);
+    const further = far(3);
+    scene.addSector(nearby);
+    scene.addSector(further);
+
+    scene.updatePosition('self', { x: 35, z: 10 }, 0, undefined);
+    scene.tick(MAX_TICK_DELTA);
+    expect([built(scene, nearby), built(scene, further)]).toEqual([3, 0]);
+
+    scene.tick(MAX_TICK_DELTA);
+    expect(built(scene, further)).toBe(STEPS_PER_TICK);
+  });
+
+  it("builds a sector whose fixture's quest mark could show over its top, as large as the window draws it, though its ground and props lie out of reach", () => {
+    // The mark's own size, which the window magnifies.
+    const { up, tall, across } = new QuestMarkers(new THREE.Quaternion()).reach();
+    /** How much further than a fixture's top the view shows its mark drawn at `scale` times its size, across the ground. */
+    const markReach = (scale: number): number => up / Math.tan(PITCH) + (tall / Math.sin(PITCH) + across) * scale;
+    // Boards 1 cm tall, which throw no shadow to speak of, in line with the player at their sector's west edge.
+    // Each one's crown reaches past the ground's edge and ends `short` metres beyond the view.
+    const crown = 0.01 / Math.tan(PITCH) + Math.SQRT1_2;
+    const placements = ['tree-0', 'tree-1', 'tree-2', 'board'].map((id) => placement(id, 'box', { x: 0.5, z: 10 }));
+    const board = (short: number, fixtures: SectorView['fixtures']): SectorView =>
+      outdoorSector('FarMeadow', { x: 10 + FLAT_REACH + short + crown - 0.5, z: 0 }, { placements, fixtures });
+    const marked: SectorView['fixtures'] = [{ id: 'board-1', placement: 'board', service: 'bountyBoard' }];
+    const builtOf = (view: SectorView, windowPixels?: number): number => {
+      const { scene } = spreadingScene(0.01);
+      if (windowPixels !== undefined) scene.setViewportSize(windowPixels, windowPixels);
+      scene.addSector(view);
+      scene.tick(MAX_TICK_DELTA);
+      return built(scene, view);
+    };
+
+    expect(builtOf(board(0.3, []))).toBe(STEPS_PER_TICK);
+    expect(builtOf(board(0.3, marked))).toBe(4);
+    // A small window draws the mark larger, so it shows past where its own size would reach.
+    const magnified = overlayMagnification(ORTHO_RIG.defaultScale, 200);
+    expect(magnified).toBeGreaterThan(1.5);
+    const between = (markReach(1) + markReach(magnified)) / 2;
+    expect(builtOf(board(between, marked))).toBe(STEPS_PER_TICK);
+    expect(builtOf(board(between, marked), 200)).toBe(4);
+    // Its width magnified too: past where the mark would reach magnified in height alone, short of its full magnified reach.
+    expect(builtOf(board(markReach(magnified) - (across * (magnified - 1)) / 2, marked), 200)).toBe(4);
+  });
+
+  it('registers and marks the fixtures of a queued placement as it is built, pickable in the tick that builds it', () => {
+    const { scene } = spreadingScene();
+    const view = outdoorSector(
+      'FarMeadow',
+      { x: 60, z: 0 },
+      {
+        placements: [...far(3).placements, placement('board', 'box', { x: 10, z: 10 })],
+        fixtures: [
+          { id: 'board-1', placement: 'board', service: 'bountyBoard' },
+          { id: 'board-2', placement: 'board', service: 'bountyBoard' },
+        ],
+      },
+    );
+    const carriers = ['fixture:FarMeadow/board-1', 'fixture:FarMeadow/board-2'];
+    scene.addSector(view);
+    scene.showQuestMarkers(new Map(carriers.map((carrier) => [carrier, 'offer'])));
+    expect(carriers.map((carrier) => scene.questMarkerShown(carrier))).toEqual([undefined, undefined]);
+
+    scene.updatePosition('self', { x: 70, z: 12 }, 0, undefined);
+    scene.tick(MAX_TICK_DELTA);
+
+    expect(carriers.map((carrier) => scene.questMarkerShown(carrier))).toEqual(['offer', 'offer']);
+    const face = scene._viewportPointOfFixture(carriers[0]!)!;
+    expect(carriers).toContain(scene.fixtureAt(face.x, face.y));
+  });
+
+  it('builds at once the sectors of a held entry and of the splash, and shows the held ones whole at the reveal', () => {
+    const { scene } = spreadingScene();
+    scene.enterSpace(world());
+    const held = far(5);
+    scene.addSector(held);
+    expect(built(scene, held)).toBe(5);
+    scene.placeEntity(player());
+    expect(built(scene, held)).toBe(5);
+
+    scene.showSplash();
+    const staged = far(5);
+    scene.addSector(staged);
+    expect(built(scene, staged)).toBe(5);
+  });
+
+  it('builds what a sector still waits for at once as a held entry parks its space on screen', () => {
+    const { scene } = spreadingScene();
+    scene.addSector(far(5));
+    const before = boxes(scene).length;
+
+    scene.enterSpace(world());
+
+    expect(boxes(scene).length - before).toBe(5);
+  });
+
+  it('queues the disposal of the first sector left after a held entry is revealed', () => {
+    const { scene, clock } = spreadingScene();
+    scene.enterSpace(world());
+    scene.addSector(sector());
+    scene.addSector(far(1));
+    scene.placeEntity(player());
+    const disposed = chargeDisposal(scene, clock, 70, 10);
+
+    scene.removeSector('FarMeadow');
+    expect(disposed).not.toHaveBeenCalled();
+    expect(groundAt(scene, 70, 10)).toBeUndefined();
+
+    // Not in the frame it left in, which has nothing else to do, but in the next.
+    scene.tick(MAX_TICK_DELTA);
+    expect(disposed).not.toHaveBeenCalled();
+    scene.tick(MAX_TICK_DELTA);
+    expect(disposed).toHaveBeenCalledOnce();
+  });
+
+  it('stops building a sector left part-built, draws nothing of it from then on, and builds only the new one added under its name', () => {
+    const { scene } = spreadingScene();
+    const placeholders = boxes(scene).length;
+    scene.addSector(far(5));
+    scene.tick(MAX_TICK_DELTA);
+
+    scene.removeSector('FarMeadow');
+    expect(boxes(scene)).toHaveLength(placeholders);
+
+    const again = outdoorSector('FarMeadow', { x: 60, z: 0 }, { placements: [placement('rock-1', 'box'), placement('rock-2', 'box')] });
+    scene.addSector(again);
+    for (let tick = 0; tick < 3; tick++) scene.tick(MAX_TICK_DELTA);
+    expect(built(scene, again)).toBe(2);
+    expect(boxes(scene)).toHaveLength(placeholders + 2);
+    expect(scene.placementNode('FarMeadow', 'tree-0')).toBeUndefined();
+  });
+
+  it('takes a left sector off the screen at once and disposes it in a later step, even after a new space has begun', () => {
+    const { scene, clock } = spreadingScene();
+    scene.addSector(far(1));
+    scene.tick(MAX_TICK_DELTA);
+    const disposed = chargeDisposal(scene, clock, 70, 10);
+
+    scene.removeSector('FarMeadow');
+    expect(groundMeshes(scene)).toHaveLength(0);
+    expect(disposed).not.toHaveBeenCalled();
+
+    scene.enterSpace(world());
+    scene.tick(MAX_TICK_DELTA);
+    scene.tick(MAX_TICK_DELTA);
+    expect(disposed).toHaveBeenCalledOnce();
+  });
+
+  it("forgets the marks over a left sector's fixtures at once, and keeps those of the sector added again under its name", () => {
+    const { scene } = spreadingScene();
+    const board = outdoorSector(
+      'FarMeadow',
+      { x: 60, z: 0 },
+      {
+        placements: [placement('board', 'box', { x: 10, z: 10 })],
+        fixtures: [{ id: 'board-1', placement: 'board', service: 'bountyBoard' }],
+      },
+    );
+    const carrier = 'fixture:FarMeadow/board-1';
+    scene.showQuestMarkers(new Map([[carrier, 'offer']]));
+    scene.addSector(board);
+    scene.tick(MAX_TICK_DELTA);
+    expect(scene.questMarkerShown(carrier)).toBe('offer');
+
+    scene.removeSector('FarMeadow');
+    expect(scene.questMarkerShown(carrier)).toBeUndefined();
+    scene.addSector(board);
+    for (let tick = 0; tick < 3; tick++) scene.tick(MAX_TICK_DELTA);
+    expect(scene.questMarkerShown(carrier)).toBe('offer');
+  });
+
+  it('disposes one left sector a tick however cheap, once nothing waits to build', () => {
+    const { scene, clock } = spreadingScene();
+    // Each built, then left, taking no time to dispose.
+    const spies = [0, 1, 2].map(() => {
+      scene.addSector(far(1));
+      scene.tick(MAX_TICK_DELTA);
+      const spy = chargeDisposal(scene, clock, 70, 10, 0);
+      scene.removeSector('FarMeadow');
+      return spy;
+    });
+
+    const calls = (): number[] => spies.map((spy) => spy.mock.calls.length);
+    expect(calls()).toEqual([0, 0, 0]);
+    scene.tick(MAX_TICK_DELTA);
+    expect(calls()).toEqual([1, 0, 0]);
+    scene.tick(MAX_TICK_DELTA);
+    expect(calls()).toEqual([1, 1, 0]);
+    scene.tick(MAX_TICK_DELTA);
+    expect(calls()).toEqual([1, 1, 1]);
+  });
+
+  it('runs a disposal kept waiting by builds once it has waited its frames, one such disposal a tick however cheap', () => {
+    const { scene, clock } = spreadingScene();
+    // Enough to keep a build waiting every tick.
+    const near = meadow('NearMeadow', { x: 40, z: 0 }, 100);
+    scene.addSector(near);
+    // Each taking no time, so the slice would hold a second, and only the rule of one a tick holds it back.
+    const spies = [0, 1, 2].map(() => {
+      scene.addSector(far(1));
+      const spy = chargeDisposal(scene, clock, 70, 10, 0);
+      scene.removeSector('FarMeadow');
+      return spy;
+    });
+
+    const calls = (): number[] => spies.map((spy) => spy.mock.calls.length);
+    // The frame they left in, then the frames they wait.
+    for (let tick = 0; tick < SECTOR_DISPOSAL_WAIT_FRAMES; tick++) scene.tick(MAX_TICK_DELTA);
+    expect(calls()).toEqual([0, 0, 0]);
+    // Each tick's disposal leaves the rest of its slice to the builds.
+    const waiting = built(scene, near);
+    expect(waiting).toBe(SECTOR_DISPOSAL_WAIT_FRAMES * STEPS_PER_TICK);
+    scene.tick(MAX_TICK_DELTA);
+    expect([calls(), built(scene, near)]).toEqual([[1, 0, 0], waiting + STEPS_PER_TICK]);
+    scene.tick(MAX_TICK_DELTA);
+    expect([calls(), built(scene, near)]).toEqual([[1, 1, 0], waiting + 2 * STEPS_PER_TICK]);
+    scene.tick(MAX_TICK_DELTA);
+    expect([calls(), built(scene, near)]).toEqual([[1, 1, 1], waiting + 3 * STEPS_PER_TICK]);
+  });
+});
+
+describe("a body's culling sphere", () => {
+  /** Every vertex of the mesh as it is skinned now, in its own frame, once the scene's matrices are brought up to date as a render does. */
+  function skinnedVertices(scene: WorldScene, mesh: THREE.SkinnedMesh): THREE.Vector3[] {
+    scene.scene.updateMatrixWorld(true);
+    return Array.from({ length: mesh.geometry.getAttribute('position').count }, (_, index) => mesh.getVertexPosition(index, new THREE.Vector3()));
+  }
+
+  it('is set round the feet as the body is put in, holding every vertex, so culling never skins it', () => {
+    const { root } = skinnedModel();
+    const scene = makeScene({ ...emptyAssets(), character: () => root });
+    scene.placeEntity(player());
+    const mesh = root.children[0] as THREE.SkinnedMesh;
+
+    const vertices = skinnedVertices(scene, mesh);
+    const sphere = mesh.boundingSphere;
+    const feet = new THREE.Vector3(10, 0, 10).applyMatrix4(mesh.matrixWorld.clone().invert());
+    expect(sphere.center.distanceTo(feet)).toBeLessThan(1e-9);
+    for (const vertex of vertices) expect(vertex.distanceTo(sphere.center)).toBeLessThanOrEqual(sphere.radius + 1e-9);
+
+    const computed = vi.spyOn(THREE.SkinnedMesh.prototype, 'computeBoundingSphere');
+    scene.camera.updateMatrixWorld();
+    new THREE.Frustum()
+      .setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(scene.camera.projectionMatrix, scene.camera.matrixWorldInverse))
+      .intersectsObject(mesh);
+    expect(computed.mock.contexts).not.toContain(mesh);
+  });
+
+  it("gives a mesh near the feet the whole body's reach, so it holds the rest of the body wherever a clip swings it", () => {
+    const { root, skeleton } = skinnedModel();
+    const foot = new THREE.BoxGeometry(0.1, 0.1, 0.1).translate(0, 0.05, 0);
+    const count = foot.getAttribute('position').count;
+    foot.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(new Array<number>(count * 4).fill(0), 4));
+    foot.setAttribute(
+      'skinWeight',
+      new THREE.Float32BufferAttribute(
+        Array.from({ length: count * 4 }, (_, index) => (index % 4 === 0 ? 1 : 0)),
+        4,
+      ),
+    );
+    const footMesh = new THREE.SkinnedMesh(foot, new THREE.MeshBasicMaterial());
+    root.add(footMesh);
+    footMesh.bind(skeleton);
+    const scene = makeScene({ ...emptyAssets(), character: () => root });
+    scene.placeEntity(player());
+    const body = root.children[0] as THREE.SkinnedMesh;
+
+    const vertices = skinnedVertices(scene, body).map((vertex) => vertex.applyMatrix4(body.matrixWorld));
+    const sphere = footMesh.boundingSphere.clone().applyMatrix4(footMesh.matrixWorld);
+    for (const vertex of vertices) expect(vertex.distanceTo(sphere.center)).toBeLessThanOrEqual(sphere.radius);
+  });
+
+  it('holds a pose that carries the body past its idle reach, as a punch or a leap does', () => {
+    const { root, bone } = skinnedModel();
+    const scene = makeScene({ ...emptyAssets(), character: () => root });
+    scene.placeEntity(player());
+    const mesh = root.children[0] as THREE.SkinnedMesh;
+    const { center, radius } = mesh.boundingSphere;
+    const idle = Math.max(...skinnedVertices(scene, mesh).map((vertex) => vertex.distanceTo(center)));
+
+    // The whole body lifted off its feet, its top about 1.37 times as far from them as it stood.
+    bone.position.y += 0.38;
+    const posed = skinnedVertices(scene, mesh).map((vertex) => vertex.distanceTo(center));
+
+    expect(Math.max(...posed) / idle).toBeGreaterThan(1.3);
+    for (const distance of posed) expect(distance).toBeLessThanOrEqual(radius);
+  });
+
+  it('holds a body put in already fallen as it lies, which a sphere round its standing pose would not', () => {
+    const { root, bone } = skinnedModel();
+    bone.name = 'Root';
+    const lying = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI / 2);
+    const fall = new THREE.AnimationClip('Death_A', 1, [new THREE.QuaternionKeyframeTrack('Root.quaternion', [0, 1], [0, 0, 0, 1, ...lying.toArray()])]);
+    const scene = makeScene({ ...emptyAssets(), character: () => root, clipsFor: () => [new THREE.AnimationClip('Idle', 1, []), fall] });
+    scene.placeEntity(player({ id: 'peer', kind: 'peer', condition: 'fallen' }));
+    const mesh = root.children[0] as THREE.SkinnedMesh;
+    const standing = new THREE.Sphere().setFromPoints(skinnedVertices(scene, mesh));
+
+    scene.tick(MAX_TICK_DELTA);
+
+    const laid = skinnedVertices(scene, mesh);
+    expect(laid.some((vertex) => !standing.containsPoint(vertex))).toBe(true);
+    for (const vertex of laid) expect(vertex.distanceTo(mesh.boundingSphere.center)).toBeLessThanOrEqual(mesh.boundingSphere.radius + 1e-9);
   });
 });
 
@@ -4230,6 +4744,35 @@ describe('scatter', () => {
     const attributes = meshesPerTilts.get(tufted.geometry.getAttribute('aTilt').array)!;
     expect([...(attributes[0]!.array as Float32Array)].some((value) => Math.abs(value) > 0.1)).toBe(true);
     expect(attributes.map((attribute) => attribute.version)).toEqual([10, 10]);
+  });
+
+  it('takes the scatter of a sector left in play off the screen at once, and bends its grass no more before its disposal', () => {
+    const scene = makeScene({ ...scatterAssets(), character: () => footed(0) });
+    scene.spreadSectors = true;
+    scene.placeEntity(player());
+    scene.addSector(sector());
+    scene.tick(0.016);
+    const [group] = scatterGroups(scene);
+    // A second sector's grass, which keeps the spring and the uploads going once the first has left.
+    scene.addSector(outdoorSector('FarMeadow', { x: 0, z: -200 }));
+    scene.tick(0.016);
+    expect(scatterGroups(scene)).toHaveLength(2);
+    const tufted = (group!.children as THREE.InstancedMesh[]).find((mesh) => mesh.geometry.getAttribute('aTilt') !== undefined)!;
+    const matrix = new THREE.Matrix4();
+    tufted.getMatrixAt(0, matrix);
+    const root = new THREE.Vector3().setFromMatrixPosition(matrix);
+    scene.placeEntity(player({ id: 'peer-1', kind: 'peer', position: { x: root.x + 0.02, z: root.z } }));
+    const tilt = tufted.geometry.getAttribute('aTilt') as THREE.InstancedBufferAttribute;
+    scene.tick(1 / 60);
+    const bent = tilt.version;
+    expect(bent).toBeGreaterThan(0);
+
+    scene.removeSector('EdariaSquare');
+    expect(group!.parent).toBeNull();
+    const leaning = Array.from(tilt.array);
+    for (let frame = 0; frame < 5; frame += 1) scene.tick(1 / 60);
+    expect(Array.from(tilt.array)).toEqual(leaning);
+    expect(tilt.version).toBe(bent);
   });
 
   it('gives each of two sectors growing the same grass its own tilts', () => {

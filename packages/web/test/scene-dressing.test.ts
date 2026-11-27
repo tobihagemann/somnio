@@ -5,23 +5,24 @@ import type { ModelRegistry, WardrobeRow } from '@somnio/core';
 import type { Outfit, Role } from '@somnio/protocol';
 import { ClientWorld } from '@/client';
 import type { ClientEntity } from '@/client';
-import { DRESSING_BUDGET_MS, WorldScene } from '@/scene/worldScene';
+import { DRESSING_BUDGET_MS, SECTOR_BUDGET_MS, SECTOR_STEP_MS, WorldScene } from '@/scene/worldScene';
 import type { ModelAssets } from '@/scene/modelAssets';
 import { COMBAT_EFFECTS_NAME } from '@/scene/combatEffects';
 import { CHARACTER_SCALE } from '@/scene/placement';
 import { BAKED_OUTFIT, WARDROBE_STEP_MS } from '@/scene/wardrobe';
 import type { PortraitSubject } from '@/scene/portraits';
 import type * as Wardrobe from '@/scene/wardrobe';
-import { TEST_REGISTRY } from '../../core/test/support/worldFixture.ts';
+import { TEST_REGISTRY, outdoorSector } from '../../core/test/support/worldFixture.ts';
 import { clientEntity, outfit } from './helpers/worldFixture';
 import { recordingCompiler } from './helpers/programVariants';
 
 /**
  * The scene's clock, which each wardrobe call moves on by its worst case, as if every call took the
- * longest it may, or by `slowPrepare` for a preparation where a test sets it. `joins` counts the bakes.
- * A texture copied into its layer moves it on by the copy's worst case.
+ * longest it may, or by `slowPrepare` for a preparation where a test sets it. A texture copied into
+ * its layer moves it on by the copy's worst case, and a placement built by its worst case, or by
+ * `slowBuild` where a test sets it. `joins` counts the bakes.
  */
-const work = vi.hoisted(() => ({ ms: 0, slowPrepare: undefined as number | undefined, joins: 0 }));
+const work = vi.hoisted(() => ({ ms: 0, slowPrepare: undefined as number | undefined, slowBuild: undefined as number | undefined, joins: 0 }));
 
 vi.mock('@/scene/wardrobe', async (importOriginal) => {
   const actual = await importOriginal<typeof Wardrobe>();
@@ -48,7 +49,7 @@ vi.mock('@/scene/wardrobe', async (importOriginal) => {
 
 afterEach(() => {
   vi.restoreAllMocks();
-  Object.assign(work, { ms: 0, slowPrepare: undefined, joins: 0 });
+  Object.assign(work, { ms: 0, slowPrepare: undefined, slowBuild: undefined, joins: 0 });
   TUNIC_IMAGE.close.mockClear();
   MANTLE_IMAGE.close.mockClear();
 });
@@ -189,10 +190,11 @@ interface HeldLoad {
 
 /**
  * A scene whose dreamers are clones of one body, as the cache's are, with each worn piece's load held
- * until the test settles it. `models` holds each body given, in the order asked for. Its clock is the
- * wardrobe's work, which only the wardrobe's calls move on.
+ * until the test settles it. `models` holds each body given, in the order asked for. Its clock is
+ * `work`, which the wardrobe's calls move on. With `sectors`, it is the game's scene,
+ * which spreads the sectors it is given over frames, and each placement built moves the clock on too.
  */
-function dressingScene(options: { character?: boolean; ground?: ModelAssets['ground']; headTurn?: number; idleRise?: number } = {}) {
+function dressingScene(options: { character?: boolean; ground?: ModelAssets['ground']; headTurn?: number; idleRise?: number; sectors?: boolean } = {}) {
   const prototype = bodyPrototype(options.headTurn);
   const models: THREE.Object3D[] = [];
   const loads = new Map<string, HeldLoad>();
@@ -217,13 +219,21 @@ function dressingScene(options: { character?: boolean; ground?: ModelAssets['gro
     hand: (baseId) => Object.assign(new THREE.Object3D(), { name: baseId }),
     ground: options.ground ?? (() => undefined),
     trophy: () => undefined,
-    object: () => undefined,
+    object: () => {
+      if (options.sectors !== true) return undefined;
+      work.ms += work.slowBuild ?? SECTOR_STEP_MS.build;
+      return new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0));
+    },
     wear: (stem) => held(stem).promise,
     retryWear: () => {},
     clipsFor: () => (options.idleRise === undefined ? [] : [idleClip(options.idleRise)]),
-    prototypeMeshes: () => undefined,
+    prototypeMeshes: (id) =>
+      options.sectors === true && id === 'box'
+        ? [{ geometry: new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0), material: new THREE.MeshBasicMaterial(), matrix: new THREE.Matrix4() }]
+        : undefined,
   };
-  const scene = new WorldScene(assets, REGISTRY, 1, false, () => work.ms);
+  const scene = new WorldScene(assets, REGISTRY, 1, false, () => work.ms, { rasterize: () => {} });
+  scene.spreadSectors = options.sectors === true;
   const wear = vi.spyOn(assets, 'wear');
   const retryWear = vi.spyOn(assets, 'retryWear');
   /** Lets the piece of `stem` come, then lets its arrival be handled. */
@@ -570,6 +580,54 @@ describe('dressing a body', () => {
     // The tunic is prepared once for all ten, which share the body's model, and each joins in a frame of its own.
     expect(spent).toEqual([WARDROBE_STEP_MS.prepare, ...Array<number>(10).fill(WARDROBE_STEP_MS.join)]);
     expect(Math.max(...spent)).toBeLessThanOrEqual(DRESSING_BUDGET_MS);
+  });
+
+  /** Three boxes of a metre standing at (10, 10) of a sector whose origin is `origin`. */
+  const boxes = (name: string, origin: { x: number; z: number }) =>
+    outdoorSector(name, origin, { placements: [0, 1, 2].map((index) => ({ id: `box-${index}`, modelId: 'box', x: 10, z: 10, yaw: 0, elevation: 0 })) });
+
+  it("measures a frame's dressing from where the sectors' work began, which stops at its own budget", () => {
+    const { scene } = dressingScene({ sectors: true });
+    scene.placeEntity(dreamer('self', []));
+    // 50 m east of the player, beyond what the view could show.
+    scene.addSector(boxes('FarMeadow', { x: 60, z: 0 }));
+
+    const before = work.ms;
+    scene.tick(0.01);
+
+    // The builds that fill the sectors' slice, then as many of the three preparations as the rest of the loading budget holds.
+    const sectors = Math.floor(SECTOR_BUDGET_MS / SECTOR_STEP_MS.build) * SECTOR_STEP_MS.build;
+    const preparations = Math.floor((DRESSING_BUDGET_MS - sectors) / WARDROBE_STEP_MS.prepare);
+    expect(preparations).toBeLessThan(3);
+    expect(Number((work.ms - before).toFixed(9))).toBe(Number((sectors + preparations * WARDROBE_STEP_MS.prepare).toFixed(9)));
+  });
+
+  it("still takes a frame's first dressing step after the sectors' work ran long", () => {
+    const { scene } = dressingScene({ sectors: true });
+    scene.placeEntity(dreamer('self', []));
+    scene.addSector(boxes('FarMeadow', { x: 60, z: 0 }));
+    work.slowBuild = DRESSING_BUDGET_MS;
+
+    const before = work.ms;
+    scene.tick(0.01);
+
+    expect(Number((work.ms - before).toFixed(9))).toBe(Number((DRESSING_BUDGET_MS + WARDROBE_STEP_MS.prepare).toFixed(9)));
+  });
+
+  it('holds a join back in a frame that built a sector the view could show', () => {
+    const { scene } = dressingScene({ sectors: true });
+    scene.placeEntity(dreamer('self', []));
+    // The three preparations, leaving the join at the head of the queue.
+    scene.tick(0.01);
+    expect(work.joins).toBe(0);
+    // Under the player, so it is built whole before the next render, and long enough to leave no room for the join.
+    work.slowBuild = DRESSING_BUDGET_MS;
+    scene.addSector(boxes('Square', { x: 0, z: 0 }));
+
+    scene.tick(0.01);
+    expect(work.joins).toBe(0);
+    scene.tick(0.01);
+    expect(work.joins).toBe(1);
   });
 
   it("copies each piece's image into its layer as a step of its own within the budget, and then lets go of the image", async () => {

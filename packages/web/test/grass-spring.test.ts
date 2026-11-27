@@ -94,4 +94,29 @@ describe('the grass spring', () => {
     expect(tilt(removed)).toBe(0);
     expect(changed.has(batch)).toBe(true);
   });
+
+  it('bends a batch again once it is added after being retired and removed, or after a clear', () => {
+    for (const forget of [(spring: GrassSpring, batch: GrassBatch) => spring.remove(batch), (spring: GrassSpring) => spring.clear()]) {
+      const { spring, batch } = tuft();
+      spring.retire(batch);
+      forget(spring, batch);
+      spring.add(batch);
+      expect(spring.step([{ x: 4.98, z: 5, radius: 0.06 }], FRAME).has(batch)).toBe(true);
+    }
+  });
+
+  it('stops moving a retired batch, springing back or touched, and forgets it once removed after', () => {
+    const { spring, batch } = tuft();
+    run(spring, [{ x: 4.98, z: 5, radius: 0.06 }], 0.5);
+    const leaning = tilt(batch);
+
+    spring.retire(batch);
+    expect(spring.step([], FRAME).has(batch)).toBe(false);
+    expect(spring.step([{ x: 5.02, z: 5, radius: 0.06 }], FRAME).has(batch)).toBe(false);
+    expect(spring.step([], FRAME).has(batch)).toBe(false);
+    expect(tilt(batch)).toBe(leaning);
+
+    spring.remove(batch);
+    expect(spring.step([{ x: 4.98, z: 5, radius: 0.06 }], FRAME).has(batch)).toBe(false);
+  });
 });

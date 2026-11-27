@@ -171,6 +171,10 @@ describe('host handlers', () => {
     return event;
   }
 
+  it("builds the game's scene to draw a crossing's sectors over frames", () => {
+    expect(shell().scene!.spreadSectors).toBe(true);
+  });
+
   it('does not open the game menu from the login overlay', () => {
     const app = shell();
 

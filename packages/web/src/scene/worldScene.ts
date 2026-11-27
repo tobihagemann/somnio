@@ -71,7 +71,17 @@ import { t } from '@/i18n';
 import { CLIP_TRANSITION_DURATION, MAX_TICK_DELTA, MOTION_GRACE_WINDOW, movementPose, resolveClipName, resolveOneShotClipName } from './animation';
 import type { AnimationPose, OneShot } from './animation';
 import { ORTHO_RIG, applyFrustum, cameraPosition, clampedScale, frustumBounds, scaleForZoomFactor } from './cameraRig';
-import { CRUMBLE_SECONDS, CombatEffects, GROUND_RING_LIFT, GROUND_RING_WIDTH, HELD_PROP, RAISE_COLOR, RAISE_RING_RADII, strikeDelay } from './combatEffects';
+import {
+  CRUMBLE_SECONDS,
+  CombatEffects,
+  GROUND_RING_LIFT,
+  GROUND_RING_WIDTH,
+  HELD_PROP,
+  MAX_SHAKE_METRES,
+  RAISE_COLOR,
+  RAISE_RING_RADII,
+  strikeDelay,
+} from './combatEffects';
 import type { MissWordKind } from './combatEffects';
 import { SUN_SHADOW, doorLightState, sunState } from './dayNightSun';
 import { groundFieldKey, rasterizeGround } from './groundField';
@@ -314,8 +324,41 @@ interface DrawnSector {
   outdoorDoorIds: readonly string[];
   /** Stands at the sector's origin, so its records keep their sector-relative positions. */
   group: THREE.Object3D;
+  /** The view's placements built so far, in record order. Those past them wait to be built. */
   placements: PlacedModel[];
   fixtures: DrawnFixture[];
+  /** How far a sector queued to be built can show, in the space; `undefined` for one built at once. */
+  extent: SectorExtent | undefined;
+}
+
+/**
+ * How far a sector's drawing can reach, as `buildInReach` reads it: a rect of the space round its
+ * ground and every placement as far as its model's crown shows and its sides reach, and the height the
+ * highest top of its placements reaches, which throws the longest shadow.
+ */
+interface SectorExtent {
+  rect: Rect;
+  height: number;
+}
+
+/** How far a model reaches from its origin, measured once from its prototype: up to its top, and across the ground in any direction. */
+interface ModelReach {
+  height: number;
+  across: number;
+}
+
+/** What a sector no longer drawn leaves to dispose: its group, its ground, and its scatter, disposed at once or, left in play, by a later step (`workSectors`). */
+interface SectorDisposal {
+  group: THREE.Object3D | undefined;
+  ground: DrawnGround | undefined;
+  /** The scene's tick of the frame it left the draw set in, which disposes nothing of it. */
+  leftIn: number;
+}
+
+/** The next piece of work toward drawing the sectors, budgeted at its kind's worst case (`SECTOR_STEP_MS`). */
+interface SectorStep {
+  kind: keyof typeof SECTOR_STEP_MS;
+  run: () => void;
 }
 
 /** A fixture as drawn: the node of the placement that carries it, and an unturned point at its foot that a quest mark hangs over. */
@@ -358,11 +401,41 @@ const BODY_FADE_SECONDS = 1.5;
 export const DRESSING_BUDGET_MS = 6;
 
 /**
+ * The most script a frame spends building what no render could show yet and disposing sectors that
+ * have left, in milliseconds. It sits inside the frame budget's 6 ms line for loading work, which alone would
+ * still build a whole crossing in its first frame, so a crossing's build lands over a few frames.
+ */
+export const SECTOR_BUDGET_MS = 1;
+
+/**
+ * The longest each step of the sectors' work has taken, in milliseconds of script, so a step starts
+ * only where its worst case fits the frame's `SECTOR_BUDGET_MS`. `build` is one placement built and
+ * attached, its fixtures registered and marked, and `dispose` one left sector's group, ground, and
+ * scatter disposed. Both were timed in headless Chrome on the reference at load 3 to 7, at the page
+ * clock's 0.1 ms resolution, over crossings of Edaria Square's west and north gates by day and at
+ * dusk. A placement was built in at most 0.3 ms over 2,730 builds. A left sector was disposed in at
+ * most 1.0 ms over 36, the Graveyard's 267 placements taking longest, so a disposal takes a frame's
+ * slice to itself.
+ */
+export const SECTOR_STEP_MS = { build: 0.3, dispose: 1 } as const;
+
+/** How many ticks past the frame its sector left in a disposal waits behind the builds, after which it goes ahead of them (`workSectors`). */
+export const SECTOR_DISPOSAL_WAIT_FRAMES = 10;
+
+/**
  * Where a dressed body's mesh is culled by, in its model's own units round the feet: about half as
  * wide again as the furthest any pack body reaches standing, running, or fallen. A fixed sphere spares
  * three skinning every vertex to measure one.
  */
 const DRESSED_BOUNDS = new THREE.Sphere(new THREE.Vector3(), 1.5);
+
+/**
+ * How much wider than its furthest vertex from the feet in its idle pose a body's culling sphere is
+ * drawn (`WorldScene.measureBody`). Posed at ninths of every clip of every character model of the
+ * pack, a vertex reached at most 1.38 times that far: the boar's punch, which carries it off its feet.
+ * A dreamer's jumping chop reached 1.26 times, and a fall 1.11.
+ */
+const BODY_BOUNDS_MARGIN = 1.5;
 
 /** The renderer a world scene draws through. */
 export function createWorldRenderer(canvas: HTMLCanvasElement): THREE.WebGLRenderer {
@@ -457,6 +530,8 @@ export class WorldScene implements WorldRenderSurface {
   readonly camera: THREE.OrthographicCamera;
   /** Whether the pointer is a finger, under which a body is picked by a wider capsule. */
   coarsePointer = false;
+  /** Whether a sector entering or leaving in play is drawn and disposed over frames (`spreadsNow`). Left off, as in the editor, it is built and disposed at once. */
+  spreadSectors = false;
 
   private readonly assets: ModelAssets;
   private readonly registry: ModelRegistry;
@@ -493,6 +568,12 @@ export class WorldScene implements WorldRenderSurface {
   private previousRoot: THREE.Object3D | undefined;
   private pendingPlayerReveal = false;
   private readonly sectors = new Map<string, DrawnSector>();
+  /** The sectors left in play whose disposal waits its turn, oldest first. */
+  private disposals: SectorDisposal[] = [];
+  /** Counts the scene's ticks, so a disposal knows how long it has waited. */
+  private ticks = 0;
+  /** By object model, how far it reaches, measured once its prototype has loaded. */
+  private readonly modelReaches = new Map<string, ModelReach>();
   private readonly grounds = new Map<string, DrawnGround>();
   /** Sectors whose ground may no longer match its inputs: added, changed, or beside one that was. */
   private readonly dirtyGrounds = new Set<string>();
@@ -826,6 +907,8 @@ export class WorldScene implements WorldRenderSurface {
     this.heldBubbles = hold ? this.placedBubbles() : undefined;
     disposeSubtree(this.previousRoot);
     if (hold) {
+      // The held root stays on screen with nothing left to build it, and a zoom or a resize can still widen the view over it before the reveal.
+      for (const drawn of this.sectors.values()) this.buildRest(drawn);
       this.previousRoot = this.spaceRoot;
     } else {
       disposeSubtree(this.spaceRoot);
@@ -895,29 +978,22 @@ export class WorldScene implements WorldRenderSurface {
 
   /**
    * Draws a sector at its origin, replacing one already drawn under the same name. Its ground is
-   * rasterized off the frame, and the ground drawn so far stays until the new one arrives.
+   * rasterized off the frame, and the ground drawn so far stays until the new one arrives. A sector
+   * entering in play (`spreadsNow`) has its view, ground, and light registered now and its placements
+   * queued. They are built before the first render that could show them (`buildInReach`), or else a
+   * step at a time within the frame's budget (`workSectors`). One whose models are not all measured yet, or that
+   * replaces one drawn under its name, is built now.
    */
   addSector(sector: SectorView, outdoorDoorIds: readonly string[] = []): void {
+    const queued = this.spreadsNow() && !this.sectors.has(sector.name);
     this.disposeSector(sector.name);
     const origin = sectorOrigin(sector);
     const group = new THREE.Object3D();
     group.position.set(origin.x, 0, origin.z);
-    const placements = sector.placements.map((placement) => this.buildPlacement(placement, sector.kind));
-    const emitters = placements.flatMap((placed) => placed.emitter ?? []);
-    for (const [index, emitter] of emitters.entries()) emitter.phase = flamePhase(index, emitters.length);
-    // three logs an error for an `add()` with nothing to add.
-    if (placements.length > 0) group.add(...placements.map((placed) => placed.node));
-    const fixtures = sector.fixtures.flatMap((fixture): DrawnFixture[] => {
-      const node = placements.find((placed) => placed.placement.id === fixture.placement)?.node;
-      if (node === undefined) return [];
-      const anchor = new THREE.Object3D();
-      anchor.position.set(node.position.x, 0, node.position.z);
-      group.add(anchor);
-      return [{ carrierId: fixtureCarrierId(sector.name, fixture.id), node, anchor }];
-    });
     this.spaceRoot.add(group);
-    this.sectors.set(sector.name, { view: sector, outdoorDoorIds, group, placements, fixtures });
-    for (const fixture of fixtures) this.questMarkers.show(fixture.carrierId, fixture.anchor, this.questMarkerOf.get(fixture.carrierId));
+    const drawn: DrawnSector = { view: sector, outdoorDoorIds, group, placements: [], fixtures: [], extent: queued ? this.sectorExtent(sector) : undefined };
+    this.sectors.set(sector.name, drawn);
+    if (drawn.extent === undefined) this.buildRest(drawn);
     if (!this.grounds.has(sector.name)) {
       const mesh = sectorGroundMesh(sector, { columns: 1, rows: 1 }, flatGroundWeights(sector));
       this.spaceRoot.add(mesh);
@@ -935,17 +1011,51 @@ export class WorldScene implements WorldRenderSurface {
     }
   }
 
+  /**
+   * Stops drawing a sector, with its ground and its scatter, and frees the marks over its fixtures,
+   * since a sector added again under its name marks them anew. Left in play (`spreadsNow`), it is
+   * taken off the screen now and disposed by a later step (`workSectors`); otherwise it is disposed now.
+   */
   removeSector(name: string): void {
     const touching = this.touchingSectors(name);
-    this.disposeSector(name);
-    this.sectors.delete(name);
+    const drawn = this.sectors.get(name);
     const ground = this.grounds.get(name);
-    disposeSubtree(ground?.mesh);
-    if (ground !== undefined) this.dropScatter(ground);
+    this.forgetMarks(drawn);
+    this.sectors.delete(name);
     this.grounds.delete(name);
     this.dirtyGrounds.delete(name);
     for (const neighbour of touching) this.dirtyGrounds.add(neighbour);
+    // Called between ticks, as the draw set follows the player, so the frame it leaves in is the next tick.
+    const disposal: SectorDisposal = { group: drawn?.group, ground, leftIn: this.ticks + 1 };
+    if (this.spreadsNow()) {
+      drawn?.group.removeFromParent();
+      ground?.mesh.removeFromParent();
+      ground?.scatter?.group.removeFromParent();
+      for (const batch of ground?.scatter?.batches ?? []) {
+        this.bending.delete(batch);
+        this.grass.retire(batch);
+      }
+      this.disposals.push(disposal);
+    } else {
+      this.disposeLeft(disposal);
+    }
     if (!this.pendingPlayerReveal) this.lightDrawnSpace();
+  }
+
+  /** Disposes a sector no longer drawn: its group, its ground, and its scatter, whose tufts the grass spring forgets. */
+  private disposeLeft({ group, ground }: SectorDisposal): void {
+    disposeSubtree(group);
+    disposeSubtree(ground?.mesh);
+    if (ground !== undefined) this.dropScatter(ground);
+  }
+
+  /**
+   * Whether a sector entering or leaving now is drawn or disposed over frames: in the game's scene,
+   * while the local player stands placed in the space and no held entry waits for them. A new space's
+   * first ring, a held entry, the splash, and the editor build and dispose at once.
+   */
+  private spreadsNow(): boolean {
+    return this.spreadSectors && this.cameraFollowId !== undefined && !this.pendingPlayerReveal;
   }
 
   /**
@@ -2005,6 +2115,13 @@ export class WorldScene implements WorldRenderSurface {
    * node would stretch the height and push an overlay up. The vertices are in world space, so the
    * node's own position comes back off: overlays hang from the node, which may stand on raised
    * ground.
+   *
+   * In the same pass each skinned mesh is given the sphere three culls it by: round the feet, out to
+   * the body's furthest vertex as skinned, widened by `BODY_BOUNDS_MARGIN` for the clips that carry it
+   * further, so no render skins every vertex to measure one. It is centred at the feet rather than
+   * round the pose, because a body lies along the ground by turning about its feet, so the sphere
+   * holds a body that falls, or that is laid fallen once measured standing, as `DRESSED_BOUNDS` does
+   * for a dressed body.
    */
   private measureBody(state: EntityRenderState): { headHeight: number; bodyReach: number } {
     state.node.updateWorldMatrix(true, false);
@@ -2014,16 +2131,25 @@ export class WorldScene implements WorldRenderSurface {
     const vertex = new THREE.Vector3();
     let top = Number.NEGATIVE_INFINITY;
     let bodyReach = 0;
+    let radius = 0;
+    const skinned: THREE.SkinnedMesh[] = [];
     state.modelHolder.traverse((object) => {
       const mesh = object as THREE.Mesh;
       if (mesh.isMesh !== true) return;
+      if ((mesh as THREE.SkinnedMesh).isSkinnedMesh === true) skinned.push(mesh as THREE.SkinnedMesh);
       const positions = mesh.geometry.getAttribute('position');
       for (let index = 0; index < positions.count; index++) {
         mesh.getVertexPosition(index, vertex).applyMatrix4(mesh.matrixWorld);
         top = Math.max(top, vertex.y);
         bodyReach = Math.max(bodyReach, Math.hypot(vertex.x - feet.x, vertex.z - feet.z));
+        radius = Math.max(radius, vertex.distanceTo(feet));
       }
     });
+    // Each mesh gets the body's radius, not its own: a limb swings out to where the rest of the body stood.
+    for (const mesh of skinned) {
+      const ownFeet = feet.clone().applyMatrix4(mesh.matrixWorld.clone().invert());
+      mesh.boundingSphere = new THREE.Sphere(ownFeet, (radius * BODY_BOUNDS_MARGIN) / mesh.matrixWorld.getMaxScaleOnAxis());
+    }
     return { headHeight: Math.max(top - feet.y, 0), bodyReach };
   }
 
@@ -2126,6 +2252,7 @@ export class WorldScene implements WorldRenderSurface {
   tick(deltaTimeSeconds: number): void {
     const dt = Math.min(deltaTimeSeconds, MAX_TICK_DELTA);
     this.sceneClock += dt;
+    this.ticks += 1;
     this.relight();
     this.updatePropLights();
     const stalled = this.effects.stalled(this.now());
@@ -2159,8 +2286,12 @@ export class WorldScene implements WorldRenderSurface {
       // A hit-pause holds the clip where it is, for the bodies a blow names alone.
       if (!this.effects.frozen(id)) state.mixer?.update(dt);
     }
+    // After the bodies and the focus have moved, so what the view could show is built as it will render.
+    const started = this.now();
+    const builtInReach = this.buildInReach();
+    this.workSectors(started, builtInReach);
     // Before the effects, so a flash or an outline over a body dressed again this frame is built over its new mesh.
-    this.dressQueued();
+    this.dressQueued(started, builtInReach);
     // After the clips move on, so a drop leaving a hand leaves it where this frame draws the hand.
     this.loot.tick(this.sceneClock, stalled);
     this.stepDeparting(dt, stalled);
@@ -2449,13 +2580,13 @@ export class WorldScene implements WorldRenderSurface {
 
   /**
    * Dresses the queued bodies a step at a time, the local player's first, then the rest in the order
-   * they were queued. A step starts only while the frame's dressing so far plus that step's worst case
-   * stays within `DRESSING_BUDGET_MS`. The frame's first step always runs, so the queue moves on
-   * however long a step may take.
+   * they were queued. A step starts only while the frame's loading work since `started` plus that
+   * step's worst case stays within `DRESSING_BUDGET_MS`. The frame's first step always runs unless
+   * `buildInReach` built this frame, so the queue moves on however long a step may take, and an
+   * in-reach build never adds a second overrun.
    */
-  private dressQueued(): void {
-    const started = this.now();
-    for (let first = true; ; first = false) {
+  private dressQueued(started: number, builtInReach: boolean): void {
+    for (let first = !builtInReach; ; first = false) {
       const step = this.nextDressingStep();
       if (step === undefined || (!first && this.now() - started + WARDROBE_STEP_MS[step.kind] > DRESSING_BUDGET_MS)) return;
       step.run();
@@ -2620,8 +2751,173 @@ export class WorldScene implements WorldRenderSurface {
 
   /** Takes a drawn sector's group away, after the quest marks over its fixtures, which belong to the pool rather than to the sector. */
   private disposeSector(name: string): void {
-    for (const fixture of this.sectors.get(name)?.fixtures ?? []) this.questMarkers.forget(fixture.carrierId);
+    this.forgetMarks(this.sectors.get(name));
     disposeSubtree(this.sectors.get(name)?.group);
+  }
+
+  /** Gives back the quest marks over a drawn sector's fixtures, which belong to the pool rather than to the sector. */
+  private forgetMarks(drawn: DrawnSector | undefined): void {
+    for (const fixture of drawn?.fixtures ?? []) this.questMarkers.forget(fixture.carrierId);
+  }
+
+  /** Whether the sector still has placements to build. */
+  private unbuilt(drawn: DrawnSector): boolean {
+    return drawn.placements.length < drawn.view.placements.length;
+  }
+
+  /** Builds every placement of the sector still to be built, now. */
+  private buildRest(drawn: DrawnSector): void {
+    while (this.unbuilt(drawn)) this.buildStep(drawn);
+  }
+
+  /**
+   * Builds the sector's next placement in record order and attaches it, with an anchor at its foot for
+   * each fixture it carries, marked as the session last asked. Once its last placement is built, the
+   * flicker of all the sector's flames is spread over their beats.
+   */
+  private buildStep(drawn: DrawnSector): void {
+    const placed = this.buildPlacement(drawn.view.placements[drawn.placements.length]!, drawn.view.kind);
+    drawn.placements.push(placed);
+    drawn.group.add(placed.node);
+    for (const fixture of drawn.view.fixtures) {
+      if (fixture.placement !== placed.placement.id) continue;
+      const anchor = new THREE.Object3D();
+      anchor.position.set(placed.node.position.x, 0, placed.node.position.z);
+      drawn.group.add(anchor);
+      const carrierId = fixtureCarrierId(drawn.view.name, fixture.id);
+      drawn.fixtures.push({ carrierId, node: placed.node, anchor });
+      this.questMarkers.show(carrierId, anchor, this.questMarkerOf.get(carrierId));
+    }
+    if (this.unbuilt(drawn)) return;
+    const emitters = drawn.placements.flatMap((each) => each.emitter ?? []);
+    for (const [index, emitter] of emitters.entries()) emitter.phase = flamePhase(index, emitters.length);
+  }
+
+  /**
+   * How far the sector's drawing can reach, in the space: its ground, and every placement as far as
+   * its model reaches across the ground and as far beyond as the camera's pitch shows its top. A
+   * placement of a model not measured yet leaves it unknown (`undefined`), so the sector is built at once.
+   */
+  private sectorExtent(sector: SectorView): SectorExtent | undefined {
+    const origin = sectorOrigin(sector);
+    const pitch = THREE.MathUtils.degToRad(ORTHO_RIG.pitchDegrees);
+    let rect = sectorRect(sector);
+    let height = 0;
+    for (const placement of sector.placements) {
+      const reach = this.modelReach(placement.modelId);
+      if (reach === undefined) return undefined;
+      const top = reach.height + placementElevation(placement, objectModel(this.registry, placement.modelId));
+      const grown = top / Math.tan(pitch) + reach.across;
+      rect = rectUnion(rect, { x: origin.x + placement.x - grown, z: origin.z + placement.z - grown, width: 2 * grown, depth: 2 * grown });
+      height = Math.max(height, top);
+    }
+    return { rect, height };
+  }
+
+  /** How far an object model reaches from its origin, measured the first time it is asked for once its prototype has loaded; `undefined` while it has not. */
+  private modelReach(modelId: string): ModelReach | undefined {
+    const known = this.modelReaches.get(modelId);
+    if (known !== undefined) return known;
+    const meshes = this.assets.prototypeMeshes(modelId);
+    if (meshes === undefined) return undefined;
+    const box = meshesBox(meshes);
+    const reach = box.isEmpty()
+      ? { height: 0, across: 0 }
+      : {
+          height: Math.max(box.max.y, 0),
+          across: Math.hypot(Math.max(-box.min.x, box.max.x, 0), Math.max(-box.min.z, box.max.z, 0)),
+        };
+    this.modelReaches.set(modelId, reach);
+    return reach;
+  }
+
+  /**
+   * Builds the rest of every queued sector the view could show at the next render: its ground, a
+   * prop's crown, a prop's shadow under the light as it stands, or the quest mark over a fixture's
+   * top. It reads only what the scene holds as it ticks (the focus, the frustum's size, and the
+   * light's direction), never a matrix three refreshes at render. Answers whether it built anything.
+   */
+  private buildInReach(): boolean {
+    let built = false;
+    const reach = this.viewReach();
+    for (const drawn of this.sectors.values()) {
+      if (drawn.extent === undefined || !this.unbuilt(drawn)) continue;
+      const sectorReach = drawn.view.fixtures.length === 0 ? reach : reach + this.markReach();
+      if (this.sunDirection.y > 0 && distanceToRect(this.focus, this.shadowed(drawn.extent)) > sectorReach) continue;
+      this.buildRest(drawn);
+      built = true;
+    }
+    return built;
+  }
+
+  /**
+   * How far across the ground from the focus the view reaches. It is the distance to a screen corner
+   * through the frustum as last framed and the camera's pitch, measured from where the camera's centre
+   * meets the ground below a focus raised on a walk surface. The furthest the shake can carry the view
+   * on the screen's two axes is added on top.
+   */
+  private viewReach(): number {
+    const pitch = THREE.MathUtils.degToRad(ORTHO_RIG.pitchDegrees);
+    const sine = Math.sin(pitch);
+    return Math.hypot(this.camera.right, this.camera.top / sine) + Math.abs(this.focus.y) / Math.tan(pitch) + (MAX_SHAKE_METRES * Math.SQRT2) / sine;
+  }
+
+  /**
+   * How much further than a fixture's top the view can show its quest mark, across the ground. It adds
+   * up the gap under the mark as the camera's pitch shows a height, the mark's full length on the
+   * screen (it faces the camera), and its half-width.
+   */
+  private markReach(): number {
+    const pitch = THREE.MathUtils.degToRad(ORTHO_RIG.pitchDegrees);
+    const { up, tall, across } = this.questMarkers.reach();
+    return up / Math.tan(pitch) + tall / Math.sin(pitch) + across;
+  }
+
+  /** The rect round the extent's rect and a copy of it shifted away from the light by the shadow its highest top throws under the light as it stands. */
+  private shadowed(extent: SectorExtent): Rect {
+    const along = extent.height / this.sunDirection.y;
+    const { x, z, width, depth } = extent.rect;
+    return rectUnion(extent.rect, { x: x - this.sunDirection.x * along, z: z - this.sunDirection.z * along, width, depth });
+  }
+
+  /**
+   * Builds and disposes sectors a step at a time, and at most one disposal a frame. The oldest
+   * disposal, once it has waited `SECTOR_DISPOSAL_WAIT_FRAMES` past the frame its sector left in, goes
+   * first, then the next placement of the queued sector nearest the focus, then the oldest disposal of
+   * a sector that left before this frame. A step starts only while the frame's loading work since
+   * `started` plus that step's worst case stays within `SECTOR_BUDGET_MS`. The frame's first step
+   * always runs unless `buildInReach` built this frame, so the queue moves on without a second overrun.
+   */
+  private workSectors(started: number, builtInReach: boolean): void {
+    let disposed = false;
+    for (let first = !builtInReach; ; first = false) {
+      const oldest: SectorDisposal | undefined = disposed ? undefined : this.disposals[0];
+      const due: boolean = oldest !== undefined && this.ticks - oldest.leftIn >= SECTOR_DISPOSAL_WAIT_FRAMES;
+      const step: SectorStep | undefined = due ? this.disposalStep() : this.nextSectorStep(!disposed);
+      if (step === undefined || (!first && this.now() - started + SECTOR_STEP_MS[step.kind] > SECTOR_BUDGET_MS)) return;
+      step.run();
+      disposed ||= step.kind === 'dispose';
+    }
+  }
+
+  /** The next placement of the queued sector nearest the focus, else, where `disposing`, the oldest disposal of a sector that left before this frame. */
+  private nextSectorStep(disposing: boolean): SectorStep | undefined {
+    let nearest: DrawnSector | undefined;
+    for (const drawn of this.sectors.values()) {
+      if (!this.unbuilt(drawn)) continue;
+      if (nearest === undefined || this.distanceToSector(drawn.view.name) < this.distanceToSector(nearest.view.name)) nearest = drawn;
+    }
+    if (nearest !== undefined) {
+      const drawn = nearest;
+      return { kind: 'build', run: () => this.buildStep(drawn) };
+    }
+    const oldest = this.disposals[0];
+    return !disposing || oldest === undefined || oldest.leftIn >= this.ticks ? undefined : this.disposalStep();
+  }
+
+  /** The step that takes the oldest disposal off the queue and disposes its sector. */
+  private disposalStep(): SectorStep {
+    return { kind: 'dispose', run: () => this.disposeLeft(this.disposals.shift()!) };
   }
 
   /**
@@ -3201,9 +3497,10 @@ function markOwned(mesh: THREE.Mesh, options: { geometry: boolean; material: boo
  * wrapper leaves the GL texture allocated, and `Skeleton.dispose()` is the only release path. A clone
  * therefore owns exactly one GPU resource while carrying neither flag.
  *
- * This is the single detach-and-dispose entry point on purpose. A bare `removeFromParent()` on a
- * flagged mesh puts it beyond the reach of any later cleanup, so the flags stop meaning
- * anything; every site that drops a node routes through here instead.
+ * This is the detach-and-dispose entry point on purpose. A bare `removeFromParent()` on a flagged
+ * mesh puts it beyond the reach of any later cleanup, so the flags stop meaning anything. A sector
+ * left in play (`WorldScene.removeSector`) is detached at once, but it stays within reach on the
+ * disposal queue until its step disposes it here.
  */
 function disposeSubtree(root: THREE.Object3D | undefined): void {
   if (root === undefined) return;
@@ -3530,12 +3827,25 @@ function measuredReach(reaches: Map<string, GrassReach | undefined>, key: string
   return reaches.get(key);
 }
 
-function grassReach(model: THREE.Object3D): GrassReach | undefined {
+/** The box round a model's meshes in the model's own frame. */
+function meshesBox(meshes: readonly PrototypeMesh[]): THREE.Box3 {
   const box = new THREE.Box3();
-  for (const { geometry, matrix } of prototypeMeshesOf(model)) {
+  for (const { geometry, matrix } of meshes) {
     if (geometry.boundingBox === null) geometry.computeBoundingBox();
     box.union(geometry.boundingBox!.clone().applyMatrix4(matrix));
   }
+  return box;
+}
+
+/** The smallest rect holding both. */
+function rectUnion(a: Rect, b: Rect): Rect {
+  const x = Math.min(a.x, b.x);
+  const z = Math.min(a.z, b.z);
+  return { x, z, width: Math.max(a.x + a.width, b.x + b.width) - x, depth: Math.max(a.z + a.depth, b.z + b.depth) - z };
+}
+
+function grassReach(model: THREE.Object3D): GrassReach | undefined {
+  const box = meshesBox(prototypeMeshesOf(model));
   if (box.isEmpty()) return undefined;
   const size = box.getSize(new THREE.Vector3());
   const centre = box.getCenter(new THREE.Vector3());

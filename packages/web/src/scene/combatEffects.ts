@@ -167,6 +167,10 @@ const STRIKE_LANDING: Landing = { pauseMs: 45, shakeMetres: 0.035, sparkScale: 0
 const SHIELDED_LANDING: Landing = { pauseMs: 50, shakeMetres: 0.02, sparkScale: 0.8, flashSeconds: FLASH_SECONDS, knockMetres: KNOCK_METRES };
 /** A Dream-bolt bursting on a nightmare: a longer pause, a harder shake, a longer flash, and a further stagger than a swing's. */
 const BOLT_LANDING: Landing = { pauseMs: 80, shakeMetres: 0.06, sparkScale: 1.3, flashSeconds: 0.22, knockMetres: 0.13 };
+/** The furthest the shake ever puts the camera off the rig along each of the screen's axes: the hardest landing's, since a shake keeps the hardest it was given. */
+export const MAX_SHAKE_METRES = Math.max(
+  ...[SWING_LANDING, CLEAVE_LANDING, STRIKE_LANDING, SHIELDED_LANDING, BOLT_LANDING].map((landing) => landing.shakeMetres),
+);
 
 /**
  * How long the effects may go without a tick, on the wall clock, before they count as stalled. A

@@ -43,7 +43,7 @@ type MarkArt = Record<QuestMarker, { material: THREE.MeshBasicMaterial; geometry
 
 export class QuestMarkers {
   private readonly orientation: THREE.Quaternion;
-  /** Drawn on first need, so a scene that never marks anyone rasterizes nothing. */
+  /** Drawn on first need, so a scene that never shows, measures, or compiles a mark rasterizes nothing. */
   private drawn: MarkArt | undefined;
   private readonly pool: Mark[] = [];
   /** The mark each carrier shows, and which, by its carrier id. */
@@ -87,6 +87,20 @@ export class QuestMarkers {
   setOverlayScale(scale: number): void {
     this.overlayScale = scale;
     for (const { container } of this.pool) container.scale.setScalar(scale);
+  }
+
+  /**
+   * How far the tallest and widest mark reaches past the top of what carries it, as drawn now: `up`
+   * metres of gap above the top, then `tall` metres of mark facing the camera, and `across` metres to
+   * either side of its middle.
+   */
+  reach(): { up: number; tall: number; across: number } {
+    const sizes = Object.values(this.art).map(({ geometry }) => geometry.parameters);
+    return {
+      up: HEAD_GAP,
+      tall: Math.max(...sizes.map(({ height }) => height)) * this.overlayScale,
+      across: (Math.max(...sizes.map(({ width }) => width)) / 2) * this.overlayScale,
+    };
   }
 
   /** Stands each mark a gap above its carrier, as tall as `headHeight` says it stands. */

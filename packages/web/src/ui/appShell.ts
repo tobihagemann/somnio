@@ -219,7 +219,10 @@ export class AppShell {
     const coarsePointer = window.matchMedia?.('(pointer: coarse)').matches ?? false;
     this.coarsePointer = coarsePointer;
     this.scene = capabilities.hasWebGL ? new WorldScene(new HttpModelAssets(registry), registry, this.aspect(), reducedMotion) : undefined;
-    if (this.scene !== undefined) this.scene.coarsePointer = coarsePointer;
+    if (this.scene !== undefined) {
+      this.scene.coarsePointer = coarsePointer;
+      this.scene.spreadSectors = true;
+    }
     this.splash =
       this.scene === undefined
         ? undefined

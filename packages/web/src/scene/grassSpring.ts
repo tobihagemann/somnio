@@ -47,6 +47,8 @@ export class GrassSpring {
   private readonly buckets = new Map<string, [batch: GrassBatch, index: number][]>();
   /** Tufts not yet upright, by batch, which keep springing back with no contact near. */
   private recovering = new Map<GrassBatch, Set<number>>();
+  /** Batches no longer drawn, which no contact moves. Their tufts stay in their buckets until `remove`. */
+  private readonly retired = new Set<GrassBatch>();
 
   add(batch: GrassBatch): void {
     for (let index = 0; index < batch.halfWidths.length; index += 1) {
@@ -75,11 +77,19 @@ export class GrassSpring {
       else this.buckets.set(key, kept);
     }
     this.recovering.delete(batch);
+    this.retired.delete(batch);
+  }
+
+  /** Stops moving the batch's tufts, for a batch no longer drawn that `remove` forgets later. */
+  retire(batch: GrassBatch): void {
+    this.recovering.delete(batch);
+    this.retired.add(batch);
   }
 
   clear(): void {
     this.buckets.clear();
     this.recovering.clear();
+    this.retired.clear();
   }
 
   /**
@@ -102,7 +112,7 @@ export class GrassSpring {
           bz <= Math.floor((Math.max(contact.z, end.z) + reach) / BUCKET_METRES);
           bz += 1
         ) {
-          for (const [batch, index] of this.buckets.get(`${bx},${bz}`) ?? []) tuftsOf(visit, batch).add(index);
+          for (const [batch, index] of this.buckets.get(`${bx},${bz}`) ?? []) if (!this.retired.has(batch)) tuftsOf(visit, batch).add(index);
         }
       }
     }
