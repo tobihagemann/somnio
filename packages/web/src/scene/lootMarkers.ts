@@ -40,7 +40,7 @@ import { fadeOut } from './fadeOut';
 import type { FadeOut } from './fadeOut';
 import { lightMaterial, whiteTexture } from './lightMaterials';
 import { prototypeMeshesOf } from './modelAssets';
-import { OVERLAY_METRES_PER_PIXEL, cssColor, renderNamePlaque } from './overlayArt';
+import { cssColor, overlayTexture, renderNamePlaque } from './overlayArt';
 
 /** The name of the group every drop hangs on. */
 export const LOOT_MARKERS_NAME = 'somnio-loot';
@@ -444,13 +444,9 @@ export class LootMarkers {
     const rarity = rarityOf(loot.contents);
     if (rarity !== 'common') marker.glow.material = this.glowMaterials[rarity];
     if (raisesBeam(rarity)) marker.beam.material = this.beamMaterials[rarity];
-    const art = renderNamePlaque(loot.name, LOOT_LABEL_BACKGROUND, true, cssColor(RARITY_COLORS[rarity]));
-    const texture = new THREE.CanvasTexture(art.canvas);
-    texture.colorSpace = THREE.SRGBColorSpace;
+    const { texture, width, height } = overlayTexture(renderNamePlaque(loot.name, LOOT_LABEL_BACKGROUND, true, cssColor(RARITY_COLORS[rarity])));
     marker.plate.material.map?.dispose();
     marker.plate.material.map = texture;
-    const width = art.widthPixels * OVERLAY_METRES_PER_PIXEL;
-    const height = art.heightPixels * OVERLAY_METRES_PER_PIXEL;
     marker.plate.scale.set(width, height, 1);
     // Its top edge at the label's origin, centred under the drop.
     marker.plate.position.set(0, -height / 2, 0);

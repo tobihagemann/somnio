@@ -9,7 +9,7 @@
  */
 import * as THREE from 'three';
 import type { QuestMarker } from '@somnio/core';
-import { OVERLAY_METRES_PER_PIXEL, QUEST_MARK, cssColor, renderOutlinedText } from './overlayArt';
+import { QUEST_MARK, cssColor, footPlate, overlayMaterial, renderOutlinedText } from './overlayArt';
 
 /** The name every mark's mesh carries. */
 export const QUEST_MARKER_NAME = 'somnio-quest-marker';
@@ -139,12 +139,6 @@ export class QuestMarkers {
 
 /** The glyph's material in its colour, and a plane as large as its art with its foot on the origin. */
 function markArt({ glyph, color }: (typeof MARKS)[QuestMarker]): MarkArt[QuestMarker] {
-  const { canvas, widthPixels, heightPixels } = renderOutlinedText(glyph, { ...QUEST_MARK, ink: cssColor(color) });
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  const height = heightPixels * OVERLAY_METRES_PER_PIXEL;
-  return {
-    material: new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, toneMapped: false }),
-    geometry: new THREE.PlaneGeometry(widthPixels * OVERLAY_METRES_PER_PIXEL, height).translate(0, height / 2, 0),
-  };
+  const { texture, geometry } = footPlate(renderOutlinedText(glyph, { ...QUEST_MARK, ink: cssColor(color) }));
+  return { material: overlayMaterial(texture), geometry };
 }

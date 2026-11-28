@@ -39,6 +39,8 @@ import { raiseShownAt } from '@/client/renderSurface';
 import type { AbilityShown, RaiseProgress } from '@/client/renderSurface';
 import type { OneShot } from './animation';
 import { offsetDirection } from './cameraRig';
+import { CHALLENGE_MARK, MISS_WORD, footPlate, overlayMaterial, overlayTexture, renderOutlinedText } from './overlayArt';
+import type { FootPlate, OverlayTexture } from './overlayArt';
 import { BAKED_OUTFIT } from './wardrobe';
 
 /**
@@ -94,8 +96,8 @@ export interface CombatEffectsHost {
   playOneShot(entityId: string, oneShot: OneShot, landsIn?: number): THREE.AnimationClip | undefined;
   /** Ends the one-shot the body plays, so its looping pose fades back in. */
   endOneShot(entityId: string): void;
-  /** The `word` over a body missed or a nightmare that evaded, its foot at its origin; made once for each in its pool. */
-  missWord(word: MissWordKind): MissWord;
+  /** What the `word` over a body missed or a nightmare that evaded says, in the player's language. */
+  missWordText(word: MissWordKind): string;
   /** How many times its size in metres the overlay art is drawn, which the miss word follows. */
   overlayScale(): number;
   /** The wall clock, in milliseconds. */
@@ -193,7 +195,6 @@ const CHALLENGE_WAVE_RADIUS = 2 * SOMNIO_CONSTANTS.playerRadius + ABILITIES.chal
 const CHALLENGE_WAVE_SECONDS = 0.42;
 const CHALLENGE_PULSE_SECONDS = 0.9;
 const CHALLENGE_PULSE_COLOR = 0xff7a5a;
-const MARK_SIZE = 0.5;
 const MARK_HEAD_GAP = 0.2;
 /** A rally carries as far as a said line, centre to centre. */
 const RALLY_WAVE_RADIUS = 2 * SOMNIO_CONSTANTS.playerRadius + ABILITIES.rally.range;
@@ -510,6 +511,8 @@ export class CombatEffects {
   readonly root = new THREE.Group();
 
   private readonly host: CombatEffectsHost;
+  /** The screen-aligned facing every overlay quad takes, which the miss words face the camera by. */
+  private readonly orientation: THREE.Quaternion;
   private readonly reducedMotion: boolean;
   /**
    * The clock every effect but a raise's ring and a telegraph's circle runs on, in seconds: each
@@ -578,8 +581,9 @@ export class CombatEffects {
   };
   private shakeAmplitude = 0;
 
-  constructor(host: CombatEffectsHost, reducedMotion: boolean) {
+  constructor(host: CombatEffectsHost, orientation: THREE.Quaternion, reducedMotion: boolean) {
     this.host = host;
+    this.orientation = orientation;
     this.reducedMotion = reducedMotion;
     this.lastTickMs = host.now();
     this.root.name = COMBAT_EFFECTS_NAME;
@@ -595,8 +599,8 @@ export class CombatEffects {
     this.streams = this.pool(moteMesh, EFFECT_POOL_SIZES.streams);
     this.beams = this.pool(beamMesh, EFFECT_POOL_SIZES.beams);
     this.raiseRingMeshes = this.pool(raiseRingMesh, EFFECT_POOL_SIZES.raiseRings);
-    this.misses = this.pool(() => host.missWord('miss'), EFFECT_POOL_SIZES.misses);
-    this.evasions = this.pool(() => host.missWord('evaded'), EFFECT_POOL_SIZES.evasions);
+    this.misses = this.pool(this.missWords('miss'), EFFECT_POOL_SIZES.misses);
+    this.evasions = this.pool(this.missWords('evaded'), EFFECT_POOL_SIZES.evasions);
     this.shells = this.pool(shellMesh, EFFECT_POOL_SIZES.shells);
     this.bolts = this.pool(boltMesh, EFFECT_POOL_SIZES.bolts);
     this.cracks = this.pool(crackMesh, EFFECT_POOL_SIZES.cracks);
@@ -616,6 +620,22 @@ export class CombatEffects {
     }, size);
     this.pools.push(pool);
     return pool;
+  }
+
+  /**
+   * Makes the words of one pool, facing the camera with their foot at their origin. Every word shares
+   * one texture and plane, drawn for the first, and fades by its own clone of one material.
+   */
+  private missWords(kind: MissWordKind): () => MissWord {
+    let art: FootPlate | undefined;
+    let material: THREE.MeshBasicMaterial | undefined;
+    return () => {
+      art ??= footPlate(renderOutlinedText(this.host.missWordText(kind), MISS_WORD));
+      material ??= overlayMaterial(art.texture);
+      const word = new THREE.Mesh(art.geometry, material.clone());
+      word.quaternion.copy(this.orientation);
+      return word;
+    };
   }
 
   /**
@@ -2251,15 +2271,16 @@ export class CombatEffects {
     for (const other of this.challenged.values()) if (other.sprite === sprite) other.sprite = undefined;
     mark.sprite = sprite;
     if (sprite === undefined) return;
+    const { width, height } = challengeMark();
     this.animate(sprite, (elapsed) => {
       const body = this.host.body(id);
       if (body === undefined || mark.sprite !== sprite) return false;
       const pop = elapsed < 0.22 && !this.reducedMotion ? 1 + 0.6 * Math.sin((elapsed / 0.22) * Math.PI) * (1 - elapsed / 0.22) : 1;
-      const size = MARK_SIZE * pop * Math.min(1, elapsed / 0.08);
-      sprite.scale.set(size, size, 1);
+      const grow = pop * Math.min(1, elapsed / 0.08);
+      sprite.scale.set(width * grow, height * grow, 1);
       const bob = this.reducedMotion ? 0 : 0.03 * Math.sin(elapsed * 5);
       const feet = body.node.position;
-      sprite.position.set(feet.x, feet.y + body.headHeight + MARK_HEAD_GAP + MARK_SIZE / 2 + bob, feet.z);
+      sprite.position.set(feet.x, feet.y + body.headHeight + MARK_HEAD_GAP + height / 2 + bob, feet.z);
       return true;
     });
   }
@@ -3450,33 +3471,21 @@ function domeMesh(): THREE.Mesh {
   return mesh;
 }
 
-/** The "!" a challenged nightmare wears: white, outlined dark, drawn over everything. Made with the first mark and never freed. */
-let markMaterial: THREE.SpriteMaterial | undefined;
+/** The "!" a challenged nightmare wears, drawn over everything, with its size in metres. Made with the first mark and never freed. */
+type ChallengeMarkArt = OverlayTexture & { material: THREE.SpriteMaterial };
+let challengeMarkArt: ChallengeMarkArt | undefined;
 
-function markTexture(): THREE.Texture {
-  const canvas = document.createElement('canvas');
-  canvas.width = 128;
-  canvas.height = 128;
-  const context = canvas.getContext('2d');
-  if (context !== null) {
-    context.font = '900 104px system-ui, sans-serif';
-    context.textAlign = 'center';
-    context.textBaseline = 'middle';
-    context.lineJoin = 'round';
-    context.lineWidth = 22;
-    context.strokeStyle = 'rgba(12, 10, 16, 0.92)';
-    context.strokeText('!', 64, 68);
-    context.fillStyle = '#ffffff';
-    context.fillText('!', 64, 68);
+function challengeMark(): ChallengeMarkArt {
+  if (challengeMarkArt === undefined) {
+    const art = overlayTexture(renderOutlinedText('!', CHALLENGE_MARK));
+    const material = new THREE.SpriteMaterial({ map: art.texture, depthTest: false, depthWrite: false, transparent: true, toneMapped: false });
+    challengeMarkArt = { ...art, material };
   }
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
+  return challengeMarkArt;
 }
 
 function markSprite(): THREE.Sprite {
-  markMaterial ??= new THREE.SpriteMaterial({ map: markTexture(), depthTest: false, depthWrite: false, transparent: true, toneMapped: false });
-  const sprite = new THREE.Sprite(markMaterial.clone());
+  const sprite = new THREE.Sprite(challengeMark().material.clone());
   sprite.renderOrder = 10;
   return sprite;
 }

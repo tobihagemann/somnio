@@ -82,7 +82,6 @@ import {
   RAISE_RING_RADII,
   strikeDelay,
 } from './combatEffects';
-import type { MissWordKind } from './combatEffects';
 import { SUN_SHADOW, doorLightState, sunState } from './dayNightSun';
 import { groundFieldKey, rasterizeGround } from './groundField';
 import type { GroundField, GroundFieldInputs } from './groundField';
@@ -104,14 +103,14 @@ import type { LootThrow } from './lootMarkers';
 import type { BubbleMode, BubbleRequest, ScreenDisc, ScreenPoint, ScreenRect, ScreenSize } from './bubbleLayout';
 import type { PlacedBubble, PlacedBubbles } from './bubbleLayer';
 import {
-  MISS_WORD,
   NAME_PLAQUE,
   OVERLAY_METRES_PER_PIXEL,
   PLAQUE_FEET_GAP,
   namePlaqueBackground,
   overlayMagnification,
+  overlayMaterial,
+  overlayTexture,
   renderNamePlaque,
-  renderOutlinedText,
   speechBubbleFrameSize,
 } from './overlayArt';
 import type { RasterArt } from './overlayArt';
@@ -737,10 +736,11 @@ export class WorldScene implements WorldRenderSurface {
           const state = this.entityStates.get(entityId);
           if (state?.oneShot !== undefined && !state.oneShot.held) this.endOneShot(state);
         },
-        missWord,
+        missWordText: (word) => (word === 'evaded' ? t('evaded') : t('miss')),
         overlayScale: () => this.overlayScale,
         now: () => this.now(),
       },
+      OVERLAY_ORIENTATION,
       reducedMotion,
     );
     // The target's world matrix is what gives a directional or a spot light its direction, and an
@@ -3544,14 +3544,11 @@ function overlayQuad(art: RasterArt): { container: THREE.Object3D; plate: Overla
   return { container, plate, size };
 }
 
-/** A plane as large as the art in metres, centred on its origin, drawing the art untouched by the scene's lighting. */
+/** A plane as large as the art in metres, centred on its origin. */
 function overlayPlate(art: RasterArt): { plate: OverlayPlate; size: THREE.Vector2 } {
-  const texture = new THREE.CanvasTexture(art.canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  // Not tone-mapped, so the plaque's painted colours stay exactly as rasterized.
-  const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, toneMapped: false });
-  const size = new THREE.Vector2(art.widthPixels * OVERLAY_METRES_PER_PIXEL, art.heightPixels * OVERLAY_METRES_PER_PIXEL);
-  const plate = new THREE.Mesh(new THREE.PlaneGeometry(size.x, size.y), material);
+  const { texture, width, height } = overlayTexture(art);
+  const size = new THREE.Vector2(width, height);
+  const plate = new THREE.Mesh(new THREE.PlaneGeometry(width, height), overlayMaterial(texture));
   // Every overlay quad allocates its own canvas texture, material, and geometry.
   markOwned(plate, { geometry: true, material: true });
   return { plate, size };
@@ -3570,17 +3567,7 @@ function namePlaqueQuad(name: string, background: string, bold: boolean, ink: st
   const drop = size.y + PLAQUE_FEET_GAP;
   const pitch = (ORTHO_RIG.pitchDegrees * Math.PI) / 180;
   plate.position.set(0, -(size.y / 2 + PLAQUE_FEET_GAP), drop / Math.tan(pitch) + PLAQUE_FLOOR_CLEARANCE);
-  // Never hidden by another plaque's depth; `orderPlaques` decides which shows.
-  plate.material.depthWrite = false;
   return { container, plate };
-}
-
-/** The word over an entity a blow missed, or that evaded it, facing the camera with its foot at its origin. */
-function missWord(word: MissWordKind): OverlayPlate {
-  const { plate, size } = overlayPlate(renderOutlinedText(word === 'evaded' ? t('evaded') : t('miss'), MISS_WORD));
-  plate.quaternion.copy(OVERLAY_ORIENTATION);
-  plate.geometry.translate(0, size.y / 2, 0);
-  return plate;
 }
 
 /** The colour with its lightness lowered by `by`, its hue and saturation kept. */

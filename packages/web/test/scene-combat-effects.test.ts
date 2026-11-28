@@ -12,7 +12,7 @@ import type { MissWord } from '@/scene/combatEffects';
 import { ELITE_AURA_NAME } from '@/scene/eliteAuras';
 import { LOOT_BEAM_NAME, LOOT_LABEL_NAME, LOOT_MARKERS_NAME } from '@/scene/lootMarkers';
 import { offsetDirection } from '@/scene/cameraRig';
-import { MISS_WORD, renderOutlinedText } from '@/scene/overlayArt';
+import { CHALLENGE_MARK, MISS_WORD, OVERLAY_METRES_PER_PIXEL, renderOutlinedText } from '@/scene/overlayArt';
 import { CHARACTER_SCALE } from '@/scene/placement';
 import { PORTRAIT_LAYERS } from '@/scene/portraits';
 import type { ClientEntity } from '@/client';
@@ -152,6 +152,9 @@ function sparks(scene: WorldScene): THREE.Mesh[] {
 function marks(scene: WorldScene): THREE.Sprite[] {
   return effects(scene).children.filter((child): child is THREE.Sprite => (child as THREE.Sprite).isSprite === true);
 }
+
+/** How wide a Challenge mark is drawn once whole, done popping: its art's width in metres. */
+const WHOLE_MARK_WIDTH = renderOutlinedText('!', CHALLENGE_MARK).widthPixels * OVERLAY_METRES_PER_PIXEL;
 
 /** The meshes drawn over bodies: the flash on their front faces, the outline on their back faces. */
 function hulls(scene: WorldScene, side: THREE.Side): THREE.Mesh[] {
@@ -714,7 +717,7 @@ describe('a tab that drew no frame for a while', () => {
       scene.tick(0.01);
       const shown = visible(marks(scene));
       expect(shown).toHaveLength(1);
-      expect(shown[0]!.scale.x).toBeCloseTo(0.5, 6);
+      expect(shown[0]!.scale.x).toBeCloseTo(WHOLE_MARK_WIDTH, 6);
     }
   });
 
@@ -992,7 +995,7 @@ describe('Challenge', () => {
       scene.tick(0.05);
       const shown = visible(marks(scene));
       expect(shown).toEqual(settled);
-      for (const mark of shown) expect(mark.scale.x).toBeCloseTo(0.5, 6);
+      for (const mark of shown) expect(mark.scale.x).toBeCloseTo(WHOLE_MARK_WIDTH, 6);
     }
   });
 
@@ -1165,6 +1168,33 @@ describe('a missed blow', () => {
     expect(shown).toHaveLength(1);
     expect(saying(shown, 'evaded')).toEqual(shown);
     expect([shown[0]!.position.x, shown[0]!.position.z]).toEqual([10.5, 10.6]);
+  });
+
+  it('draws every word of a pool from one texture and one plane, each fading by a material of its own', () => {
+    const { scene } = combatScene();
+    place(scene, 'self', { x: 10, z: 10 });
+    place(scene, 'monster:1', { x: 10.5, z: 10.6 });
+    scene.tick(0.01);
+
+    for (let index = 0; index < EFFECT_POOL_SIZES.misses; index += 1) {
+      scene.showBlow('self', 'monster:1', false);
+      run(scene, BLADE_LANDS + 0.03);
+    }
+    for (let index = 0; index < EFFECT_POOL_SIZES.evasions; index += 1) {
+      scene.showBlow('self', 'monster:1', false, true);
+      run(scene, BLADE_LANDS + 0.03);
+    }
+    const words = missWords(scene);
+    for (const [key, size] of [
+      ['miss', EFFECT_POOL_SIZES.misses],
+      ['evaded', EFFECT_POOL_SIZES.evasions],
+    ] as const) {
+      const pool = saying(words, key);
+      expect(pool).toHaveLength(size);
+      expect(new Set(pool.map((word) => word.material.map)).size).toBe(1);
+      expect(new Set(pool.map((word) => word.geometry)).size).toBe(1);
+      expect(new Set(pool.map((word) => word.material)).size).toBe(size);
+    }
   });
 
   it('holds the word still and whole over the head under reduced motion', () => {

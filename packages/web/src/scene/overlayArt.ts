@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { SOMNIO_CONSTANTS, clamp } from '@somnio/core';
 import type { WorldEntityKind } from '@somnio/core';
 import { PROTOCOL_BYTE_CAPS, truncateToUTF8Bytes } from '@somnio/protocol';
@@ -341,8 +342,40 @@ export function renderNamePlaque(name: string, background: string, bold: boolean
 /** How a quest mark's glyph is drawn; its ink is the mark's own colour. */
 export const QUEST_MARK = { fontSize: 26, edge: 3 } as const;
 
+/** How the "!" over a challenged nightmare is drawn: a quest mark's glyph in white. */
+export const CHALLENGE_MARK = { ...QUEST_MARK, ink: 'rgb(255, 255, 255)' } as const;
+
 /** How the word over a body a blow missed is drawn: bare, so it never reads as a name plaque. */
 export const MISS_WORD = { fontSize: NAME_PLAQUE.fontSize, edge: 2, ink: 'rgb(255, 255, 255)' } as const;
+
+/** Overlay art as a texture, with its size in world metres. */
+export interface OverlayTexture {
+  texture: THREE.CanvasTexture;
+  width: number;
+  height: number;
+}
+
+/** Overlay art as a texture and a plane as large as it, with its foot on the origin. */
+export interface FootPlate {
+  texture: THREE.CanvasTexture;
+  geometry: THREE.PlaneGeometry;
+}
+
+export function overlayTexture(art: RasterArt): OverlayTexture {
+  const texture = new THREE.CanvasTexture(art.canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return { texture, width: art.widthPixels * OVERLAY_METRES_PER_PIXEL, height: art.heightPixels * OVERLAY_METRES_PER_PIXEL };
+}
+
+export function footPlate(art: RasterArt): FootPlate {
+  const { texture, width, height } = overlayTexture(art);
+  return { texture, geometry: new THREE.PlaneGeometry(width, height).translate(0, height / 2, 0) };
+}
+
+/** What an overlay plate draws with: untouched by the scene's lighting, so its painted colours stay as rasterized, and hiding nothing behind it. */
+export function overlayMaterial(map: THREE.Texture): THREE.MeshBasicMaterial {
+  return new THREE.MeshBasicMaterial({ map, transparent: true, depthWrite: false, toneMapped: false });
+}
 
 /** Bold text in `ink` inside a dark edge `edge` pixels wide, with no plate behind it, as the HUD draws its line art. */
 export function renderOutlinedText(text: string, { fontSize, edge, ink }: { fontSize: number; edge: number; ink: string }): RasterArt {
