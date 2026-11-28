@@ -703,6 +703,11 @@ function outfitOf({ equipped }: Inventory): Outfit {
   });
 }
 
+/** An item a dreamer lets go of, without the id they kept it by, since whoever picks it up keeps it by a new one. */
+function withoutId({ id: _id, ...item }: ItemInstance): Item {
+  return item;
+}
+
 /** What a drop's viewers are shown of it: an item's base, tier, rarity, and line, never its stat lines, or a trophy's kind. */
 function lootContentsMessage(contents: LootContents): LootContentsMessage {
   switch (contents.kind) {
@@ -1389,8 +1394,7 @@ export class SpaceActor {
     if (player === undefined || item === undefined || isFallen(player)) return;
     const hand = HANDS.find((worn) => player.inventory.equipped[worn]?.id === item.id);
     player.inventory = withoutItem(player.inventory, item.id);
-    const { baseId, tier, rarity, affixes, line } = item;
-    const contents: LootContents = { kind: 'item', item: { baseId, tier, rarity, affixes, ...(line === undefined ? {} : { line }) } };
+    const contents: LootContents = { kind: 'item', item: withoutId(item) };
     const from = player.character.position;
     const landing = throwLanding(this.collision, from, heading, THROW_DISTANCE, this.npcBodies);
     this.layLoot(undefined, landing, contents, { x: from.x, z: from.z, entityId, ...(hand === undefined ? {} : { hand }) });

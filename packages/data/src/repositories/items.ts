@@ -1,6 +1,6 @@
 import type { Kysely } from 'kysely';
-import { isAffixId, isBagPlace, isBaseItemId, isEquipSlot, isRarity, isRole, isSetTier, isTier, slotsFor } from '@somnio/core';
-import type { BaggedItem, EquipSlot, Inventory, ItemInstance, Rarity, RolledAffix, Tier } from '@somnio/core';
+import { isAffixId, isBagPlace, isBaseItemId, isEquipSlot, isRarity, isRole, isTier, itemOf, slotsFor } from '@somnio/core';
+import type { BaggedItem, EquipSlot, Inventory, ItemInstance, RolledAffix } from '@somnio/core';
 import type { SomnioDatabase } from '../db.ts';
 import type { Database } from '../schema.ts';
 import { RepositoryDecodingError } from './errors.ts';
@@ -46,19 +46,15 @@ type ItemRecord = {
   affixes: unknown;
 };
 
+/** An item is stored as `itemOf` makes it, with a line exactly when it is epic. */
 function decodeItem(row: ItemRecord): ItemInstance {
   if (!isBaseItemId(row.base_id)) throw new RepositoryDecodingError('base_id', row.base_id);
   if (!isTier(row.tier)) throw new RepositoryDecodingError('tier', String(row.tier));
   if (!isRarity(row.rarity)) throw new RepositoryDecodingError('rarity', row.rarity);
-  const line = decodeLine(row.line, row.rarity, row.tier);
-  return { id: row.id, baseId: row.base_id, tier: row.tier, rarity: row.rarity, affixes: decodeAffixes(row.affixes), ...(line === undefined ? {} : { line }) };
-}
-
-/** An item has a line exactly when it is epic, and only at a tier set pieces are made at. */
-function decodeLine(raw: string | null, rarity: Rarity, tier: Tier): ItemInstance['line'] {
-  if (raw === null && rarity !== 'epic') return undefined;
-  if (raw === null || !isRole(raw) || rarity !== 'epic' || !isSetTier(tier)) throw new RepositoryDecodingError('line', String(raw));
-  return raw;
+  if (row.line !== null && !isRole(row.line)) throw new RepositoryDecodingError('line', row.line);
+  const item = itemOf({ baseId: row.base_id, tier: row.tier, rarity: row.rarity, affixes: decodeAffixes(row.affixes), line: row.line ?? undefined });
+  if (item === undefined) throw new RepositoryDecodingError('line', String(row.line));
+  return { id: row.id, ...item };
 }
 
 function decodeAffixes(raw: unknown): RolledAffix[] {

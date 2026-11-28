@@ -10,7 +10,7 @@ import { EDGE_TOLERANCE, distance } from './geometry.ts';
 import type { Point } from './geometry.ts';
 import { headingRadians } from './heading.ts';
 import type { Heading } from './heading.ts';
-import { BASE_ITEMS, NEUTRAL_RARITIES, baseItem, isWardrobeBase, commonItem } from './items.ts';
+import { BASE_ITEMS, NEUTRAL_RARITIES, baseItem, isSetTier, isWardrobeBase, commonItem } from './items.ts';
 import type { BaseItemId, Item, ItemInstance, NeutralRarity, Tier } from './items.ts';
 import { TRIAL_REWARDS } from './lucidity.ts';
 import type { QuestReward } from './quests.ts';
@@ -148,7 +148,7 @@ export function usableBy(baseId: BaseItemId, role: Role | undefined): boolean {
   return offHandNeed(baseId) === (reward === undefined ? undefined : offHandNeed(reward));
 }
 
-/** The chance that a boss's drop of armour or jewellery for a dreamer with a role is a piece of that role's set. */
+/** The chance that a boss's drop of armour or jewellery for a dreamer with a role, at a tier of `SET_TIERS`, is a piece of that role's set. */
 export const SET_PIECE_CHANCE = 0.5;
 
 /**
@@ -156,8 +156,8 @@ export const SET_PIECE_CHANCE = 0.5;
  * from every other dreamer's: for each of the rank's rolls, by its chance, an item rolled at the
  * tier, at a rarity by the weights, of a droppable base the role can use, or by the open share of
  * any droppable base, each base as likely as any other. A boss's drop of armour or jewellery for a
- * dreamer with a role is, by `SET_PIECE_CHANCE`, a piece of the role's set instead
- * (`rollSetPiece`). `random` gives rolls in `[0, 1)`.
+ * dreamer with a role, at a tier of `SET_TIERS`, is by `SET_PIECE_CHANCE` a piece of the role's set
+ * instead (`rollSetPiece`). `random` gives rolls in `[0, 1)`.
  */
 export function rollDrops(tier: Tier, rank: DropRank, role: Role | undefined, random: () => number): Item[] {
   const odds: DropOdds = DROP_ODDS[rank];
@@ -168,7 +168,7 @@ export function rollDrops(tier: Tier, rank: DropRank, role: Role | undefined, ra
     if (random() >= odds.chance) continue;
     const from = random() < odds.openShare ? bases : usable;
     const baseId = from[Math.floor(random() * from.length)]!;
-    if (rank === 'boss' && role !== undefined && isWardrobeBase(baseId) && random() < SET_PIECE_CHANCE) {
+    if (rank === 'boss' && role !== undefined && isSetTier(tier) && isWardrobeBase(baseId) && random() < SET_PIECE_CHANCE) {
       drops.push(rollSetPiece(baseId, tier, role, random));
     } else {
       drops.push(rollItem(baseId, tier, rarityBy(odds.rarities, random()), random));
@@ -183,11 +183,11 @@ export const QUEST_GEAR_RARITIES = { common: 0, uncommon: 70, rare: 30 } as cons
 /**
  * The item a quest's gear reward gives a dreamer of the role: one rolled at the tier, of a droppable
  * base the role can use, at the reward's `gearRarity` when given, else by `QUEST_GEAR_RARITIES`. A
- * `setPiece` reward to a dreamer with a role is a piece of the role's set instead, of a droppable
- * armour or jewellery base (`rollSetPiece`). `random` gives rolls in `[0, 1)`.
+ * `setPiece` reward to a dreamer with a role, at a tier of `SET_TIERS`, is a piece of the role's set
+ * instead, of a droppable armour or jewellery base (`rollSetPiece`). `random` gives rolls in `[0, 1)`.
  */
 export function rollQuestGear(tier: Tier, role: Role | undefined, random: () => number, reward: Pick<QuestReward, 'gearRarity' | 'setPiece'> = {}): Item {
-  if (reward.setPiece === true && role !== undefined) {
+  if (reward.setPiece === true && role !== undefined && isSetTier(tier)) {
     const wardrobe = droppableBases(tier).filter(isWardrobeBase);
     return rollSetPiece(wardrobe[Math.floor(random() * wardrobe.length)]!, tier, role, random);
   }

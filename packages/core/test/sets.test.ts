@@ -1,12 +1,12 @@
 import type { EquipSlot, Role } from '@somnio/protocol';
 import { describe, expect, it } from 'vitest';
-import type { BaseItemId, Equipment, Item } from '../src/items.ts';
+import type { Equipment, Item, WardrobeBaseId } from '../src/items.ts';
 import { NO_SET_BONUSES, SET_BONUSES, setBonusesOf, setPieces, shownSetPieces } from '../src/sets.ts';
 import type { SetStep } from '../src/sets.ts';
 import { common } from './support/items.ts';
 
 /** Every slot an armour or jewellery piece is worn in, with a base worn there. */
-const ARMOUR_SLOTS: readonly [EquipSlot, BaseItemId][] = [
+const ARMOUR_SLOTS: readonly [EquipSlot, WardrobeBaseId][] = [
   ['head', 'cap'],
   ['shoulders', 'shoulders'],
   ['chest', 'tunic'],
@@ -18,7 +18,7 @@ const ARMOUR_SLOTS: readonly [EquipSlot, BaseItemId][] = [
   ['bracelet2', 'bracelet'],
 ];
 
-const piece = (baseId: BaseItemId, line: Role): Item => ({ baseId, tier: 3, rarity: 'epic', affixes: [], line });
+const piece = (baseId: WardrobeBaseId, line: Role): Item => ({ baseId, tier: 3, rarity: 'epic', affixes: [], line });
 
 /** The first `count` armour and jewellery slots wearing a piece of the line's set, and the hands holding neutral items. */
 const wearing = (count: number, line: Role): Equipment => ({

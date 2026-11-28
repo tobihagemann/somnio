@@ -1334,7 +1334,7 @@ describe('the Character window', () => {
         bag: [
           { place: 5, item: { ...item('dagger'), rarity: 'uncommon' } },
           { place: 0, item: item('moonstone') },
-          { place: 2, item: { ...item('cap', 'wimple'), tier: 3, rarity: 'epic', line: 'healer' } },
+          { place: 2, item: { id: 'wimple', baseId: 'cap', tier: 3, rarity: 'epic', affixes: [], line: 'healer' } },
         ],
       },
       FIGHTER,

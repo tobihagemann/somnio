@@ -250,7 +250,7 @@ describe('the inventory frame', () => {
   });
 
   /** Only a build the server's items outrun reads such a frame; it shows what it knows rather than what it would mislabel. */
-  it('leaves out an item of an unknown base, tier, or affix, one worn where its base does not fit, and a set piece at a tier with no design', () => {
+  it('leaves out an item of an unknown base, tier, or affix, one worn where its base does not fit, and a set piece of a base or at a tier with no design', () => {
     const message = inventoryMessage(inventory);
     const { item: cap } = message.bag[0]!;
     const { item: setPiece } = message.bag[1]!;
@@ -263,6 +263,7 @@ describe('the inventory frame', () => {
         { place: 6, item: { ...cap, tier: 9 } },
         { place: 7, item: { ...cap, affixes: [{ affixId: 'luck', value: 1 }] } },
         { place: 8, item: { ...setPiece, id: 'tier-1-wimple', tier: 1 } },
+        { place: 9, item: { ...setPiece, id: 'healers-sword', baseId: 'sword' } },
       ],
     });
     expect(read).toEqual(inventory);

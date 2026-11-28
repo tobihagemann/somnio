@@ -141,7 +141,7 @@ function actionRow(action: HTMLElement): HTMLElement {
 
 /** A row of the shop: the item's icon edged and its name in its rarity's colour, with its rarity unless common, what it does, a set piece's set as its tip says it, and the button that trades it. */
 function tradeRow(attributes: Record<string, string>, item: Item, reader: ItemReader, notes: readonly HTMLElement[], action: HTMLButtonElement): HTMLElement {
-  const icon = itemIcon(item.baseId, item.tier, item.line);
+  const icon = itemIcon(item);
   icon.classList.add('ware-icon', `hud-rarity--${item.rarity}`);
   return element('div', {
     className: 'ware-row',

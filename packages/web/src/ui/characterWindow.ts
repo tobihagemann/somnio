@@ -404,7 +404,7 @@ export class CharacterWindow {
         'aria-haspopup': 'dialog',
         'aria-expanded': 'false',
       },
-      children: [itemIcon(item.baseId, item.tier, item.line)],
+      children: [itemIcon(item)],
     });
     const worn = 'slot' in source;
     const warning = worn && !bagHasRoom(this.inventory) ? { warning: t('Your bag is full.') } : {};
@@ -583,7 +583,7 @@ export class CharacterWindow {
     this.ghost.style.width = `${from?.width ?? 0}px`;
     this.ghost.style.height = `${from?.height ?? 0}px`;
     this.ghost.replaceChildren(
-      itemIcon(carry.item.baseId, carry.item.tier, carry.item.line),
+      itemIcon(carry.item),
       element('span', { className: 'hud-ghost__caption hud-ghost__caption--drop', text: t('Drop') }),
       this.ghostRefusal,
     );

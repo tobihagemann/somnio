@@ -176,7 +176,7 @@ describe('rollQuestGear', () => {
 });
 
 describe('set pieces in the data', () => {
-  // `rollSetPiece` throws outside `SET_TIERS`, so a boss or a set piece reward at another tier would throw in a space's step.
+  // A set piece is made only at a tier of `SET_TIERS`, so a boss or a set piece reward at another tier would give an ordinary item instead.
   it('come only from a boss and a quest reward at a tier set pieces are made at', () => {
     const bossTiers = Object.keys(BOSS_MOVES).map((kind) => [kind, MONSTER_KINDS[kind as keyof typeof BOSS_MOVES].tier] as const);
     const rewardTiers = Object.entries(QUESTS).flatMap(([questId, quest]) => (quest.reward?.setPiece === true ? [[questId, quest.reward.gear] as const] : []));

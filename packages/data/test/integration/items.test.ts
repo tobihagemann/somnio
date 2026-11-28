@@ -76,7 +76,8 @@ describe('item repository', () => {
   it('saves and reloads a set piece with its line', async () => {
     const character = await newCharacter();
     const wimple: ItemInstance = {
-      ...commonInstance('cap'),
+      id: newItemId(),
+      baseId: 'cap',
       tier: 3,
       rarity: 'epic',
       line: 'healer',
@@ -169,6 +170,7 @@ describe('item repository', () => {
     ['an item worn in a slot its base does not fit', sql`UPDATE items SET equipped_slot = 'offHand'`],
     ['a bracelet worn round the neck', sql`UPDATE items SET base_id = 'bracelet', equipped_slot = 'neck'`],
     ['a set piece at a tier no set is made at', sql`UPDATE items SET base_id = 'cap', equipped_slot = 'head', rarity = 'epic', line = 'healer'`],
+    ['a set piece of a base no set is made of', sql`UPDATE items SET tier = 3, rarity = 'epic', line = 'healer'`],
   ])('throws on %s it does not know', async (_label, corrupt) => {
     const character = await newCharacter({ coins: 0, equipped: { mainHand: commonInstance('cudgel') }, bag: [] });
     await sql`${corrupt} WHERE character_id = ${character.id}`.execute(harness.db);

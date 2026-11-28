@@ -229,20 +229,39 @@ export interface RolledAffix {
   value: number;
 }
 
-/** One item as a dreamer has it: its base, the tier it rolled at, and the stat lines its rarity gave it. */
-export interface Item {
+/** An item of no role's set: its base, the tier it rolled at, and the stat lines its rarity gave it. */
+export interface NeutralItem {
   baseId: BaseItemId;
   tier: Tier;
-  rarity: Rarity;
+  rarity: NeutralRarity;
   affixes: readonly RolledAffix[];
-  /** The role whose set the item is a piece of, present exactly when it is epic. */
-  line?: Role;
+  line?: undefined;
 }
 
-/** An item a dreamer has, named by an id of its own while they keep it. */
-export interface ItemInstance extends Item {
-  id: string;
+/** A piece of a role's set: epic, of armour or jewellery, at a tier its line has a design at. */
+export interface SetPiece {
+  baseId: WardrobeBaseId;
+  tier: SetTier;
+  rarity: 'epic';
+  affixes: readonly RolledAffix[];
+  /** The role whose set the item is a piece of. */
+  line: Role;
 }
+
+/** An item: neutral, or a piece of a role's set. */
+export type Item = NeutralItem | SetPiece;
+
+/** An item a dreamer has, named by an id of its own while they keep it. */
+export type ItemInstance = Item & { id: string };
+
+/** A neutral item a dreamer has, under its own id. */
+export type NeutralInstance = NeutralItem & { id: string };
+
+/**
+ * What an item's design goes by, for its name and its icon: its base, its tier, and a set piece's
+ * line. It is one `Pick` of each kind of item, so a line stays tied to a set piece's base and tier.
+ */
+export type ItemDesign = Pick<NeutralItem, 'baseId' | 'tier' | 'line'> | Pick<SetPiece, 'baseId' | 'tier' | 'line'>;
 
 /**
  * A new item id: a UUIDv7, whose leading 48 bits are the milliseconds it was made at, so a
@@ -262,13 +281,23 @@ export function newItemId(): string {
 }
 
 /** A common item of the base, at the base's tier: what Mercus sells and a trial gives. */
-export function commonItem(baseId: BaseItemId): Item {
+export function commonItem(baseId: BaseItemId): NeutralItem {
   return { baseId, tier: baseItem(baseId).tier, rarity: 'common', affixes: [] };
 }
 
 /** A common item of the base, at the base's tier, under a new id. */
-export function commonInstance(baseId: BaseItemId): ItemInstance {
+export function commonInstance(baseId: BaseItemId): NeutralInstance {
   return { id: newItemId(), ...commonItem(baseId) };
+}
+
+/**
+ * The item of the fields, read from outside: with a line exactly when it is epic, and then only of
+ * armour or jewellery at a tier set pieces are made at, so every item it gives has a design. Any
+ * other fields make no item.
+ */
+export function itemOf({ baseId, tier, rarity, affixes, line }: Omit<Item, 'rarity' | 'line'> & { rarity: Rarity; line: Role | undefined }): Item | undefined {
+  if (line === undefined) return rarity === 'epic' ? undefined : { baseId, tier, rarity, affixes };
+  return rarity === 'epic' && isWardrobeBase(baseId) && isSetTier(tier) ? { baseId, tier, rarity, affixes, line } : undefined;
 }
 
 /** What a dreamer wears, by slot. */
@@ -284,20 +313,25 @@ export function equipSlot(equipment: Equipment, baseId: BaseItemId): EquipSlot {
 export type Hands = Pick<Equipment, 'mainHand' | 'offHand'>;
 
 /**
- * The catalog key of the display name of an item of the base at the tier it rolled at, which the
- * consumer resolves in its locale: the base's own name, or the design armour and jewellery are made
- * in at that tier, a set piece's in its line's. An unknown id, a tier outside 1 to 5 for armour and
- * jewellery, or a line at a tier with no design of it resolves to `undefined` so a missing entry
- * surfaces rather than rendering a wrong label. The typed overload returns a string because every
- * item past `knownItem` and the item repository carries a line only at a tier of `SET_TIERS`.
+ * The catalog key of the display name of an item of the design, which the consumer resolves in its
+ * locale: the base's own name, or the design armour and jewellery are made in at the tier, a set
+ * piece's in its line's.
  */
-export function itemLabelKey(baseId: BaseItemId, tier: Tier, line?: Role): string;
-export function itemLabelKey(baseId: string, tier: number, line?: Role): string | undefined;
+export function itemDesignLabelKey(design: ItemDesign): string {
+  if (design.line !== undefined) return BASE_ITEMS[design.baseId].lineLabelKeys[design.line][design.tier];
+  return isWardrobeBase(design.baseId) ? BASE_ITEMS[design.baseId].tierLabelKeys[design.tier] : BASE_ITEMS[design.baseId].labelKey;
+}
+
+/**
+ * The catalog key of the display name of an item a frame names by its base, tier, and line, as
+ * `itemDesignLabelKey` gives it. An unknown id, a tier outside 1 to 5 for armour and jewellery, or a
+ * line on a base or at a tier with no design of it resolves to `undefined` so a missing entry
+ * surfaces rather than rendering a wrong label.
+ */
 export function itemLabelKey(baseId: string, tier: number, line?: Role): string | undefined {
   if (!isBaseItemId(baseId)) return undefined;
-  const base = baseItem(baseId);
-  if (base.tierLabelKeys === undefined) return base.labelKey;
+  if (!isWardrobeBase(baseId)) return line === undefined ? BASE_ITEMS[baseId].labelKey : undefined;
   if (!isTier(tier)) return undefined;
-  if (line === undefined) return base.tierLabelKeys[tier];
-  return isSetTier(tier) ? base.lineLabelKeys[line][tier] : undefined;
+  if (line === undefined) return itemDesignLabelKey({ baseId, tier });
+  return isSetTier(tier) ? itemDesignLabelKey({ baseId, tier, line }) : undefined;
 }

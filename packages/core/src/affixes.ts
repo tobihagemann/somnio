@@ -1,6 +1,6 @@
 import type { Role } from '@somnio/protocol';
-import { baseItem, isSetTier, itemLabelKey } from './items.ts';
-import type { BaseItemId, Item, NeutralRarity, Rarity, RolledAffix, SlotKind, StatId, Tier, WardrobeBaseId } from './items.ts';
+import { baseItem, itemDesignLabelKey } from './items.ts';
+import type { BaseItemId, Item, NeutralItem, NeutralRarity, Rarity, RolledAffix, SetPiece, SetTier, SlotKind, StatId, Tier, WardrobeBaseId } from './items.ts';
 
 /** A stat line an item may roll. */
 interface Affix {
@@ -112,18 +112,16 @@ function rollAffixes(baseId: BaseItemId, tier: Tier, rarity: Rarity, random: () 
  * An item of the base rolled at the tier and rarity, with the affixes the rarity rolls. `random`
  * gives rolls in `[0, 1)`. The Moonstone is never rolled.
  */
-export function rollItem(baseId: BaseItemId, tier: Tier, rarity: NeutralRarity, random: () => number): Item {
+export function rollItem(baseId: BaseItemId, tier: Tier, rarity: NeutralRarity, random: () => number): NeutralItem {
   if (baseItem(baseId).trialOnly === true) throw new Error(`${baseId} is never rolled`);
   return { baseId, tier, rarity, affixes: rollAffixes(baseId, tier, rarity, random) };
 }
 
 /**
  * A piece of the role's set of the base, rolled at the tier: epic, with the affixes an epic rolls.
- * It is the one way an epic is made, and only at a tier of `SET_TIERS`, the tiers its designs exist at.
- * `random` gives rolls in `[0, 1)`.
+ * It is the one way an epic is made. `random` gives rolls in `[0, 1)`.
  */
-export function rollSetPiece(baseId: WardrobeBaseId, tier: Tier, role: Role, random: () => number): Item {
-  if (!isSetTier(tier)) throw new Error(`no set piece is made at tier ${tier}`);
+export function rollSetPiece(baseId: WardrobeBaseId, tier: SetTier, role: Role, random: () => number): SetPiece {
   return { baseId, tier, rarity: 'epic', affixes: rollAffixes(baseId, tier, 'epic', random), line: role };
 }
 
@@ -148,7 +146,7 @@ function strongestRoll(item: Item): RolledAffix | undefined {
 
 /** The catalog keys of an item's name: its base's at its tier in its line, and the suffix of its strongest roll when it has one. An epic takes no suffix, since it goes by its design alone. */
 export function itemNameKeys(item: Item): { labelKey: string; suffixKey?: string } {
-  const labelKey = itemLabelKey(item.baseId, item.tier, item.line);
+  const labelKey = itemDesignLabelKey(item);
   const strongest = item.rarity === 'epic' ? undefined : strongestRoll(item);
   return strongest === undefined ? { labelKey } : { labelKey, suffixKey: affix(strongest.affixId).nameKey };
 }

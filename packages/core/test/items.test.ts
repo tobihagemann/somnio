@@ -245,6 +245,7 @@ describe('items', () => {
       ['Crypt grille', 'Wax taper', 'Reed eye'],
     ]);
     expect(itemLabelKey('cap', 1, 'healer')).toBeUndefined();
+    expect(itemLabelKey('sword', 3, 'healer')).toBeUndefined();
   });
 
   it('resolves nothing for an unknown id, the purse and inherited object keys included, or for a tier no design is made in', () => {

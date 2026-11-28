@@ -1,5 +1,5 @@
 import { COMBAT, ELITE_TRAIT_IDS, NO_LUCIDITY, NO_STATS, OUTDOOR_SPACE_ID, fullPools, headingFromVector, monsterKind } from '@somnio/core';
-import type { Character, EliteTraitId, Inventory, ItemInstance, Lucidity, Point, Sector, TeachingId } from '@somnio/core';
+import type { Character, EliteTraitId, Inventory, ItemInstance, Lucidity, NeutralInstance, Point, Sector, TeachingId } from '@somnio/core';
 import type { Energy, Role, SomnioMessage } from '@somnio/protocol';
 import { carrying, common } from '../../../core/test/support/items.ts';
 import { ranks } from '../../../core/test/support/ranks.ts';
@@ -15,9 +15,9 @@ const STEP_SECONDS = 0.05;
 
 export const COINS = 100;
 /** Common tier-1 items under fixed ids. */
-export const CUDGEL: ItemInstance = { id: '00000000-0000-7000-8000-000000000001', ...common('cudgel') };
-export const MOONSTONE: ItemInstance = { id: '00000000-0000-7000-8000-000000000002', ...common('moonstone') };
-export const WAND: ItemInstance = { id: '00000000-0000-7000-8000-000000000003', ...common('wand') };
+export const CUDGEL: NeutralInstance = { id: '00000000-0000-7000-8000-000000000001', ...common('cudgel') };
+export const MOONSTONE: NeutralInstance = { id: '00000000-0000-7000-8000-000000000002', ...common('moonstone') };
+export const WAND: NeutralInstance = { id: '00000000-0000-7000-8000-000000000003', ...common('wand') };
 
 export { carrying };
 

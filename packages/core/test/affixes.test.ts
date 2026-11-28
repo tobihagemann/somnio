@@ -88,10 +88,6 @@ describe('rollSetPiece', () => {
     }
   });
 
-  it('makes no set piece at a tier its designs do not exist at', () => {
-    expect(() => rollSetPiece('cap', 1, 'healer', seededSequence(1))).toThrow();
-  });
-
   it("names a set piece by its line's design alone, without the suffix of its strongest roll", () => {
     expect(itemNameKeys(rollSetPiece('cap', 3, 'healer', seededSequence(1)))).toEqual({ labelKey: 'Linen wimple' });
   });

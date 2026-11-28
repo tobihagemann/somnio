@@ -1,5 +1,5 @@
-import { isSetTier, isWardrobeBase } from '@somnio/core';
-import type { BaseItemId, SetTier, Tier, WardrobeBaseId } from '@somnio/core';
+import { isWardrobeBase } from '@somnio/core';
+import type { BaseItemId, ItemDesign, SetTier, Tier, WardrobeBaseId } from '@somnio/core';
 import type { Role } from '@somnio/protocol';
 import { element } from './dom';
 
@@ -130,18 +130,12 @@ export const WARDROBE_LINE_ICONS: Record<WardrobeBaseId, Record<Role, Record<Set
   },
 };
 
-/**
- * An item's icon as an element, decorative by construction: the accessible name lives on the control.
- * A line counts only on armour and jewellery, and comes only at a tier of `SET_TIERS`, as `knownItem`
- * holds every item to, so one at another tier throws rather than drawing a design it is not.
- */
-export function itemIcon(baseId: BaseItemId, tier: Tier, line: Role | undefined): HTMLImageElement {
-  return element('img', { className: 'hud-item-icon', attributes: { src: itemIconSource(baseId, tier, line), alt: '', draggable: 'false' } });
+/** An item's icon as an element, decorative by construction: the accessible name lives on the control. */
+export function itemIcon(design: ItemDesign): HTMLImageElement {
+  return element('img', { className: 'hud-item-icon', attributes: { src: itemIconSource(design), alt: '', draggable: 'false' } });
 }
 
-function itemIconSource(baseId: BaseItemId, tier: Tier, line: Role | undefined): string {
-  if (!isWardrobeBase(baseId)) return ITEM_ICONS[baseId];
-  if (line === undefined) return WARDROBE_ICONS[baseId][tier];
-  if (!isSetTier(tier)) throw new Error(`no set piece is made at tier ${tier}`);
-  return WARDROBE_LINE_ICONS[baseId][line][tier];
+function itemIconSource(design: ItemDesign): string {
+  if (design.line !== undefined) return WARDROBE_LINE_ICONS[design.baseId][design.line][design.tier];
+  return isWardrobeBase(design.baseId) ? WARDROBE_ICONS[design.baseId][design.tier] : ITEM_ICONS[design.baseId];
 }

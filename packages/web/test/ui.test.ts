@@ -1941,7 +1941,7 @@ describe('the service panel', () => {
     const sold = (panel: ServicePanel): (string | null)[] => [...panel.root.querySelectorAll('[data-item]')].map((node) => node.getAttribute('data-item'));
     const sale = (panel: ServicePanel, id: string): string => panel.root.querySelector(`[data-item="${id}"]`)?.textContent ?? '';
     const rare: ItemInstance = { ...item('amulet', 'amulet-rare'), rarity: 'rare', affixes: [{ affixId: 'spirit', value: 6 }] };
-    const wimple: ItemInstance = { ...item('cap', 'wimple'), tier: 3, rarity: 'epic', line: 'healer' };
+    const wimple: ItemInstance = { id: 'wimple', baseId: 'cap', tier: 3, rarity: 'epic', affixes: [], line: 'healer' };
 
     it('offers every ware, says what each costs and does, and lists no bag to sell from', () => {
       const p = mount();

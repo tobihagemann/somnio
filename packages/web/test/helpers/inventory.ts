@@ -1,11 +1,11 @@
 import { inventoryMessage, rollSetPiece } from '@somnio/core';
-import type { BaseItemId, Inventory, InventoryChange, ItemInstance, WardrobeBaseId } from '@somnio/core';
+import type { BaseItemId, Inventory, InventoryChange, ItemInstance, NeutralInstance, WardrobeBaseId } from '@somnio/core';
 import type { Role, SomnioMessage } from '@somnio/protocol';
 
 export { carrying } from '../../../core/test/support/items.ts';
 
 /** A common tier-1 item of the base, under an id named for it. */
-export function item(baseId: BaseItemId, id = `${baseId}-1`): ItemInstance {
+export function item(baseId: BaseItemId, id = `${baseId}-1`): NeutralInstance {
   return { id, baseId, tier: 1, rarity: 'common', affixes: [] };
 }
 

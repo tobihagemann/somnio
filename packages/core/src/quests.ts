@@ -43,7 +43,7 @@ export interface QuestReward {
   gear?: Tier;
   /** The one rarity the item is rolled at, as a bounty's is uncommon; without it, `QUEST_GEAR_RARITIES` rolls one. */
   gearRarity?: NeutralRarity;
-  /** The item is a piece of the dreamer's role's set, for a dreamer with a role. */
+  /** The item is a piece of the dreamer's role's set, for a dreamer with a role, at a tier of `SET_TIERS`. */
   setPiece?: true;
 }
 

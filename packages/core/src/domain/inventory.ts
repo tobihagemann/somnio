@@ -1,7 +1,7 @@
 import { EQUIP_SLOTS, SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { InventoryMessage, ItemMessage, Role } from '@somnio/protocol';
 import { isAffixId } from '../affixes.ts';
-import { equipSlot, isBaseItemId, isSetTier, isTier, slotsFor } from '../items.ts';
+import { equipSlot, isBaseItemId, isTier, itemOf, slotsFor } from '../items.ts';
 import type { BaseItemId, EquipSlot, Item, ItemInstance } from '../items.ts';
 
 /** An item in the bag, at the place the dreamer keeps it, from 0 to one less than `maxBagItems`. */
@@ -179,10 +179,10 @@ function itemMessage({ id, baseId, tier, rarity, affixes, line }: ItemInstance):
   return { id, baseId, tier, rarity, affixes: affixes.map(({ affixId, value }) => ({ affixId, value })), ...(line === undefined ? {} : { line }) };
 }
 
-/** An item with a line is known only at a tier set pieces are made at, so every item past it has a design. */
+/** An item is known only of a base, a tier, and affixes this build knows, and as `itemOf` makes it, so every item past it has a design. */
 function knownItem({ id, baseId, tier, rarity, affixes, line }: ItemMessage): ItemInstance | undefined {
   const known = affixes.flatMap(({ affixId, value }) => (isAffixId(affixId) ? [{ affixId, value }] : []));
   if (!isBaseItemId(baseId) || !isTier(tier) || known.length < affixes.length) return undefined;
-  if (line !== undefined && !isSetTier(tier)) return undefined;
-  return { id, baseId, tier, rarity, affixes: known, ...(line === undefined ? {} : { line }) };
+  const item = itemOf({ baseId, tier, rarity, affixes: known, line });
+  return item === undefined ? undefined : { id, ...item };
 }

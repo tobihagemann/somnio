@@ -1,4 +1,4 @@
-import type { AbilityPool, Item } from '@somnio/core';
+import type { AbilityPool, ItemDesign } from '@somnio/core';
 import type { Rarity } from '@somnio/protocol';
 import { FINGER_HOLD_MS, TAP_SLOP_PX } from '@/client';
 import { element, setHidden } from './dom';
@@ -29,7 +29,7 @@ export interface Tip {
   /** An item's rarity, whose colour the title takes. */
   rarity?: Rarity;
   /** An item's base, tier, and line, whose icon leads the tip, edged in the rarity's colour. */
-  icon?: Pick<Item, 'baseId' | 'tier' | 'line'>;
+  icon?: ItemDesign;
   /** Beside the title: the key that works the part, or the seconds an effect has left. */
   aside?: string;
   facts?: readonly TipFact[];
@@ -227,7 +227,7 @@ export function tipNodes(tip: Tip): HTMLElement[] {
       : [
           element('div', {
             className: tip.rarity === undefined ? 'hud-tip__top' : `hud-tip__top hud-rarity--${tip.rarity}`,
-            children: [itemIcon(tip.icon.baseId, tip.icon.tier, tip.icon.line), element('div', { className: 'hud-tip__titles', children: titles })],
+            children: [itemIcon(tip.icon), element('div', { className: 'hud-tip__titles', children: titles })],
           }),
         ];
   return [
