@@ -1,7 +1,7 @@
 import { ROLES, SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { QuestShareOutcome, QuestsMessage, Role, SectorView, Service } from '@somnio/protocol';
 import questsJSON from '../data/quests.json' with { type: 'json' };
-import { bountyDay, bountyIdOf, bountyOf, bountyQuest, isBountyId } from './bounties.ts';
+import { BOARD_SIZE, bountyDay, bountyIdOf, bountyOf, bountyQuest, isBountyId, offeredBounty } from './bounties.ts';
 import type { Bounty, BountyId } from './bounties.ts';
 import { distance } from './geometry.ts';
 import type { Point } from './geometry.ts';
@@ -185,12 +185,29 @@ export function mayAccept(questId: QuestId, log: QuestLog, lucidity: QuestReader
   return taught === undefined || teachingStanding(lucidity.ranks, taught) === 'task';
 }
 
-/** Whether a dreamer may take the bounty on: one they neither hold nor turned in, with room in the log. */
+/** Whether a dreamer may take the bounty on: one they neither hold nor turned in, with room in the log, on a day they have not closed (`bountiesClosed`). */
 export function mayTakeBounty(bounty: Bounty, log: QuestLog): boolean {
-  return !questLogFull(log) && !heldOrDone(bountyIdOf(bounty), log);
+  return !questLogFull(log) && !heldOrDone(bountyIdOf(bounty), log) && bountiesClosed(bounty.day, log) === undefined;
 }
 
-function heldOrDone(questId: QuestOrBountyId, log: QuestLog): boolean {
+/** Why a dreamer may take on no other bounty of a day: until they give one up, or until the board turns. */
+export type BountiesClosed = 'giveUpOne' | 'nextDay';
+
+/**
+ * Why the dreamer may take on no other bounty of day `day`, or `undefined` while they hold and have
+ * turned in fewer than `BOARD_SIZE` of its bounties together, wherever each was rolled. It is
+ * `nextDay` once that many are turned in, else `giveUpOne`. A bounty given up leaves no trace in the
+ * log, so the day opens again whenever the count falls below three.
+ */
+export function bountiesClosed(day: number, log: QuestLog): BountiesClosed | undefined {
+  const ofDay = (questId: QuestOrBountyId): boolean => isBountyId(questId) && bountyDay(questId) === day;
+  const turnedIn = log.done.filter(ofDay).length;
+  if (turnedIn + log.active.filter((held) => ofDay(held.questId)).length < BOARD_SIZE) return undefined;
+  return turnedIn >= BOARD_SIZE ? 'nextDay' : 'giveUpOne';
+}
+
+/** Whether taking the quest on would do nothing, as one held or turned in. */
+export function heldOrDone(questId: QuestOrBountyId, log: QuestLog): boolean {
   return log.done.includes(questId) || log.active.some((held) => held.questId === questId);
 }
 
@@ -249,9 +266,22 @@ export function withBoardDay(log: QuestLog, day: number): { log: QuestLog; ranOu
 /** How long a dreamer a quest is shared with has to answer. */
 export const QUEST_OFFER_SECONDS = 30;
 
-/** Whether a held quest may be shared with the dreamers nearby: any but a trial. */
-export function mayShare(questId: QuestOrBountyId): boolean {
-  return trialRole(questId) === undefined;
+/** Whether a quest is a bounty the day's board does not offer, `offered` being the day's bounty of its id. */
+function offBoard(questId: QuestOrBountyId, offered: Bounty | undefined): boolean {
+  return isBountyId(questId) && offered === undefined;
+}
+
+/**
+ * Whether a held quest may be shared with the dreamers nearby: any but a trial, and a bounty only
+ * while the day's board offers it. `offered` is the day's bounty of its id.
+ */
+export function mayShare(questId: QuestOrBountyId, offered: Bounty | undefined): boolean {
+  return trialRole(questId) === undefined && !offBoard(questId, offered);
+}
+
+/** The bounties held that the day's board does not offer, as each was taken on, in the log's order. */
+export function offBoardBounties(log: QuestLog, bounties: readonly Bounty[]): Bounty[] {
+  return log.active.flatMap((held) => (offBoard(held.questId, offeredBounty(bounties, held.questId)) ? (held.definition ?? []) : []));
 }
 
 /**

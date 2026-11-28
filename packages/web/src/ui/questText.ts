@@ -1,5 +1,5 @@
-import { boardTurnsAt, heldQuest, isTeachingId, objectiveLines, roleLabelKey, teaching, turnInGrant } from '@somnio/core';
-import type { ActiveQuest, Bounty, ObjectiveLine, Quest, QuestReward } from '@somnio/core';
+import { boardTurnsAt, bountiesClosed, heldQuest, isTeachingId, objectiveLines, questLogFull, roleLabelKey, teaching, turnInGrant } from '@somnio/core';
+import type { ActiveQuest, BountiesClosed, Bounty, ObjectiveLine, Quest, QuestLog, QuestReward } from '@somnio/core';
 import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { Role } from '@somnio/protocol';
 import type { QuestTurnedIn } from '@/client';
@@ -72,6 +72,27 @@ function rewardItem(reward: QuestReward | undefined, role: Role | undefined): st
   if (reward.setPiece === true && role !== undefined) return t("a piece of your role's set");
   if (reward.gearRarity === 'uncommon') return t('an uncommon item');
   return t('a piece of gear');
+}
+
+/**
+ * Why the dreamer cannot take on a quest offered them, said beside a greyed-out Take, or `undefined`
+ * when neither of these holds it back. For a bounty (`bounty`) that is the day's three taken
+ * (`bountiesClosed`), else a full log. When both hold, only the cap's line is said, since making
+ * room in the log would not lift it.
+ */
+export function takeRefusal(bounty: Bounty | undefined, quests: QuestLog): string | undefined {
+  const closed = bounty === undefined ? undefined : bountiesClosed(bounty.day, quests);
+  if (closed !== undefined) return bountyClosedText(closed);
+  return questLogFull(quests) ? t('Your quest log is full. Give up a quest to take this one.') : undefined;
+}
+
+function bountyClosedText(closed: BountiesClosed): string {
+  switch (closed) {
+    case 'giveUpOne':
+      return t('You have taken three bounties today. Give up one you hold to take this one.');
+    case 'nextDay':
+      return t('You have taken three bounties today. New ones go up at 00:00 UTC.');
+  }
 }
 
 /** How full the quest log is, the quests held against its room, as the tracker and the Quest log say it: "4/10". */

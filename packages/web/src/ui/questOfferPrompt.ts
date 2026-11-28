@@ -1,16 +1,19 @@
-import { bountyQuest, quest, questLogFull } from '@somnio/core';
+import { bountyQuest, heldOrDone, quest } from '@somnio/core';
 import type { QuestLog } from '@somnio/core';
 import type { Role } from '@somnio/protocol';
 import { wholeSecondsLeft } from '@/client';
 import type { ClientQuestOffer } from '@/client';
 import { t } from '@/i18n';
 import { button, element, setHidden } from './dom';
-import { questLines, questTitle, rewardNote } from './questText';
+import { questLines, questTitle, rewardNote, takeRefusal } from './questText';
 
 /**
  * What a player sees when a dreamer near them shares a quest: who shares it, the quest with what it
- * asks and pays and where it is turned in, the seconds left to answer, and the two answers. Taking it is greyed out while the player's own quest log is full. It shows while
- * the offer waits, and goes once it is answered, its seconds run out, or the session lets it go.
+ * asks and pays and where it is turned in, the seconds left to answer, and the two answers. Take is
+ * greyed out beside a line saying why while the player's own quest log is full or, for a bounty,
+ * once they have taken three of its day. Take is hidden while they hold the quest or have turned it
+ * in. The prompt shows while the offer waits, and goes once it is answered, its seconds run out, or
+ * the session lets it go.
  */
 export class QuestOfferPrompt {
   readonly root: HTMLElement;
@@ -19,7 +22,8 @@ export class QuestOfferPrompt {
   private readonly body: HTMLElement;
   private readonly secondsLeft: HTMLElement;
   private readonly actions: HTMLElement;
-  private readonly logFull: HTMLElement;
+  /** Why Take is greyed out, shown beside it while it is. */
+  private readonly refusal: HTMLElement;
   private readonly onAnswer: (offerId: number, take: boolean) => void;
   /** Names the carrier, by its id, that a quest is turned in at. */
   private readonly carrierName: (carrierId: string) => string;
@@ -34,11 +38,11 @@ export class QuestOfferPrompt {
     this.body = element('div', { className: 'quest-offer-prompt__body' });
     this.secondsLeft = element('p', { className: 'form-note' });
     this.actions = element('div', { className: 'form-actions' });
-    this.logFull = element('p', { className: 'form-error', text: t('Your quest log is full. Give up a quest to take this one.') });
+    this.refusal = element('p', { className: 'form-error' });
     this.root = element('section', {
       className: 'fantasy-panel fantasy-panel--opaque quest-offer-prompt hidden',
       attributes: { 'aria-live': 'polite' },
-      children: [this.title, this.body, this.logFull, this.secondsLeft, this.actions],
+      children: [this.title, this.body, this.refusal, this.secondsLeft, this.actions],
     });
   }
 
@@ -52,9 +56,16 @@ export class QuestOfferPrompt {
       this.shown = shown;
       if (offer !== undefined) this.say(offer, study, role);
     }
-    const full = questLogFull(quests);
-    if (this.take !== undefined) this.take.disabled = full;
-    setHidden(this.logFull, !full);
+    // A quest the player took on elsewhere while the prompt shows, or has turned in, is not theirs
+    // to take again, so its Take goes rather than waiting on a remedy.
+    const taken = offer !== undefined && heldOrDone(offer.questId, quests);
+    const refusal = offer === undefined || taken ? undefined : takeRefusal(offer.bounty, quests);
+    if (this.take !== undefined) {
+      setHidden(this.take, taken);
+      this.take.disabled = refusal !== undefined;
+    }
+    setHidden(this.refusal, refusal === undefined);
+    if (refusal !== undefined && this.refusal.textContent !== refusal) this.refusal.textContent = refusal;
     this.tick(nowMs);
   }
 

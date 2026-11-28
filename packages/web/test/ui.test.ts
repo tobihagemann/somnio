@@ -31,6 +31,7 @@ import { SOMNIO_PROTOCOL_CONSTANTS, decodeSomnioMessage, encodeSomnioMessage } f
 import type { CharacterSummaryMessage, EntityMessage, LucidityMessage, Outfit, Service, SomnioMessage } from '@somnio/protocol';
 import type { Bounty, Inventory, ItemInstance, QuestId, QuestLog, Sector } from '@somnio/core';
 import { fakeSocketFactory } from './helpers/fakeSocket';
+import { expectSameElements } from './helpers/sameElements';
 import { tabTo } from './helpers/visibility';
 import type { FakeSocket } from './helpers/fakeSocket';
 import { interiorSector, outdoorSector } from '../../core/test/support/worldFixture.ts';
@@ -1887,14 +1888,18 @@ describe('the service panel', () => {
     it('shows one taken with how far it has come, one done with its turn-in, greyed out while the bag is full, and one turned in as such', () => {
       const p = mount();
       show(p, { active: [held(ARENA, 2)], done: [bountyIdOf(GRAVES)] });
-      expect(p.quest(bountyIdOf(ARENA))).toBe('Bounty: ArenaTakenDrive off 6 Ghosts there. 2 of 6Reward: 72c, an uncommon item');
+      expect(p.quest(bountyIdOf(ARENA))).toBe('Bounty: ArenaTakenDrive off 6 Ghosts there. 2 of 6Reward: 72c, an uncommon itemGive up');
       expect(p.quest(bountyIdOf(GRAVES))).toBe('Bounty: GraveyardTurned in');
-      expect(p.buttons()).toEqual(['Close']);
+      expect(p.buttons()).toEqual(['Give up', 'Close']);
+      expect(p.panel.root.querySelector('button[aria-label="Give up Bounty: Arena. Drive off 6 Ghosts there."]')).not.toBeNull();
+      p.press('Give up');
+      expect(p.calls).toEqual([`abandon:${bountyIdOf(ARENA)}`]);
+      p.calls.length = 0;
 
       const fullBag = Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxBagItems }, (_, index) => item('cap', `cap-${index}`));
       show(p, { active: [held(ARENA, 6)], done: [] }, [ARENA, GRAVES], carrying({ bag: fullBag }));
       expect(p.quest(bountyIdOf(ARENA))).toContain('Your bag is full. Make room in it before you turn this in.');
-      expect(p.buttons()).toEqual(['Turn in (disabled)', 'Take the quest', 'Close']);
+      expect(p.buttons()).toEqual(['Turn in (disabled)', 'Give up', 'Take the quest', 'Close']);
       show(p, { active: [held(ARENA, 6)], done: [] });
       expect(p.panel.root.querySelector('button[aria-label="Turn in Bounty: Arena. Drive off 6 Ghosts there."]')).not.toBeNull();
       p.press('Turn in');
@@ -1918,19 +1923,76 @@ describe('the service panel', () => {
       const taken: Bounty = { ...ARENA, count: 4, reward: { coins: 48, gear: 1 } };
       expect(bountyIdOf(taken)).toBe(bountyIdOf(ARENA));
       show(p, { active: [held(taken, 2)], done: [] });
-      expect(p.quest(bountyIdOf(ARENA))).toBe('Bounty: ArenaTakenDrive off 4 Ghosts there. 2 of 4Reward: 48c, an uncommon item');
+      expect(p.quest(bountyIdOf(ARENA))).toBe('Bounty: ArenaTakenDrive off 4 Ghosts there. 2 of 4Reward: 48c, an uncommon itemGive up');
       show(p, { active: [held(taken, 4)], done: [] });
       expect(p.panel.root.querySelector('button[aria-label="Turn in Bounty: Arena. Drive off 4 Ghosts there."]')).not.toBeNull();
     });
 
-    it('keeps its elements while the bounties and the log are unchanged', () => {
+    // Bounties of the day that an earlier roll of its board offered, before a deploy rolled it again.
+    const NORTH: Bounty = { day: 3, land: 'NorthWood', monsterKind: 'wolf', objective: 'driveOff', count: 8, reward: { coins: 48 } };
+    const CRYPT: Bounty = { day: 3, land: 'Crypt', monsterKind: 'skeleton-minion', objective: 'driveOff', count: 8, reward: { coins: 32, gear: 3 } };
+    const MEADOW: Bounty = { day: 3, land: 'NorthMeadow', monsterKind: 'ghost', objective: 'driveOff', count: 6, reward: { coins: 18 } };
+    const TODAY = [ARENA, GRAVES, { ...ARENA, land: 'WestMeadow' }];
+    /** The panel's body as its headings and the bounties of its rows, in order. */
+    const rows = (p: ReturnType<typeof mount>): string[] =>
+      [...p.panel.root.querySelectorAll('.service-heading, [data-quest]')].map((node) => node.getAttribute('data-quest') ?? `# ${node.textContent}`);
+
+    it("lists the bounties held that the day's board no longer offers after the day's, by what each was taken on as, each to turn in once done and to give up", () => {
       const p = mount();
+      show(p, { active: [held(CRYPT, 8), held(NORTH, 3)], done: [] }, TODAY);
+      expect(rows(p)).toEqual([...TODAY.map(bountyIdOf), '# Taken before the board changed', bountyIdOf(CRYPT), bountyIdOf(NORTH)]);
+      expect(p.quest(bountyIdOf(CRYPT))).toBe('Bounty: CryptDoneDrive off 8 Skeletons there. 8 of 8Reward: 32c, an uncommon itemTurn inGive up');
+      expect(p.quest(bountyIdOf(NORTH))).toBe('Bounty: North WoodTakenDrive off 8 Wolves there. 3 of 8Reward: 48cGive up');
+      p.panel.root.querySelector<HTMLButtonElement>('button[aria-label="Give up Bounty: North Wood. Drive off 8 Wolves there."]')!.click();
+      p.panel.root.querySelector<HTMLButtonElement>('button[aria-label="Turn in Bounty: Crypt. Drive off 8 Skeletons there."]')!.click();
+      expect(p.calls).toEqual([`abandon:${bountyIdOf(NORTH)}`, `turnIn:${bountyIdOf(CRYPT)}`]);
+    });
+
+    it('lists them under no bounties today too', () => {
+      const p = mount();
+      show(p, { active: [held(NORTH, 3)], done: [] }, []);
+      expect(p.text()).toContain('No bounties today.Taken before the board changedBounty: North Wood');
+      expect(rows(p)).toEqual(['# Taken before the board changed', bountyIdOf(NORTH)]);
+    });
+
+    it("greys out taking another once three of the day are taken, saying a bounty given up or the board's turn reopens it", () => {
+      const p = mount();
+      const takes = (): string[] => p.buttons().filter((label) => label.startsWith('Take'));
+      show(p, { active: [held(NORTH, 3), held(CRYPT, 0)], done: [] }, TODAY);
+      expect(takes()).toEqual(['Take the quest', 'Take the quest', 'Take the quest']);
+      show(p, { active: [held(NORTH, 3), held(CRYPT, 0), held(MEADOW, 0)], done: [] }, TODAY);
+      expect(takes()).toEqual(['Take the quest (disabled)', 'Take the quest (disabled)', 'Take the quest (disabled)']);
+      expect(p.quest(bountyIdOf(ARENA))).toContain('You have taken three bounties today. Give up one you hold to take this one.');
+      show(p, { active: [], done: [NORTH, CRYPT, MEADOW].map(bountyIdOf) }, TODAY);
+      expect(takes()).toEqual(['Take the quest (disabled)', 'Take the quest (disabled)', 'Take the quest (disabled)']);
+      expect(p.quest(bountyIdOf(ARENA))).toContain('You have taken three bounties today. New ones go up at 00:00 UTC.');
+      expect(p.text()).not.toContain('Give up one you hold');
+    });
+
+    it('greys out taking one while the quest log is full, saying so, and says only the cap once three of the day are taken too', () => {
+      const p = mount();
+      const committed = (count: number) => QUEST_IDS.slice(0, count).map((questId) => ({ questId, progress: questOf(questId).objectives.map(() => 0) }));
+      const full = SOMNIO_PROTOCOL_CONSTANTS.maxActiveQuests;
+      show(p, { active: committed(full), done: [] }, TODAY);
+      expect([p.buttons().filter((label) => label.startsWith('Take')), p.quest(bountyIdOf(ARENA))]).toEqual([
+        ['Take the quest (disabled)', 'Take the quest (disabled)', 'Take the quest (disabled)'],
+        expect.stringContaining('Your quest log is full. Give up a quest to take this one.'),
+      ]);
+      show(p, { active: [...committed(full - 3), held(NORTH, 3), held(CRYPT, 0), held(MEADOW, 0)], done: [] }, TODAY);
+      expect(p.quest(bountyIdOf(ARENA))).toContain('You have taken three bounties today. Give up one you hold to take this one.');
+      expect(p.text()).not.toContain('Your quest log is full.');
+    });
+
+    it("keeps its elements, a held bounty's Give up among them, while the lucidity, the bounties, and the log are unchanged", () => {
+      const p = mount();
+      const lucidity = { ranks: [] };
       const quests: QuestLog = { active: [held(ARENA, 1)], done: [] };
       const bounties = [ARENA, GRAVES];
-      show(p, quests, bounties);
+      p.panel.render(board(), lucidity, quests, bounties, NOTHING, false, [], true, false);
       const before = [...p.panel.root.querySelectorAll('*')];
-      show(p, quests, bounties);
-      expect([...p.panel.root.querySelectorAll('*')]).toEqual(before);
+      expect(p.panel.root.querySelector(`[data-quest="${bountyIdOf(ARENA)}"] button`)?.textContent).toBe('Give up');
+      p.panel.render(board(), lucidity, quests, bounties, NOTHING, false, [], true, false);
+      expectSameElements([...p.panel.root.querySelectorAll('*')], before);
     });
   });
 
@@ -3702,6 +3764,22 @@ describe('the play field and the panels through the shell', () => {
     ]);
   });
 
+  it("offers Share in the Quest log on a bounty held only while the day's board offers it", () => {
+    const p = playing();
+    const bounty: Bounty = { day: 3, land: 'EdariaArena', monsterKind: 'ghost', objective: 'driveOff', count: 6, reward: { coins: 72 } };
+    const holding = (bounties: Bounty[]): SomnioMessage => ({
+      tag: 'quests',
+      payload: { active: [{ questId: bountyIdOf(bounty), progress: [0], definition: bounty }], done: [], bounties },
+    });
+    const share = (): HTMLButtonElement | null =>
+      container.querySelector('.hud-window--quests button[aria-label="Share Bounty: Arena with dreamers near you"]');
+    p.deliver(holding([bounty]));
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'l', cancelable: true }));
+    expect(share()).not.toBeNull();
+    p.deliver(holding([{ ...bounty, monsterKind: 'wolf', land: 'NorthWood' }]));
+    expect(share()).toBeNull();
+  });
+
   it("sends the shopkeeper's buttons as the trades they name, and holds them from a trade until a moment after its answer", () => {
     let clock = 1000;
     vi.spyOn(performance, 'now').mockImplementation(() => clock);
@@ -4224,6 +4302,66 @@ describe('the play field and the panels through the shell', () => {
       p.deliver({ tag: 'quests', payload: { active: held.slice(1), done: [], bounties: [] } });
       expect(take()).toBe(shownTake);
       expect([take().disabled, prompt().querySelector('.form-error')!.classList.contains('hidden')]).toEqual([false, true]);
+    });
+
+    it('greys out taking a shared bounty, saying why, while the player holds three of its day, and lets it be taken once one is given up', () => {
+      const p = playing();
+      const shared: Bounty = { day: 3, land: 'EdariaArena', monsterKind: 'ghost', objective: 'driveOff', count: 6, reward: { coins: 72 } };
+      const others = (['wolf', 'boar', 'bogey'] as const).map((monsterKind): Bounty => ({ ...shared, monsterKind, land: 'NorthWood' }));
+      const holding = (count: number): SomnioMessage => ({
+        tag: 'quests',
+        payload: {
+          active: others.slice(0, count).map((bounty) => ({ questId: bountyIdOf(bounty), progress: [0], definition: bounty })),
+          done: [],
+          bounties: [shared],
+        },
+      });
+      p.deliver(holding(2));
+      p.deliver({ tag: 'questOffer', payload: { offerId: 7, fromName: 'Bren', questId: bountyIdOf(shared) } });
+      const shownTake = take();
+      expect(shownTake.disabled).toBe(false);
+      const refusal = (): HTMLElement => prompt().querySelector('.form-error')!;
+      p.deliver(holding(3));
+      expect(take()).toBe(shownTake);
+      expect([take().classList.contains('hidden'), take().disabled, refusal().classList.contains('hidden'), refusal().textContent]).toEqual([
+        false,
+        true,
+        false,
+        'You have taken three bounties today. Give up one you hold to take this one.',
+      ]);
+      p.deliver(holding(2));
+      expect(take()).toBe(shownTake);
+      expect([take().classList.contains('hidden'), take().disabled, refusal().classList.contains('hidden')]).toEqual([false, false, true]);
+    });
+
+    it('takes away taking a shared bounty, with no line, while the player holds it or once they have turned it in, and gives it back once one held is given up', () => {
+      const p = playing();
+      const shared: Bounty = { day: 3, land: 'EdariaArena', monsterKind: 'ghost', objective: 'driveOff', count: 6, reward: { coins: 72 } };
+      const other: Bounty = { ...shared, monsterKind: 'wolf', land: 'NorthWood' };
+      const holding = (active: Bounty[], done: Bounty[] = []): SomnioMessage => ({
+        tag: 'quests',
+        payload: {
+          active: active.map((bounty) => ({ questId: bountyIdOf(bounty), progress: [0], definition: bounty })),
+          done: done.map(bountyIdOf),
+          bounties: [shared],
+        },
+      });
+      const refusal = (): HTMLElement => prompt().querySelector('.form-error')!;
+      const notNow = (): HTMLButtonElement => [...prompt().querySelectorAll('button')].find((node) => node.textContent === 'Not now')!;
+      const shown = (): boolean[] => [prompt().classList.contains('hidden'), notNow().classList.contains('hidden'), take().classList.contains('hidden')];
+      p.deliver(holding([other]));
+      p.deliver({ tag: 'questOffer', payload: { offerId: 7, fromName: 'Bren', questId: bountyIdOf(shared) } });
+      const shownTake = take();
+      expect(shown()).toEqual([false, false, false]);
+      p.deliver(holding([other, shared, { ...other, monsterKind: 'boar' }]));
+      expect([...shown(), refusal().classList.contains('hidden')]).toEqual([false, false, true, true]);
+      p.deliver(holding([other]));
+      expect(take()).toBe(shownTake);
+      expect([...shown(), take().disabled]).toEqual([false, false, false, false]);
+      p.deliver(holding([other], [shared]));
+      expect([...shown(), refusal().classList.contains('hidden')]).toEqual([false, false, true, true]);
+      p.press('Not now');
+      expect(p.sent()).toEqual([{ tag: 'answerQuestOffer', payload: { offerId: 7, take: false } }]);
     });
 
     it('counts its seconds down frame by frame and goes once they run out, and goes at a new space', () => {

@@ -18,6 +18,8 @@ import {
   isTeachingId,
   masterRole,
   mayAccept,
+  mayTakeBounty,
+  offBoardBounties,
   commonItem,
   practiceNeeded,
   price,
@@ -39,6 +41,7 @@ import type {
   Inventory,
   Item,
   ItemInstance,
+  Quest,
   QuestId,
   QuestLog,
   QuestOrBountyId,
@@ -56,7 +59,7 @@ import { itemIcon } from './itemIcons';
 import { paintRarityColors } from './hud';
 import { itemLines, itemSetLines, itemTitle, rarityName } from './itemText';
 import type { ItemReader } from './itemText';
-import { questAsks, questLines, questTitle, rewardNote, timeLeft } from './questText';
+import { questAsks, questLines, questTitle, rewardNote, takeRefusal, timeLeft } from './questText';
 
 /**
  * What a carrier offers: a master, the shopkeeper, or the bounty board, and the quests a carrier
@@ -134,9 +137,9 @@ function paragraph(text: string, className = 'service-text'): HTMLElement {
   return element('p', { className, text });
 }
 
-/** A row's button, at the row's trailing edge as every row of the panel has it. */
-function actionRow(action: HTMLElement): HTMLElement {
-  return element('div', { className: 'teaching-action', children: [action] });
+/** A row's buttons, at the row's trailing edge as every row of the panel has them. */
+function actionRow(...actions: HTMLElement[]): HTMLElement {
+  return element('div', { className: 'teaching-action', children: actions });
 }
 
 /** A row of the shop: the item's icon edged and its name in its rarity's colour, with its rarity unless common, what it does, a set piece's set as its tip says it, and the button that trades it. */
@@ -315,25 +318,40 @@ export class ServicePanel {
     }
   }
 
-  /** The day's bounties, after how long until the board turns, worked out as the panel is built. */
+  /**
+   * The day's bounties, after how long until the board turns, worked out as the panel is built, or
+   * that there are none today. Then, under their own heading, the bounties held that the day's board
+   * no longer offers, as after a deploy rolled it again, each by what it was taken on as.
+   */
   private bountyBoard(lucidity: LucidityMessage, quests: QuestLog, bounties: readonly Bounty[], roomForGear: boolean): HTMLElement[] {
     const day = bounties[0]?.day;
-    if (day === undefined) return [paragraph(t('No bounties today.'), 'form-note')];
+    const held = offBoardBounties(quests, bounties);
     return [
-      paragraph(
-        t(
-          'Three new bounties go up every day at 00:00 UTC, in %@. Any bounty you hold runs out then, done or not.',
-          timeLeft(boardTurnsAt(day), this.wallNow()),
-        ),
-      ),
-      ...bounties.map((bounty) => this.bountyRow(bounty, lucidity, quests, roomForGear)),
+      ...(day === undefined
+        ? [paragraph(t('No bounties today.'), 'form-note')]
+        : [
+            paragraph(
+              t(
+                'Three new bounties go up every day at 00:00 UTC, in %@. Any bounty you hold runs out then, done or not.',
+                timeLeft(boardTurnsAt(day), this.wallNow()),
+              ),
+            ),
+            ...bounties.map((bounty) => this.bountyRow(bounty, lucidity, quests, roomForGear)),
+          ]),
+      ...(held.length === 0
+        ? []
+        : [
+            element('h2', { className: 'service-heading', text: t('Taken before the board changed') }),
+            ...held.map((definition) => this.bountyRow(definition, lucidity, quests, roomForGear)),
+          ]),
     ];
   }
 
   /**
-   * A bounty: what it asks and pays, and the way to take it, how far it has come, the way to turn it
-   * in once done, or that it is turned in. A bounty's title names only its land, so each button's
-   * accessible name also says what the bounty asks.
+   * A bounty: what it asks and pays, and where the dreamer stands with it. Not held, it offers a way
+   * to take it, greyed out while `mayTakeBounty` refuses it. Held, it shows how far it has come and a
+   * way to give it up, and once done a way to turn it in. Turned in, it says so. A bounty's title
+   * names only its land, so each button's accessible name also says what the bounty asks.
    */
   private bountyRow(bounty: Bounty, lucidity: LucidityMessage, quests: QuestLog, roomForGear: boolean): HTMLElement {
     const questId = bountyIdOf(bounty);
@@ -343,27 +361,36 @@ export class ServicePanel {
     const taken = held?.definition ?? bounty;
     const said = bountyQuest(taken);
     const title = questTitle(said, taken);
-    if (quests.done.includes(questId)) return this.questRow(questId, title, [], undefined, t('Turned in'));
+    if (quests.done.includes(questId)) return this.questRow(questId, title, [], [], t('Turned in'));
     if (held === undefined) {
-      const take = this.offerButton(t('Take the quest'), questId, quests);
+      const take = button(t('Take the quest'), () => this.callbacks.onAcceptQuest(questId));
+      take.disabled = !mayTakeBounty(bounty, quests);
       take.setAttribute('aria-label', t('Take %1$@. %2$@', title, questAsks(said)));
       return this.questRow(
         questId,
         title,
-        [...questLines(said, undefined), ...rewardNote(said.reward, lucidity.study, lucidity.role), ...this.logFullNote(quests)],
-        take,
+        [...questLines(said, undefined), ...rewardNote(said.reward, lucidity.study, lucidity.role), ...this.refusalNote(quests, bounty)],
+        [take],
       );
     }
+    const giveUp = this.giveUpButton(questId, title, said);
     if (turnInFor(questId, quests, lucidity) === undefined) {
-      return this.questRow(questId, title, [...questLines(said, held), ...rewardNote(said.reward, lucidity.study, lucidity.role)], undefined, t('Taken'));
+      return this.questRow(questId, title, [...questLines(said, held), ...rewardNote(said.reward, lucidity.study, lucidity.role)], [giveUp], t('Taken'));
     }
     return this.questRow(
       questId,
       title,
       [...questLines(said, held), ...this.turnInNotes(said.reward, lucidity, roomForGear)],
-      this.turnInButton(held, t('Turn in %1$@. %2$@', title, questAsks(said)), said.reward, roomForGear),
+      [this.turnInButton(held, t('Turn in %1$@. %2$@', title, questAsks(said)), said.reward, roomForGear), giveUp],
       t('Done'),
     );
+  }
+
+  /** The button that gives a bounty held up, under an accessible name that says what it asks, as its title names only its land. */
+  private giveUpButton(questId: QuestOrBountyId, title: string, said: Quest): HTMLButtonElement {
+    const action = button(t('Give up'), () => this.callbacks.onAbandonQuest(questId));
+    action.setAttribute('aria-label', t('Give up %1$@. %2$@', title, questAsks(said)));
+    return action;
   }
 
   /**
@@ -386,8 +413,8 @@ export class ServicePanel {
         this.questRow(
           questId,
           questTitle(quest(questId)),
-          [...questLines(quest(questId), undefined), ...rewardNote(quest(questId).reward, lucidity.study, lucidity.role), ...this.logFullNote(quests)],
-          this.offerButton(t('Take the quest'), questId, quests),
+          [...questLines(quest(questId), undefined), ...rewardNote(quest(questId).reward, lucidity.study, lucidity.role)],
+          [this.offerButton(t('Take the quest'), questId, quests)],
         ),
       ),
     ];
@@ -401,11 +428,11 @@ export class ServicePanel {
     const said = heldQuest(held);
     const title = questTitle(said);
     if (!questCarriedBy(said.turnIn, carrier) || turnInFor(held.questId, quests, lucidity) === undefined) {
-      return this.questRow(held.questId, title, questLines(said, held), undefined);
+      return this.questRow(held.questId, title, questLines(said, held), []);
     }
     const asker = said.giver === said.turnIn ? name : this.callbacks.carrierName(said.giver);
     const notes = [paragraph(t('You did what %@ asked.', asker), 'form-note'), ...this.turnInNotes(said.reward, lucidity, roomForGear)];
-    return this.questRow(held.questId, title, notes, this.turnInButton(held, t('Turn in %@', title), said.reward, roomForGear));
+    return this.questRow(held.questId, title, notes, [this.turnInButton(held, t('Turn in %@', title), said.reward, roomForGear)]);
   }
 
   /** What a quest done pays, and that the bag is full while the item it pays has nowhere to go. */
@@ -426,7 +453,7 @@ export class ServicePanel {
   }
 
   /** A quest's row, under its title and, for a bounty, where it stands. */
-  private questRow(questId: QuestOrBountyId, title: string, notes: readonly HTMLElement[], action: HTMLElement | undefined, standing?: string): HTMLElement {
+  private questRow(questId: QuestOrBountyId, title: string, notes: readonly HTMLElement[], actions: readonly HTMLElement[], standing?: string): HTMLElement {
     return element('div', {
       className: 'teaching-row',
       attributes: { 'data-quest': questId },
@@ -436,7 +463,7 @@ export class ServicePanel {
           children: [element('strong', { text: title }), ...(standing === undefined ? [] : [element('span', { className: 'teaching-rank', text: standing })])],
         }),
         ...notes,
-        ...(action === undefined ? [] : [actionRow(action)]),
+        ...(actions.length === 0 ? [] : [actionRow(...actions)]),
       ],
     });
   }
@@ -524,7 +551,7 @@ export class ServicePanel {
           t('%1$@ takes on those who pass a trial. Passing it commits you to nothing: you choose afterwards whether to become a %2$@.', name, roleName(role)),
         ),
         ...questLines(quest(own), undefined),
-        ...(gives ? [...this.logFullNote(quests), actionRow(this.offerButton(t('Ask for the trial'), own, quests))] : []),
+        ...(gives ? [...this.refusalNote(quests), actionRow(this.offerButton(t('Ask for the trial'), own, quests))] : []),
       ];
     }
     if (held.questId !== own) {
@@ -559,8 +586,10 @@ export class ServicePanel {
     return offer;
   }
 
-  private logFullNote(quests: QuestLog): HTMLElement[] {
-    return questLogFull(quests) ? [paragraph(t('Your quest log is full. Give up a quest to take this one.'), 'form-error')] : [];
+  /** Why an offer beside it is greyed out (`takeRefusal`), `bounty` being the bounty offered, if one is. */
+  private refusalNote(quests: QuestLog, bounty?: Bounty): HTMLElement[] {
+    const refusal = takeRefusal(bounty, quests);
+    return refusal === undefined ? [] : [paragraph(refusal, 'form-error')];
   }
 
   private teachingRow(carrier: QuestCarrier, name: string, id: TeachingId, standing: Standing, lucidity: LucidityMessage, quests: QuestLog): HTMLElement {
@@ -620,7 +649,7 @@ export class ServicePanel {
         notes: [
           paragraph(t('%@ teaches its first rank for a task.', name), 'form-note'),
           ...questLines(quest(questId), undefined),
-          ...(gives ? this.logFullNote(quests) : []),
+          ...(gives ? this.refusalNote(quests) : []),
         ],
         action: gives ? this.offerButton(t('Take the task'), questId, quests) : undefined,
       };

@@ -16,6 +16,7 @@ import {
   mayShare,
   objectiveGoal,
   objectiveLines,
+  offBoardBounties,
   quest,
   questComplete,
   questsMessage,
@@ -219,9 +220,24 @@ describe('sharing a quest', () => {
     done: [],
   };
 
-  it('is open for any quest held but a trial, a bounty included', () => {
-    for (const role of ROLES) expect(mayShare(TRIAL_QUESTS[role]), role).toBe(false);
-    expect([mayShare('restless-graves'), mayShare('follow-through-task'), mayShare(bountyIdOf(bounty))]).toEqual([true, true, true]);
+  // A bounty of the same day that the board, rolled again, no longer offers.
+  const stray: Bounty = { ...bounty, monsterKind: 'ghost' };
+
+  it("is open for any quest held but a trial, and a bounty only while the day's board offers it", () => {
+    for (const role of ROLES) expect(mayShare(TRIAL_QUESTS[role], undefined), role).toBe(false);
+    expect([mayShare('restless-graves', undefined), mayShare('follow-through-task', undefined), mayShare(bountyIdOf(bounty), bounty)]).toEqual([
+      true,
+      true,
+      true,
+    ]);
+    expect(mayShare(bountyIdOf(stray), undefined)).toBe(false);
+  });
+
+  it("finds the bounties held that the day's board does not offer, by what each was taken on as, in the log's order", () => {
+    const later: Bounty = { ...stray, land: 'NorthWood' };
+    const log = withAcceptedBounty(withAcceptedBounty(withAcceptedBounty(holding(['restless-graves', [0]]), later), bounty), stray);
+    expect(offBoardBounties(log, [bounty])).toStrictEqual([later, stray]);
+    expect(offBoardBounties(withAcceptedBounty(NO_QUESTS, bounty), [bounty])).toStrictEqual([]);
   });
 
   it.each<[string, QuestOrBountyId, Bounty | undefined, QuestLog, QuestShareOutcome | undefined]>([

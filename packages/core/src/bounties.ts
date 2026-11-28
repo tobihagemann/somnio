@@ -30,8 +30,8 @@ export function boardTurnsAt(day: number): number {
   return (day + 1) * BOARD_DAY_MS;
 }
 
-/** How many bounties the board offers a day, at most. */
-const BOARD_SIZE = 3;
+/** How many bounties the board offers a day, at most, and how many a dreamer takes a day. */
+export const BOARD_SIZE = 3;
 
 /** The chance that a bounty pays an item besides its coins. */
 const ITEM_CHANCE = 0.25;

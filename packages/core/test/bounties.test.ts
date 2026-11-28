@@ -20,6 +20,7 @@ import { MONSTER_KIND_IDS, bossMoves } from '../src/monsterKinds.ts';
 import {
   NO_QUESTS,
   advancedQuests,
+  bountiesClosed,
   bountiesOf,
   collectsTrophy,
   drivesOff,
@@ -28,9 +29,11 @@ import {
   questComplete,
   questsMessage,
   questsOf,
+  shareOutcomeFor,
   turnInFor,
   withAcceptedBounty,
   withTurnedIn,
+  withoutQuest,
 } from '../src/quests.ts';
 import type { QuestLog } from '../src/quests.ts';
 import { loadSectorFixtures } from './support/sectorFixture.ts';
@@ -45,6 +48,11 @@ const board = { id: 'fixture:EdariaSquare/fixture-1', service: 'bountyBoard' } a
 /** Whether one nightmare driven off, or one trophy picked up, would advance both bounties. */
 function clash(a: Bounty, b: Bounty): boolean {
   return a.monsterKind === b.monsterKind && (a.objective === 'collect' || b.objective === 'collect' || a.land === b.land);
+}
+
+/** A log holding `count` committed quests and no bounty. */
+function committed(count: number): QuestLog {
+  return { active: Array.from({ length: count }, () => ({ questId: 'into-the-crypt' as const, progress: [0] })), done: [] };
 }
 
 function ghostLand(name: string): BountyLand {
@@ -216,8 +224,51 @@ describe('a bounty in the quest log', () => {
     expect([mayTakeBounty(GRAVEYARD, NO_QUESTS), mayTakeBounty(GRAVEYARD, taken), mayTakeBounty(ARENA, taken)]).toEqual([true, false, true]);
     expect(mayTakeBounty(GRAVEYARD, { active: [], done: [bountyIdOf(GRAVEYARD)] })).toBe(false);
     expect(mayTakeBounty({ ...GRAVEYARD, day: DAY + 1 }, { active: [], done: [bountyIdOf(GRAVEYARD)] })).toBe(true);
-    const full: QuestLog = { active: Array.from({ length: SOMNIO_PROTOCOL_CONSTANTS.maxActiveQuests }, () => taken.active[0]!), done: [] };
-    expect(mayTakeBounty(ARENA, full)).toBe(false);
+    expect(mayTakeBounty(ARENA, committed(SOMNIO_PROTOCOL_CONSTANTS.maxActiveQuests))).toBe(false);
+  });
+
+  // Three of the day taken from an earlier roll of its board, one turned in and two held.
+  const [north, south, west] = ['NorthWood', 'SouthMeadow', 'WestMeadow'].map((land): Bounty => ({ ...ARENA, land })) as [Bounty, Bounty, Bounty];
+  const capped = withAcceptedBounty(withAcceptedBounty({ active: [], done: [bountyIdOf(north)] }, south), west);
+
+  it('is taken at most three a day, held and turned in together, by an earlier roll of the board too', () => {
+    expect(mayTakeBounty(GRAVEYARD, capped)).toBe(false);
+    expect(markerFor(board, capped, NO_LUCIDITY, [GRAVEYARD])).toBe('inProgress');
+    expect(shareOutcomeFor(bountyIdOf(GRAVEYARD), GRAVEYARD, capped, NO_LUCIDITY)).toBe('cannotYet');
+    expect(
+      shareOutcomeFor(
+        bountyIdOf(GRAVEYARD),
+        GRAVEYARD,
+        { ...capped, active: [...capped.active, ...committed(SOMNIO_PROTOCOL_CONSTANTS.maxActiveQuests - capped.active.length).active] },
+        NO_LUCIDITY,
+      ),
+    ).toBe('logFull');
+    const finished = { ...capped, active: [{ ...capped.active[0]!, progress: [ARENA.count] }, capped.active[1]!] };
+    expect(markerFor(board, finished, NO_LUCIDITY, [GRAVEYARD])).toBe('turnIn');
+  });
+
+  it('counts only the bounties of its own day toward the three', () => {
+    expect(mayTakeBounty({ ...GRAVEYARD, day: DAY + 1 }, capped)).toBe(true);
+    const earlier = [north, south, west].map((bounty) => bountyIdOf({ ...bounty, day: DAY - 1 }));
+    expect(mayTakeBounty(GRAVEYARD, { active: [], done: [bountyIdOf(north), bountyIdOf(south), ...earlier] })).toBe(true);
+  });
+
+  it('closes the day at three until one held is given up, or until the board turns once three are turned in', () => {
+    const doneIds = [north, south, west].map(bountyIdOf);
+    const four = [north, south, west, GRAVEYARD].reduce(withAcceptedBounty, NO_QUESTS);
+    const without = (log: QuestLog, bounty: Bounty): QuestLog => withoutQuest(log, bountyIdOf(bounty));
+    expect([
+      bountiesClosed(DAY, without(capped, west)),
+      bountiesClosed(DAY, capped),
+      bountiesClosed(DAY, withAcceptedBounty({ active: [], done: doneIds.slice(0, 2) }, west)),
+      bountiesClosed(DAY, { active: [], done: doneIds }),
+      bountiesClosed(DAY, withAcceptedBounty({ active: [], done: doneIds }, GRAVEYARD)),
+    ]).toEqual([undefined, 'giveUpOne', 'giveUpOne', 'nextDay', 'nextDay']);
+    expect([bountiesClosed(DAY, four), bountiesClosed(DAY, without(four, north)), bountiesClosed(DAY, without(without(four, north), south))]).toEqual([
+      'giveUpOne',
+      'giveUpOne',
+      undefined,
+    ]);
   });
 
   it('travels the quests frame with its definition, paying an item or not, beside the bounties of the day', () => {

@@ -11,7 +11,20 @@ import {
   parseModelRegistry,
   resolveDoor,
 } from '@somnio/core';
-import type { BaseItemId, Character, Inventory, ItemInstance, Lucidity, MonsterKindId, MonsterSpawn, Point, QuestId, QuestLog, Sector } from '@somnio/core';
+import type {
+  BaseItemId,
+  Bounty,
+  Character,
+  Inventory,
+  ItemInstance,
+  Lucidity,
+  MonsterKindId,
+  MonsterSpawn,
+  Point,
+  QuestId,
+  QuestLog,
+  Sector,
+} from '@somnio/core';
 import { SOMNIO_PROTOCOL_CONSTANTS } from '@somnio/protocol';
 import type { Role, SomnioMessage } from '@somnio/protocol';
 import registryJSON from '@somnio/core/data/ModelRegistry.json' with { type: 'json' };
@@ -900,6 +913,30 @@ describe('the bounty board', () => {
     world.wall.ms = noon(DAY + 1);
     world.space.step(0);
     expect(questsOf(world.space, carol.entityId)).toEqual(NO_QUESTS);
+  });
+
+  it('gives no bounty of the day to a dreamer holding three of it from an earlier roll of the board, until they give one up', () => {
+    const world = graveyardOn(DAY);
+    const bounty = offered(DAY)[0]!;
+    const strays = (['ghost', 'wolf', 'boar'] as const).map((monsterKind) => ({ ...bounty, monsterKind, land: 'NorthWood' }));
+    const held: QuestLog = { active: strays.map((stray) => ({ questId: bountyIdOf(stray), progress: [0], definition: stray })), done: [] };
+    const alice = attachPlayer(world.space, AT_BOARD, 'alice', { character: { quests: held } });
+    world.space.handleAcceptQuest(BOARD, bountyIdOf(bounty), alice.entityId);
+    expect(questsOf(world.space, alice.entityId)).toEqual(held);
+    world.space.handleAbandonQuest(bountyIdOf(strays[0]!), alice.entityId);
+    world.space.handleAcceptQuest(BOARD, bountyIdOf(bounty), alice.entityId);
+    expect(questsOf(world.space, alice.entityId).active.map(({ questId }) => questId)).toEqual([...strays.slice(1), bounty].map(bountyIdOf));
+  });
+
+  it('pays a bounty held from an earlier roll of the board, finished, at the board by its saved terms', () => {
+    const world = graveyardOn(DAY);
+    const stray: Bounty = { ...offered(DAY)[0]!, monsterKind: 'wolf', land: 'NorthWood', reward: { coins: 40 } };
+    const questId = bountyIdOf(stray);
+    const quests: QuestLog = { active: [{ questId, progress: [stray.count], definition: stray }], done: [] };
+    const alice = attachPlayer(world.space, AT_BOARD, 'alice', { character: { quests }, inventory: carrying({ coins: COINS }) });
+    world.space.handleTurnInQuest(BOARD, questId, alice.entityId);
+    expect(questsOf(world.space, alice.entityId)).toEqual({ active: [], done: [questId] });
+    expect(inventoryOf(world, alice.entityId).coins).toBe(COINS + 40);
   });
 
   it('counts a drive-off of its kind in its land, and pays its coins and an uncommon item at the board once', () => {

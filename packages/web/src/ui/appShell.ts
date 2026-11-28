@@ -1216,7 +1216,7 @@ export class AppShell {
     this.hud.renderChat(this.controller.chatHistory);
     this.hud.renderPlayers(this.controller.players, { own: this.controller.selfDisplayName, target: target?.name });
     this.hud.renderCharacter(this.session.inventory, this.session.lucidity, shop ? this.session.tradeLocked() : undefined);
-    this.hud.renderQuests(this.session.quests, this.session.lucidity.study, this.session.lucidity.role);
+    this.hud.renderQuests(this.session.quests, this.session.bounties, this.session.lucidity.study, this.session.lucidity.role);
     this.hud.tick(performance.now(), this.clock());
   }
 }

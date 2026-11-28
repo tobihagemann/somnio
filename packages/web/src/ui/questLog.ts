@@ -1,16 +1,17 @@
-import { heldQuest, mayShare, questComplete } from '@somnio/core';
-import type { QuestLog, QuestOrBountyId } from '@somnio/core';
+import { heldQuest, mayShare, offeredBounty, questComplete } from '@somnio/core';
+import type { Bounty, QuestLog, QuestOrBountyId } from '@somnio/core';
 import type { Role } from '@somnio/protocol';
 import { t } from '@/i18n';
 import { button, element, setHidden } from './dom';
-import { countdown, questLines, questLogCount, questTitle, returnLine, rewardNote, runsOutAt, tickCountdowns } from './questText';
+import { countdown, questAsks, questLines, questLogCount, questTitle, returnLine, rewardNote, runsOutAt, tickCountdowns } from './questText';
 import type { Countdown } from './questText';
 
 /**
  * The Quest log window's contents: every quest the player holds with what it asks, how far it has
- * come, and what it pays, how long a bounty has left, where to turn in one that is done, and a way
- * to share each but a trial and to give each up. Opened from the menu, the sheet, the tracker's
- * "+N more", and L, like the other windows. Its title counts the quests held against the log's room.
+ * come, and what it pays, how long a bounty has left, and where to turn in one that is done. Each
+ * has a way to give it up, and each but a trial or a bounty the day's board no longer offers a way
+ * to share it. Opened from the menu, the sheet, the tracker's "+N more", and L, like the other windows. Its title
+ * counts the quests held against the log's room.
  */
 export class QuestLogList {
   readonly nodes: readonly HTMLElement[];
@@ -36,13 +37,18 @@ export class QuestLogList {
   }
 
   /**
-   * `study` is the teaching the player studies, which a quest's practice goes toward, `role` the
-   * player's, which a set piece it pays is of, and `wallMs` the time now in epoch milliseconds.
+   * `bounties` are the day's, `study` is the teaching the player studies, which a quest's practice
+   * goes toward, `role` the player's, which a set piece it pays is of, and `wallMs` the time now in
+   * epoch milliseconds.
    */
-  render(quests: QuestLog, study: string | undefined, role: Role | undefined, wallMs: number): void {
+  render(quests: QuestLog, bounties: readonly Bounty[], study: string | undefined, role: Role | undefined, wallMs: number): void {
     // A button replaced between press and release is never pressed, and the shell renders on every
     // `energy` frame, so the log is rebuilt only when what it says has changed.
-    const entries = quests.active.map((held) => ({ held, returnTo: questComplete(held) ? returnLine(held, this.carrierName) : undefined }));
+    const entries = quests.active.map((held) => ({
+      held,
+      returnTo: questComplete(held) ? returnLine(held, this.carrierName) : undefined,
+      shareable: mayShare(held.questId, offeredBounty(bounties, held.questId)),
+    }));
     const shown = JSON.stringify([study, role, entries]);
     if (shown === this.shown) return;
     this.shown = shown;
@@ -50,17 +56,18 @@ export class QuestLogList {
     setHidden(this.empty, entries.length > 0);
     this.countdowns = [];
     this.list.replaceChildren(
-      ...entries.map(({ held, returnTo }) => {
+      ...entries.map(({ held, returnTo, shareable }) => {
         const said = heldQuest(held);
         const title = questTitle(said, held.definition);
         const actions: HTMLElement[] = [];
-        if (mayShare(held.questId)) {
+        if (shareable) {
           const share = button(t('Share quest'), () => this.onShare(held.questId), { className: 'fantasy-button fantasy-button--compact' });
           share.setAttribute('aria-label', t('Share %@ with dreamers near you', title));
           actions.push(share);
         }
         const giveUp = button(t('Give up'), () => this.onAbandon(held.questId), { className: 'fantasy-button fantasy-button--compact' });
-        giveUp.setAttribute('aria-label', t('Give up %@', title));
+        // A bounty's title names only its land, so its Give up also says what it asks, as the board's does.
+        giveUp.setAttribute('aria-label', held.definition === undefined ? t('Give up %@', title) : t('Give up %1$@. %2$@', title, questAsks(said)));
         actions.push(giveUp);
         const turnsAtMs = runsOutAt(held);
         const runsOut =

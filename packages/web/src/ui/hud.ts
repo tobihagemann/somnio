@@ -1,5 +1,5 @@
 import { calendarFromWorldSeconds, heldQuest, hourOfDay, sunIsUp } from '@somnio/core';
-import type { AbilityId, AttackRefusal, EngageAction, Inventory, QuestLog, QuestOrBountyId } from '@somnio/core';
+import type { AbilityId, AttackRefusal, Bounty, EngageAction, Inventory, QuestLog, QuestOrBountyId } from '@somnio/core';
 import { RARITIES } from '@somnio/protocol';
 import type { Energy, EquipSlot, LucidityMessage, Role } from '@somnio/protocol';
 import type { AbilitySlotState, ChatLine, QuestNews } from '@/client';
@@ -639,10 +639,10 @@ export class GameHUD {
     this.character.showTab(tab);
   }
 
-  /** `study` is the teaching the player studies, which a quest's practice goes toward, and `role` the player's, which a set piece it pays is of. */
-  renderQuests(quests: QuestLog, study: string | undefined, role: Role | undefined): void {
+  /** `bounties` are the day's, `study` is the teaching the player studies, which a quest's practice goes toward, and `role` the player's, which a set piece it pays is of. */
+  renderQuests(quests: QuestLog, bounties: readonly Bounty[], study: string | undefined, role: Role | undefined): void {
     const wallMs = this.wallNow();
-    this.quests.render(quests, study, role, wallMs);
+    this.quests.render(quests, bounties, study, role, wallMs);
     this.tracker.render(quests, wallMs);
     this.placeTracker();
   }

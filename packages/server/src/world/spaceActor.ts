@@ -3496,9 +3496,9 @@ export class SpaceActor {
   }
 
   /**
-   * Shares a quest the dreamer holds, any but a trial, with every other standing dreamer of the
-   * space within a said line's reach. A bounty is shared only while the board offers it today. Each
-   * who cannot take it on is answered for at once. Each who can is offered it for
+   * Shares a quest the dreamer holds, any but a trial and a bounty only while the board offers it
+   * today (`mayShare`), with every other standing dreamer of the space within a said line's reach.
+   * Each who cannot take it on is answered for at once. Each who can is offered it for
    * `QUEST_OFFER_SECONDS`, in place of any offer they held, but one still waiting on this sharer's
    * offer of it is left as they are and not counted. The sharer is told how many were offered it,
    * ahead of the answers, or that none were when no other dreamer stands near. Otherwise nothing more
@@ -3507,9 +3507,9 @@ export class SpaceActor {
   handleShareQuest(questId: string, entityId: string): void {
     const sharer = this.players.get(entityId);
     const held = sharer?.character.quests.active.find((candidate) => candidate.questId === questId);
-    if (sharer === undefined || held === undefined || isFallen(sharer) || !mayShare(held.questId)) return;
+    if (sharer === undefined || held === undefined || isFallen(sharer)) return;
     const bounty = offeredBounty(this.bounties, held.questId);
-    if (isBountyId(held.questId) && bounty === undefined) return;
+    if (!mayShare(held.questId, bounty)) return;
     const { name, position } = sharer.character;
     const near = [...this.players.values()].filter(
       (other) => other !== sharer && !isFallen(other) && distance(other.character.position, position) < SPEECH.say.reachMetres,

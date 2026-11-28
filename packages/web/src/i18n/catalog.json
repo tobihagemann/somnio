@@ -691,6 +691,10 @@
     "en": "Give up",
     "de": "Aufgeben"
   },
+  "Give up %1$@. %2$@": {
+    "en": "Give up %1$@. %2$@",
+    "de": "%1$@ aufgeben. %2$@"
+  },
   "Give up %@": {
     "en": "Give up %@",
     "de": "%@ aufgeben"
@@ -1295,6 +1299,10 @@
     "en": "Taken",
     "de": "Angenommen"
   },
+  "Taken before the board changed": {
+    "en": "Taken before the board changed",
+    "de": "Angenommen, bevor die Tafel wechselte"
+  },
   "Takes half the harm and cannot run.": {
     "en": "Takes half the harm and cannot run.",
     "de": "Nimmt nur halben Schaden und kann nicht rennen."
@@ -1534,6 +1542,14 @@
   "You have fallen": {
     "en": "You have fallen",
     "de": "Du bist gefallen"
+  },
+  "You have taken three bounties today. Give up one you hold to take this one.": {
+    "en": "You have taken three bounties today. Give up one you hold to take this one.",
+    "de": "Du hast heute drei Kopfgelder angenommen. Gib eines auf, das du hältst, um dieses anzunehmen."
+  },
+  "You have taken three bounties today. New ones go up at 00:00 UTC.": {
+    "en": "You have taken three bounties today. New ones go up at 00:00 UTC.",
+    "de": "Du hast heute drei Kopfgelder angenommen. Um 00:00 UTC hängen neue aus."
   },
   "You hold another master's trial. One trial at a time.": {
     "en": "You hold another master's trial. One trial at a time.",
